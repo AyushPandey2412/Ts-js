@@ -1,0 +1,716 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>DSA Approach Cheatsheet — Ayush Pandey</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Fira+Code:wght@400;500;600&family=Outfit:wght@300;400;500;600;700;800&display=swap');
+
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --bg: #0d0d0f;
+    --card: #141416;
+    --card2: #1a1a1e;
+    --border: #2a2a2e;
+    --text: #f0f0f0;
+    --text-soft: #999;
+    --text-faint: #555;
+    --green: #00e5a0;
+    --blue: #4da6ff;
+    --yellow: #ffd94d;
+    --red: #ff6b6b;
+    --purple: #b57bff;
+    --orange: #ff9f4a;
+  }
+
+  body {
+    background: var(--bg);
+    font-family: 'Outfit', sans-serif;
+    color: var(--text);
+    padding: 32px 16px 64px;
+    line-height: 1.6;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  .container { max-width: 860px; margin: 0 auto; }
+
+  /* HEADER */
+  .header {
+    text-align: center;
+    margin-bottom: 48px;
+    padding: 48px 32px;
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    position: relative;
+    overflow: hidden;
+  }
+
+  .header::before {
+    content: '';
+    position: absolute;
+    top: -60px; left: 50%;
+    transform: translateX(-50%);
+    width: 300px; height: 300px;
+    background: radial-gradient(circle, rgba(0,229,160,0.08) 0%, transparent 70%);
+    pointer-events: none;
+  }
+
+  .header-label {
+    font-family: 'Fira Code', monospace;
+    font-size: 11px;
+    color: var(--green);
+    letter-spacing: 0.2em;
+    text-transform: uppercase;
+    margin-bottom: 12px;
+  }
+
+  .header h1 {
+    font-size: 36px;
+    font-weight: 800;
+    letter-spacing: -0.5px;
+    margin-bottom: 8px;
+    background: linear-gradient(135deg, #fff 0%, #aaa 100%);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+  }
+
+  .header p {
+    color: var(--text-soft);
+    font-size: 15px;
+    font-weight: 300;
+  }
+
+  /* MANTRA */
+  .mantra-box {
+    background: linear-gradient(135deg, rgba(0,229,160,0.08), rgba(77,166,255,0.08));
+    border: 1px solid rgba(0,229,160,0.25);
+    border-radius: 16px;
+    padding: 36px;
+    margin-bottom: 40px;
+    text-align: center;
+  }
+
+  .mantra-box .label {
+    font-family: 'Fira Code', monospace;
+    font-size: 11px;
+    color: var(--green);
+    letter-spacing: 0.2em;
+    text-transform: uppercase;
+    margin-bottom: 16px;
+  }
+
+  .mantra-text {
+    font-size: 22px;
+    font-weight: 700;
+    color: #fff;
+    line-height: 1.4;
+    margin-bottom: 16px;
+  }
+
+  .mantra-text span { color: var(--green); }
+
+  .mantra-sub {
+    font-size: 14px;
+    color: var(--text-soft);
+    font-weight: 300;
+  }
+
+  /* SECTION TITLE */
+  .section-title {
+    font-size: 11px;
+    font-family: 'Fira Code', monospace;
+    color: var(--text-faint);
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    margin-bottom: 16px;
+    padding-bottom: 8px;
+    border-bottom: 1px solid var(--border);
+  }
+
+  /* STEP 1 — CHECKLIST */
+  .checklist-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+    gap: 12px;
+    margin-bottom: 40px;
+  }
+
+  .check-card {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 20px;
+    display: flex;
+    gap: 14px;
+    align-items: flex-start;
+    transition: border-color 0.2s;
+  }
+
+  .check-card:hover { border-color: #444; }
+
+  .check-num {
+    font-family: 'Fira Code', monospace;
+    font-size: 11px;
+    font-weight: 600;
+    padding: 4px 8px;
+    border-radius: 6px;
+    white-space: nowrap;
+    margin-top: 2px;
+    flex-shrink: 0;
+  }
+
+  .check-body {}
+  .check-title { font-weight: 700; font-size: 15px; margin-bottom: 4px; }
+  .check-question { font-size: 13px; color: var(--text-soft); font-weight: 300; }
+
+  /* PATTERN TABLE */
+  .pattern-section { margin-bottom: 40px; }
+
+  .pattern-group { margin-bottom: 20px; }
+
+  .pattern-group-title {
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--text-soft);
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    margin-bottom: 8px;
+    font-family: 'Fira Code', monospace;
+  }
+
+  .pattern-rows { display: flex; flex-direction: column; gap: 6px; }
+
+  .pattern-row {
+    display: flex;
+    align-items: center;
+    gap: 0;
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    overflow: hidden;
+    font-size: 13px;
+  }
+
+  .pattern-condition {
+    padding: 10px 14px;
+    font-family: 'Fira Code', monospace;
+    font-size: 12px;
+    min-width: 200px;
+    border-right: 1px solid var(--border);
+    background: var(--card2);
+    color: var(--text-soft);
+    flex-shrink: 0;
+  }
+
+  .pattern-arrow {
+    padding: 10px 12px;
+    color: var(--text-faint);
+    font-size: 14px;
+    flex-shrink: 0;
+  }
+
+  .pattern-result {
+    padding: 10px 14px;
+    font-weight: 600;
+    color: #fff;
+  }
+
+  /* HAVE WANT STEP */
+  .hvs-box {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    overflow: hidden;
+    margin-bottom: 40px;
+  }
+
+  .hvs-row {
+    display: flex;
+    align-items: stretch;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .hvs-row:last-child { border-bottom: none; }
+
+  .hvs-label {
+    width: 100px;
+    padding: 20px;
+    font-family: 'Fira Code', monospace;
+    font-size: 18px;
+    font-weight: 600;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    border-right: 1px solid var(--border);
+  }
+
+  .hvs-content {
+    padding: 20px 24px;
+    flex: 1;
+  }
+
+  .hvs-content strong {
+    display: block;
+    font-size: 14px;
+    font-weight: 600;
+    color: #fff;
+    margin-bottom: 4px;
+  }
+
+  .hvs-content p {
+    font-size: 13px;
+    color: var(--text-soft);
+    font-weight: 300;
+  }
+
+  /* HABIT */
+  .habit-steps {
+    display: flex;
+    flex-direction: column;
+    gap: 0;
+    margin-bottom: 40px;
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    overflow: hidden;
+  }
+
+  .habit-step {
+    display: flex;
+    align-items: center;
+    gap: 20px;
+    padding: 18px 24px;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .habit-step:last-child { border-bottom: none; }
+
+  .habit-time {
+    font-family: 'Fira Code', monospace;
+    font-size: 11px;
+    color: var(--text-faint);
+    width: 60px;
+    flex-shrink: 0;
+  }
+
+  .habit-dot {
+    width: 10px; height: 10px;
+    border-radius: 50%;
+    flex-shrink: 0;
+  }
+
+  .habit-text { font-size: 14px; font-weight: 500; }
+  .habit-sub { font-size: 12px; color: var(--text-soft); font-weight: 300; margin-top: 2px; }
+
+  /* RULE */
+  .rules {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 12px;
+    margin-bottom: 40px;
+  }
+
+  .rule-card {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 24px 20px;
+    text-align: center;
+  }
+
+  .rule-num {
+    font-family: 'Fira Code', monospace;
+    font-size: 28px;
+    font-weight: 600;
+    margin-bottom: 8px;
+  }
+
+  .rule-title { font-size: 14px; font-weight: 700; margin-bottom: 6px; }
+  .rule-desc { font-size: 12px; color: var(--text-soft); font-weight: 300; line-height: 1.5; }
+
+  /* EXAMPLE */
+  .example-box {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    padding: 28px;
+    margin-bottom: 40px;
+  }
+
+  .example-problem {
+    font-size: 14px;
+    color: var(--text-soft);
+    margin-bottom: 20px;
+    padding: 14px 16px;
+    background: var(--card2);
+    border-radius: 8px;
+    border-left: 3px solid var(--yellow);
+    font-family: 'Fira Code', monospace;
+  }
+
+  .example-steps { display: flex; flex-direction: column; gap: 10px; }
+
+  .ex-step {
+    display: flex;
+    gap: 14px;
+    align-items: flex-start;
+  }
+
+  .ex-badge {
+    font-family: 'Fira Code', monospace;
+    font-size: 10px;
+    font-weight: 600;
+    padding: 3px 8px;
+    border-radius: 4px;
+    white-space: nowrap;
+    margin-top: 2px;
+    flex-shrink: 0;
+  }
+
+  .ex-text { font-size: 13px; color: var(--text-soft); }
+  .ex-text strong { color: #fff; }
+
+  /* FOOTER */
+  .footer {
+    text-align: center;
+    padding: 32px;
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 16px;
+  }
+
+  .footer-mantra {
+    font-size: 18px;
+    font-weight: 700;
+    color: var(--green);
+    margin-bottom: 8px;
+  }
+
+  .footer-sub { font-size: 13px; color: var(--text-soft); }
+
+  /* COLOR UTILS */
+  .c-green { color: var(--green); }
+  .c-blue { color: var(--blue); }
+  .c-yellow { color: var(--yellow); }
+  .c-red { color: var(--red); }
+  .c-purple { color: var(--purple); }
+  .c-orange { color: var(--orange); }
+  .bg-green { background: rgba(0,229,160,0.1); }
+  .bg-blue { background: rgba(77,166,255,0.1); }
+  .bg-yellow { background: rgba(255,217,77,0.1); }
+  .bg-red { background: rgba(255,107,107,0.1); }
+  .bg-purple { background: rgba(181,123,255,0.1); }
+  .bg-orange { background: rgba(255,159,74,0.1); }
+
+  @media (max-width: 600px) {
+    .header h1 { font-size: 26px; }
+    .mantra-text { font-size: 17px; }
+    .pattern-condition { min-width: 140px; font-size: 11px; }
+    .hvs-label { width: 70px; font-size: 14px; }
+  }
+</style>
+</head>
+<body>
+<div class="container">
+
+  <!-- HEADER -->
+  <div class="header">
+    <div class="header-label">// DSA Survival Guide</div>
+    <h1>How to Tackle Any DSA Problem</h1>
+    <p>One mantra. One checklist. Every problem. Forever.</p>
+  </div>
+
+  <!-- THE MANTRA -->
+  <div class="mantra-box">
+    <div class="label">// The One Mantra</div>
+    <div class="mantra-text">
+      "<span>What do I have</span>, <span>what do I want</span>,<br>and what's the <span>smallest step</span> to get there?"
+    </div>
+    <div class="mantra-sub">Ask this before touching the keyboard. Every single time. No exceptions.</div>
+  </div>
+
+  <!-- STEP 1 — 5 SECOND CHECKLIST -->
+  <div class="section-title">// Step 1 — The 5-Second Checklist (read the problem, answer these)</div>
+  <div class="checklist-grid">
+    <div class="check-card">
+      <div class="check-num bg-green c-green">1</div>
+      <div class="check-body">
+        <div class="check-title">INPUT</div>
+        <div class="check-question">What is given to me?<br>Array? String? Number?</div>
+      </div>
+    </div>
+    <div class="check-card">
+      <div class="check-num bg-blue c-blue">2</div>
+      <div class="check-body">
+        <div class="check-title">OUTPUT</div>
+        <div class="check-question">What must I return?<br>Single value? Array? Yes/No?</div>
+      </div>
+    </div>
+    <div class="check-card">
+      <div class="check-num bg-yellow c-yellow">3</div>
+      <div class="check-body">
+        <div class="check-title">SIZE</div>
+        <div class="check-question">Whole array or part of it?<br>One element? Subarray?</div>
+      </div>
+    </div>
+    <div class="check-card">
+      <div class="check-num bg-purple c-purple">4</div>
+      <div class="check-body">
+        <div class="check-title">CONDITION</div>
+        <div class="check-question">Maximum? Minimum?<br>Count? Does it exist?</div>
+      </div>
+    </div>
+    <div class="check-card">
+      <div class="check-num bg-orange c-orange">5</div>
+      <div class="check-body">
+        <div class="check-title">MOVEMENT</div>
+        <div class="check-question">Fixed size window?<br>Variable? Any position?</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- STEP 2 — PATTERN MAP -->
+  <div class="section-title">// Step 2 — Match Your Answers to a Pattern</div>
+  <div class="pattern-section">
+
+    <div class="pattern-group">
+      <div class="pattern-group-title">Output type →</div>
+      <div class="pattern-rows">
+        <div class="pattern-row">
+          <div class="pattern-condition">output is yes/no</div>
+          <div class="pattern-arrow">→</div>
+          <div class="pattern-result c-green">Condition check inside loop</div>
+        </div>
+        <div class="pattern-row">
+          <div class="pattern-condition">output is single value</div>
+          <div class="pattern-arrow">→</div>
+          <div class="pattern-result c-green">Track one variable while looping</div>
+        </div>
+        <div class="pattern-row">
+          <div class="pattern-condition">output is an array</div>
+          <div class="pattern-arrow">→</div>
+          <div class="pattern-result c-green">Build result array while looping</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="pattern-group">
+      <div class="pattern-group-title">Size →</div>
+      <div class="pattern-rows">
+        <div class="pattern-row">
+          <div class="pattern-condition">whole array</div>
+          <div class="pattern-arrow">→</div>
+          <div class="pattern-result c-blue">Simple loop</div>
+        </div>
+        <div class="pattern-row">
+          <div class="pattern-condition">fixed size window</div>
+          <div class="pattern-arrow">→</div>
+          <div class="pattern-result c-blue">Sliding window (fixed)</div>
+        </div>
+        <div class="pattern-row">
+          <div class="pattern-condition">variable size window</div>
+          <div class="pattern-arrow">→</div>
+          <div class="pattern-result c-blue">Sliding window (shrink when invalid)</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="pattern-group">
+      <div class="pattern-group-title">Condition →</div>
+      <div class="pattern-rows">
+        <div class="pattern-row">
+          <div class="pattern-condition">maximum / minimum</div>
+          <div class="pattern-arrow">→</div>
+          <div class="pattern-result c-yellow">Update variable if bigger/smaller</div>
+        </div>
+        <div class="pattern-row">
+          <div class="pattern-condition">count occurrences</div>
+          <div class="pattern-arrow">→</div>
+          <div class="pattern-result c-yellow">Counter++</div>
+        </div>
+        <div class="pattern-row">
+          <div class="pattern-condition">seen before / pair exists</div>
+          <div class="pattern-arrow">→</div>
+          <div class="pattern-result c-yellow">HashMap / HashSet</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="pattern-group">
+      <div class="pattern-group-title">Movement →</div>
+      <div class="pattern-rows">
+        <div class="pattern-row">
+          <div class="pattern-condition">array is sorted</div>
+          <div class="pattern-arrow">→</div>
+          <div class="pattern-result c-purple">Binary Search or Two Pointers</div>
+        </div>
+        <div class="pattern-row">
+          <div class="pattern-condition">comparing both ends</div>
+          <div class="pattern-arrow">→</div>
+          <div class="pattern-result c-purple">Two Pointers (left + right)</div>
+        </div>
+        <div class="pattern-row">
+          <div class="pattern-condition">last seen affects current</div>
+          <div class="pattern-arrow">→</div>
+          <div class="pattern-result c-purple">Stack</div>
+        </div>
+        <div class="pattern-row">
+          <div class="pattern-condition">tree or graph</div>
+          <div class="pattern-arrow">→</div>
+          <div class="pattern-result c-purple">BFS (level) or DFS (deep)</div>
+        </div>
+        <div class="pattern-row">
+          <div class="pattern-condition">same subproblem repeats</div>
+          <div class="pattern-arrow">→</div>
+          <div class="pattern-result c-purple">Dynamic Programming</div>
+        </div>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- STEP 3 — HAVE WANT STEP -->
+  <div class="section-title">// Step 3 — Write HAVE / WANT / STEP in Plain English</div>
+  <div class="hvs-box">
+    <div class="hvs-row">
+      <div class="hvs-label c-green">HAVE</div>
+      <div class="hvs-content">
+        <strong>What is given to me?</strong>
+        <p>Write the input. Trace a simple example by hand. Don't skip this.</p>
+      </div>
+    </div>
+    <div class="hvs-row">
+      <div class="hvs-label c-blue">WANT</div>
+      <div class="hvs-content">
+        <strong>What must I return?</strong>
+        <p>Write the exact output. What does the answer look like?</p>
+      </div>
+    </div>
+    <div class="hvs-row">
+      <div class="hvs-label c-yellow">STEP</div>
+      <div class="hvs-content">
+        <strong>What's one small thing I can do to get closer?</strong>
+        <p>Not the full solution. Just one step. Your brain can always find one step.</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- STEP 4 — EXAMPLE -->
+  <div class="section-title">// Step 4 — See It in Action (Largest Sum Subarray)</div>
+  <div class="example-box">
+    <div class="example-problem">Problem: Find the largest sum of any contiguous subarray<br>Input: [-2, 1, -3, 4, -1, 2, 1, -5, 4] → Answer: 6</div>
+    <div class="example-steps">
+      <div class="ex-step">
+        <div class="ex-badge bg-green c-green">INPUT</div>
+        <div class="ex-text">Array of numbers — some negative, some positive ✅</div>
+      </div>
+      <div class="ex-step">
+        <div class="ex-badge bg-blue c-blue">OUTPUT</div>
+        <div class="ex-text">Single number — the biggest sum ✅</div>
+      </div>
+      <div class="ex-step">
+        <div class="ex-badge bg-yellow c-yellow">SIZE</div>
+        <div class="ex-text">Part of array (subarray) → <strong>variable size window</strong> ✅</div>
+      </div>
+      <div class="ex-step">
+        <div class="ex-badge bg-purple c-purple">CONDITION</div>
+        <div class="ex-text">Maximum → <strong>keep updating if bigger</strong> ✅</div>
+      </div>
+      <div class="ex-step">
+        <div class="ex-badge bg-orange c-orange">MOVEMENT</div>
+        <div class="ex-text">Variable size → <strong>sliding window, reset when sum goes negative</strong> ✅</div>
+      </div>
+      <div class="ex-step">
+        <div class="ex-badge bg-green c-green">STEP</div>
+        <div class="ex-text"><strong>Walk through array, keep running sum. If running sum goes negative — reset to 0 (starting fresh is better). Track the biggest sum seen.</strong></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- DAILY HABIT -->
+  <div class="section-title">// Your 35-Minute Daily Habit</div>
+  <div class="habit-steps">
+    <div class="habit-step">
+      <div class="habit-time">10 sec</div>
+      <div class="habit-dot" style="background:#00e5a0"></div>
+      <div>
+        <div class="habit-text">Run the 5-question checklist</div>
+        <div class="habit-sub">INPUT / OUTPUT / SIZE / CONDITION / MOVEMENT</div>
+      </div>
+    </div>
+    <div class="habit-step">
+      <div class="habit-time">20 sec</div>
+      <div class="habit-dot" style="background:#4da6ff"></div>
+      <div>
+        <div class="habit-text">Match to a pattern</div>
+        <div class="habit-sub">Use the pattern table above</div>
+      </div>
+    </div>
+    <div class="habit-step">
+      <div class="habit-time">30 sec</div>
+      <div class="habit-dot" style="background:#ffd94d"></div>
+      <div>
+        <div class="habit-text">Write HAVE / WANT / STEP in plain English</div>
+        <div class="habit-sub">No code yet — just words</div>
+      </div>
+    </div>
+    <div class="habit-step">
+      <div class="habit-time">15 min</div>
+      <div class="habit-dot" style="background:#b57bff"></div>
+      <div>
+        <div class="habit-text">Write the dumbest working solution first</div>
+        <div class="habit-sub">Brute force always beats blank page</div>
+      </div>
+    </div>
+    <div class="habit-step">
+      <div class="habit-time">5 min</div>
+      <div class="habit-dot" style="background:#ff9f4a"></div>
+      <div>
+        <div class="habit-text">Test manually on your example</div>
+        <div class="habit-sub">Trace through your own code line by line</div>
+      </div>
+    </div>
+    <div class="habit-step">
+      <div class="habit-time">5 min</div>
+      <div class="habit-dot" style="background:#ff6b6b"></div>
+      <div>
+        <div class="habit-text">Can it be improved? Try. If not — move on.</div>
+        <div class="habit-sub">Only AFTER it works — ask AI for better approach</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 3 RULES -->
+  <div class="section-title">// The 3 Rules — Never Break These</div>
+  <div class="rules">
+    <div class="rule-card">
+      <div class="rule-num c-green">01</div>
+      <div class="rule-title">Understand Before You Code</div>
+      <div class="rule-desc">Trace 2 examples by hand first. If you can't explain it in one sentence — you haven't understood it yet.</div>
+    </div>
+    <div class="rule-card">
+      <div class="rule-num c-blue">02</div>
+      <div class="rule-title">Dumb Solution Before Smart</div>
+      <div class="rule-desc">Always write brute force first. A working slow solution beats a blank page every single time.</div>
+    </div>
+    <div class="rule-card">
+      <div class="rule-num c-yellow">03</div>
+      <div class="rule-title">20 Minutes Before Any Help</div>
+      <div class="rule-desc">Struggle for 20 minutes minimum. The struggle IS the learning. AI after — never before.</div>
+    </div>
+  </div>
+
+  <!-- FOOTER -->
+  <div class="footer">
+    <div class="footer-mantra">"What do I have, what do I want, and what's the smallest step to get there?"</div>
+    <div class="footer-sub">One problem daily · 35 minutes · No AI for 20 minutes · Build the muscle 💪</div>
+  </div>
+
+</div>
+</body>
+</html>

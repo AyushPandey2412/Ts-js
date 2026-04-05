@@ -1,0 +1,965 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Logic Building Guide — Think Like a Programmer</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Fira+Code:wght@400;500;600&family=Outfit:wght@300;400;500;600;700;800;900&display=swap');
+
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --bg: #0a0a0c;
+    --card: #111113;
+    --card2: #171719;
+    --border: #222226;
+    --border2: #2e2e34;
+    --text: #efefef;
+    --soft: #999;
+    --faint: #444;
+    --green: #00e5a0;
+    --blue: #4da6ff;
+    --yellow: #ffd94d;
+    --red: #ff6b6b;
+    --purple: #b57bff;
+    --orange: #ff9f4a;
+    --pink: #ff6eb4;
+    --cyan: #4dd9ff;
+  }
+
+  body {
+    background: var(--bg);
+    font-family: 'Outfit', sans-serif;
+    color: var(--text);
+    padding: 32px 16px 100px;
+    line-height: 1.6;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  .wrap { max-width: 880px; margin: 0 auto; }
+
+  /* ── HEADER ── */
+  .hero {
+    text-align: center;
+    padding: 64px 32px;
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 24px;
+    margin-bottom: 48px;
+    position: relative;
+    overflow: hidden;
+  }
+
+  .hero::after {
+    content: '';
+    position: absolute;
+    bottom: -80px; left: 50%;
+    transform: translateX(-50%);
+    width: 500px; height: 200px;
+    background: radial-gradient(ellipse, rgba(0,229,160,0.07) 0%, transparent 70%);
+    pointer-events: none;
+  }
+
+  .hero-badge {
+    display: inline-block;
+    font-family: 'Fira Code', monospace;
+    font-size: 11px;
+    color: var(--green);
+    letter-spacing: 0.2em;
+    text-transform: uppercase;
+    border: 1px solid rgba(0,229,160,0.3);
+    padding: 5px 14px;
+    border-radius: 20px;
+    margin-bottom: 20px;
+  }
+
+  .hero h1 {
+    font-size: 44px;
+    font-weight: 900;
+    letter-spacing: -1.5px;
+    line-height: 1.1;
+    margin-bottom: 16px;
+    background: linear-gradient(135deg, #fff 30%, #666 100%);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+  }
+
+  .hero p {
+    font-size: 16px;
+    color: var(--soft);
+    font-weight: 300;
+    max-width: 520px;
+    margin: 0 auto;
+  }
+
+  /* ── SECTION ── */
+  .section { margin-bottom: 48px; }
+
+  .section-tag {
+    font-family: 'Fira Code', monospace;
+    font-size: 10px;
+    letter-spacing: 0.2em;
+    text-transform: uppercase;
+    color: var(--faint);
+    border-bottom: 1px solid var(--border);
+    padding-bottom: 10px;
+    margin-bottom: 20px;
+  }
+
+  /* ── TRUTH BOX ── */
+  .truth {
+    background: linear-gradient(135deg, rgba(255,107,107,0.06), rgba(255,159,74,0.06));
+    border: 1px solid rgba(255,107,107,0.2);
+    border-radius: 16px;
+    padding: 28px 32px;
+    margin-bottom: 48px;
+  }
+
+  .truth-title {
+    font-size: 13px;
+    font-weight: 700;
+    color: var(--red);
+    font-family: 'Fira Code', monospace;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    margin-bottom: 12px;
+  }
+
+  .truth p {
+    font-size: 15px;
+    color: var(--soft);
+    line-height: 1.8;
+  }
+
+  .truth p strong { color: var(--text); }
+
+  /* ── PHASE CARDS ── */
+  .phase {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 20px;
+    margin-bottom: 24px;
+    overflow: hidden;
+  }
+
+  .phase-header {
+    padding: 24px 28px 20px;
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    gap: 20px;
+    align-items: flex-start;
+  }
+
+  .phase-num {
+    font-family: 'Fira Code', monospace;
+    font-size: 28px;
+    font-weight: 600;
+    line-height: 1;
+    flex-shrink: 0;
+    margin-top: 4px;
+  }
+
+  .phase-info {}
+  .phase-label {
+    font-family: 'Fira Code', monospace;
+    font-size: 10px;
+    letter-spacing: 0.15em;
+    text-transform: uppercase;
+    margin-bottom: 4px;
+  }
+
+  .phase-title {
+    font-size: 22px;
+    font-weight: 700;
+    color: #fff;
+    margin-bottom: 6px;
+  }
+
+  .phase-sub { font-size: 13px; color: var(--soft); font-weight: 300; }
+
+  .phase-body { padding: 24px 28px; }
+
+  /* ── MENTAL MODEL ── */
+  .mental-model {
+    background: var(--card2);
+    border: 1px solid var(--border2);
+    border-radius: 12px;
+    padding: 20px 22px;
+    margin-bottom: 16px;
+    display: flex;
+    gap: 16px;
+    align-items: flex-start;
+  }
+
+  .mm-icon {
+    font-size: 22px;
+    flex-shrink: 0;
+    margin-top: 2px;
+  }
+
+  .mm-body {}
+  .mm-title { font-size: 15px; font-weight: 700; color: #fff; margin-bottom: 4px; }
+  .mm-desc { font-size: 13px; color: var(--soft); line-height: 1.65; }
+  .mm-desc strong { color: var(--text); }
+
+  /* ── EXERCISE ── */
+  .exercise {
+    background: var(--card2);
+    border: 1px solid var(--border2);
+    border-radius: 12px;
+    overflow: hidden;
+    margin-bottom: 16px;
+  }
+
+  .ex-header {
+    padding: 12px 18px;
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    gap: 12px;
+    align-items: center;
+  }
+
+  .ex-badge {
+    font-family: 'Fira Code', monospace;
+    font-size: 10px;
+    font-weight: 600;
+    padding: 3px 10px;
+    border-radius: 4px;
+    letter-spacing: 0.05em;
+  }
+
+  .ex-title { font-size: 14px; font-weight: 600; color: #fff; }
+
+  .ex-body { padding: 16px 18px; }
+
+  .ex-problem {
+    font-size: 13px;
+    color: var(--yellow);
+    font-family: 'Fira Code', monospace;
+    margin-bottom: 14px;
+    padding: 10px 14px;
+    background: rgba(255,217,77,0.05);
+    border-radius: 8px;
+    border-left: 3px solid var(--yellow);
+    line-height: 1.6;
+  }
+
+  .ex-steps { list-style: none; }
+
+  .ex-steps li {
+    font-size: 13px;
+    color: var(--soft);
+    padding: 6px 0 6px 20px;
+    position: relative;
+    border-bottom: 1px solid var(--border);
+    line-height: 1.6;
+  }
+
+  .ex-steps li:last-child { border-bottom: none; }
+
+  .ex-steps li::before {
+    content: attr(data-s);
+    position: absolute;
+    left: 0;
+    font-family: 'Fira Code', monospace;
+    font-size: 10px;
+    font-weight: 600;
+    top: 8px;
+  }
+
+  .ex-steps li strong { color: #fff; }
+
+  /* ── CODE ── */
+  .code {
+    background: #0d0d10;
+    border: 1px solid var(--border2);
+    border-radius: 10px;
+    padding: 16px 18px;
+    font-family: 'Fira Code', monospace;
+    font-size: 12px;
+    color: #ccc;
+    line-height: 1.8;
+    white-space: pre;
+    overflow-x: auto;
+    margin-top: 12px;
+  }
+
+  .code .cm { color: #555; }
+  .code .ck { color: var(--blue); }
+  .code .cv { color: var(--green); }
+  .code .cs { color: var(--yellow); }
+  .code .cn { color: var(--orange); }
+  .code .cf { color: var(--purple); }
+
+  /* ── THINKING STEPS ── */
+  .think-steps {
+    display: flex;
+    flex-direction: column;
+    gap: 0;
+    background: var(--card2);
+    border: 1px solid var(--border2);
+    border-radius: 14px;
+    overflow: hidden;
+    margin-bottom: 16px;
+  }
+
+  .think-step {
+    display: flex;
+    gap: 0;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .think-step:last-child { border-bottom: none; }
+
+  .think-left {
+    width: 56px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-family: 'Fira Code', monospace;
+    font-size: 13px;
+    font-weight: 600;
+    flex-shrink: 0;
+    border-right: 1px solid var(--border);
+  }
+
+  .think-content { padding: 16px 20px; flex: 1; }
+  .think-title { font-size: 14px; font-weight: 700; color: #fff; margin-bottom: 3px; }
+  .think-desc { font-size: 12.5px; color: var(--soft); line-height: 1.6; }
+  .think-desc strong { color: var(--text); }
+
+  /* ── MISTAKE CARDS ── */
+  .mistakes { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 16px; }
+
+  .mistake {
+    background: var(--card2);
+    border: 1px solid var(--border2);
+    border-radius: 12px;
+    padding: 18px 20px;
+  }
+
+  .mistake-icon { font-size: 20px; margin-bottom: 8px; }
+  .mistake-title { font-size: 13px; font-weight: 700; color: var(--red); margin-bottom: 6px; }
+  .mistake-fix { font-size: 12px; color: var(--soft); line-height: 1.6; }
+  .mistake-fix strong { color: var(--green); }
+
+  /* ── DAILY PLAN ── */
+  .day-grid { display: flex; flex-direction: column; gap: 10px; }
+
+  .day-row {
+    background: var(--card2);
+    border: 1px solid var(--border2);
+    border-radius: 10px;
+    display: flex;
+    align-items: stretch;
+    overflow: hidden;
+  }
+
+  .day-label {
+    width: 80px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-family: 'Fira Code', monospace;
+    font-size: 11px;
+    font-weight: 600;
+    flex-shrink: 0;
+    border-right: 1px solid var(--border);
+    padding: 12px 8px;
+    text-align: center;
+    line-height: 1.4;
+  }
+
+  .day-content { padding: 14px 18px; flex: 1; }
+  .day-title { font-size: 14px; font-weight: 600; color: #fff; margin-bottom: 3px; }
+  .day-desc { font-size: 12px; color: var(--soft); }
+
+  .day-tag {
+    font-family: 'Fira Code', monospace;
+    font-size: 10px;
+    padding: 2px 8px;
+    border-radius: 4px;
+    margin-left: 8px;
+    vertical-align: middle;
+  }
+
+  /* ── QUOTE BOX ── */
+  .quote {
+    border-left: 3px solid var(--green);
+    padding: 16px 20px;
+    margin: 20px 0;
+    background: rgba(0,229,160,0.04);
+    border-radius: 0 10px 10px 0;
+  }
+
+  .quote p { font-size: 15px; color: var(--soft); font-style: italic; line-height: 1.7; }
+  .quote p strong { color: var(--green); font-style: normal; }
+
+  /* ── RULE GRID ── */
+  .rule-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
+
+  .rule-card {
+    background: var(--card2);
+    border: 1px solid var(--border2);
+    border-radius: 14px;
+    padding: 24px 18px;
+    text-align: center;
+  }
+
+  .rule-n {
+    font-family: 'Fira Code', monospace;
+    font-size: 32px;
+    font-weight: 700;
+    margin-bottom: 8px;
+  }
+
+  .rule-title { font-size: 13px; font-weight: 700; color: #fff; margin-bottom: 6px; }
+  .rule-desc { font-size: 12px; color: var(--soft); line-height: 1.6; }
+
+  /* ── PROGRESS TRACKER ── */
+  .tracker {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    padding: 28px;
+    margin-bottom: 24px;
+  }
+
+  .tracker-title { font-size: 16px; font-weight: 700; margin-bottom: 16px; color: #fff; }
+
+  .track-rows { display: flex; flex-direction: column; gap: 8px; }
+
+  .track-row {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    font-size: 13px;
+    color: var(--soft);
+  }
+
+  .track-check {
+    width: 20px; height: 20px;
+    border: 2px solid var(--border2);
+    border-radius: 4px;
+    flex-shrink: 0;
+  }
+
+  .track-week {
+    font-family: 'Fira Code', monospace;
+    font-size: 10px;
+    color: var(--faint);
+    width: 60px;
+    flex-shrink: 0;
+  }
+
+  /* ── FOOTER ── */
+  .footer {
+    text-align: center;
+    padding: 40px 32px;
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 20px;
+    margin-top: 48px;
+  }
+
+  .footer-main { font-size: 20px; font-weight: 800; color: var(--green); margin-bottom: 10px; }
+  .footer-sub { font-size: 14px; color: var(--soft); line-height: 1.9; }
+
+  /* COLOR UTILS */
+  .c-green { color: var(--green); }
+  .c-blue { color: var(--blue); }
+  .c-yellow { color: var(--yellow); }
+  .c-red { color: var(--red); }
+  .c-purple { color: var(--purple); }
+  .c-orange { color: var(--orange); }
+  .c-pink { color: var(--pink); }
+  .c-cyan { color: var(--cyan); }
+
+  .bg-green { background: rgba(0,229,160,0.08); border-color: rgba(0,229,160,0.2) !important; }
+  .bg-blue { background: rgba(77,166,255,0.08); border-color: rgba(77,166,255,0.2) !important; }
+  .bg-yellow { background: rgba(255,217,77,0.08); border-color: rgba(255,217,77,0.2) !important; }
+  .bg-purple { background: rgba(181,123,255,0.08); border-color: rgba(181,123,255,0.2) !important; }
+  .bg-orange { background: rgba(255,159,74,0.08); border-color: rgba(255,159,74,0.2) !important; }
+  .bg-red { background: rgba(255,107,107,0.08); border-color: rgba(255,107,107,0.2) !important; }
+
+  @media (max-width: 620px) {
+    .hero h1 { font-size: 30px; }
+    .mistakes { grid-template-columns: 1fr; }
+    .rule-grid { grid-template-columns: 1fr; }
+    .phase-body { padding: 18px; }
+    .phase-header { padding: 18px; }
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <!-- HERO -->
+  <div class="hero">
+    <div class="hero-badge">// Logic Building Guide</div>
+    <h1>Think Like a<br>Programmer</h1>
+    <p>Not a collection of tricks. A complete rewiring of how your brain approaches problems — from blank to solution, every time.</p>
+  </div>
+
+  <!-- THE HONEST TRUTH -->
+  <div class="truth">
+    <div class="truth-title">⚠ The Honest Truth First</div>
+    <p>
+      Logic is not a gift. It is not IQ. It is not talent.<br><br>
+      <strong>Logic is a habit of asking the right questions in the right order.</strong><br><br>
+      Every programmer you admire — they don't see solutions faster than you. They've just asked these same questions so many times that it became automatic. That's the entire secret. Nothing more.
+    </p>
+  </div>
+
+  <!-- PHASE 1 — UNDERSTAND -->
+  <div class="section">
+    <div class="section-tag">// Phase 1 of 5 — Before You Think About Code</div>
+
+    <div class="phase">
+      <div class="phase-header">
+        <div class="phase-num c-green">01</div>
+        <div class="phase-info">
+          <div class="phase-label c-green">Phase One</div>
+          <div class="phase-title">Understand Before Everything</div>
+          <div class="phase-sub">Most people fail here. They start coding before they understand. That's why they get stuck.</div>
+        </div>
+      </div>
+      <div class="phase-body">
+
+        <div class="think-steps">
+          <div class="think-step">
+            <div class="think-left c-green">Q1</div>
+            <div class="think-content">
+              <div class="think-title">What is given to me?</div>
+              <div class="think-desc">Write down the input. What type is it? Array? Number? String? What are the constraints? <strong>Never assume — read carefully.</strong></div>
+            </div>
+          </div>
+          <div class="think-step">
+            <div class="think-left c-green">Q2</div>
+            <div class="think-content">
+              <div class="think-title">What must I return?</div>
+              <div class="think-desc">Write down the exact output. A number? An array? A boolean? <strong>If you can't state the output in one sentence — re-read the problem.</strong></div>
+            </div>
+          </div>
+          <div class="think-step">
+            <div class="think-left c-green">Q3</div>
+            <div class="think-content">
+              <div class="think-title">Trace a simple example by hand</div>
+              <div class="think-desc">Take the smallest possible input. Work through it manually with pen and paper. <strong>Your hand will reveal the pattern your brain can't see yet.</strong></div>
+            </div>
+          </div>
+          <div class="think-step">
+            <div class="think-left c-green">Q4</div>
+            <div class="think-content">
+              <div class="think-title">Can I explain it to a 10-year-old?</div>
+              <div class="think-desc">If yes — you understand it. If no — re-read. <strong>Complexity lives in misunderstanding, not in the problem itself.</strong></div>
+            </div>
+          </div>
+        </div>
+
+        <div class="exercise">
+          <div class="ex-header">
+            <span class="ex-badge bg-green c-green">Exercise</span>
+            <span class="ex-title">Practice This On: Find the second largest number in an array</span>
+          </div>
+          <div class="ex-body">
+            <div class="ex-problem">Input: [3, 7, 2, 9, 5]  →  Output: 7</div>
+            <ul class="ex-steps">
+              <li data-s="→"><strong>GIVEN:</strong> An array of numbers</li>
+              <li data-s="→"><strong>RETURN:</strong> The second biggest number</li>
+              <li data-s="→"><strong>TRACE:</strong> 3,7,2,9,5 — biggest is 9, second biggest is 7</li>
+              <li data-s="→"><strong>EXPLAIN:</strong> "Go through all numbers, track the top two biggest seen so far"</li>
+              <li data-s="✓">Now you understand it. NOW you can think about code.</li>
+            </ul>
+          </div>
+        </div>
+
+      </div>
+    </div>
+  </div>
+
+  <!-- PHASE 2 — THINK IN PLAIN ENGLISH -->
+  <div class="section">
+    <div class="section-tag">// Phase 2 of 5 — Think Before You Type</div>
+
+    <div class="phase">
+      <div class="phase-header">
+        <div class="phase-num c-blue">02</div>
+        <div class="phase-info">
+          <div class="phase-label c-blue">Phase Two</div>
+          <div class="phase-title">Write the Logic in Plain English First</div>
+          <div class="phase-sub">Code is just English translated to a programming language. Write the English first. Always.</div>
+        </div>
+      </div>
+      <div class="phase-body">
+
+        <div class="quote">
+          <p>"If you can't write it in English, you can't write it in code. <strong>Your logic lives in your language, not in your syntax.</strong>"</p>
+        </div>
+
+        <div class="mental-model">
+          <div class="mm-icon">📝</div>
+          <div class="mm-body">
+            <div class="mm-title">The Plain English Rule</div>
+            <div class="mm-desc">Before writing any code — write your solution as numbered English sentences. One sentence per step. If a step is too complicated to say in one sentence — <strong>break it into two steps.</strong> Keep breaking until every step is obvious.</div>
+          </div>
+        </div>
+
+        <div class="exercise">
+          <div class="ex-header">
+            <span class="ex-badge bg-blue c-blue">Example</span>
+            <span class="ex-title">Second Largest — English First</span>
+          </div>
+          <div class="ex-body">
+            <ul class="ex-steps">
+              <li data-s="1.">Start with the first element as both largest and second largest</li>
+              <li data-s="2.">Go through each number in the array one by one</li>
+              <li data-s="3.">If current number is bigger than largest — second largest becomes old largest, largest becomes current</li>
+              <li data-s="4.">Else if current number is bigger than second largest — update second largest</li>
+              <li data-s="5.">Return second largest</li>
+            </ul>
+            <div class="code"><span class="cm">// Now just translate line by line to Java/JS</span>
+<span class="ck">int</span> <span class="cv">first</span> = arr[<span class="cn">0</span>], <span class="cv">second</span> = Integer.MIN_VALUE;
+
+<span class="ck">for</span>(<span class="ck">int</span> i = <span class="cn">1</span>; i &lt; arr.length; i++) {
+  <span class="ck">if</span>(arr[i] > first) {
+    second = first;
+    first  = arr[i];
+  } <span class="ck">else if</span>(arr[i] > second) {
+    second = arr[i];
+  }
+}
+<span class="ck">return</span> second;</div>
+          </div>
+        </div>
+
+        <div class="mental-model">
+          <div class="mm-icon">🔁</div>
+          <div class="mm-body">
+            <div class="mm-title">The Translation Rule</div>
+            <div class="mm-desc">
+              Every English sentence maps directly to code:<br><br>
+              <strong>"Go through each number"</strong> → for loop<br>
+              <strong>"If this is bigger than that"</strong> → if statement<br>
+              <strong>"Remember the biggest seen"</strong> → a variable<br>
+              <strong>"Do this until condition"</strong> → while loop<br>
+              <strong>"Store all results"</strong> → an array or list
+            </div>
+          </div>
+        </div>
+
+      </div>
+    </div>
+  </div>
+
+  <!-- PHASE 3 — BRUTE FORCE FIRST -->
+  <div class="section">
+    <div class="section-tag">// Phase 3 of 5 — Always Start Dumb</div>
+
+    <div class="phase">
+      <div class="phase-header">
+        <div class="phase-num c-yellow">03</div>
+        <div class="phase-info">
+          <div class="phase-label c-yellow">Phase Three</div>
+          <div class="phase-title">Brute Force First. Optimize Later.</div>
+          <div class="phase-sub">The worst mistake beginners make: waiting for the perfect solution before writing anything.</div>
+        </div>
+      </div>
+      <div class="phase-body">
+
+        <div class="think-steps">
+          <div class="think-step">
+            <div class="think-left c-yellow">WHY</div>
+            <div class="think-content">
+              <div class="think-title">Why brute force first?</div>
+              <div class="think-desc"><strong>A working slow solution is infinitely better than no solution.</strong> Brute force proves your understanding is correct. Then you optimize from a working base — not from blank.</div>
+            </div>
+          </div>
+          <div class="think-step">
+            <div class="think-left c-yellow">HOW</div>
+            <div class="think-content">
+              <div class="think-title">How to find brute force?</div>
+              <div class="think-desc">Ask: <strong>"What's the most obvious, dumbest way to solve this — even if it's slow?"</strong> Usually it's: try every possibility, check each one, return the best. That's your brute force.</div>
+            </div>
+          </div>
+          <div class="think-step">
+            <div class="think-left c-yellow">THEN</div>
+            <div class="think-content">
+              <div class="think-title">Then ask: where is the waste?</div>
+              <div class="think-desc">After brute force works — look for repeated work. <strong>"Am I computing something multiple times that I could compute once?"</strong> That's where optimization lives.</div>
+            </div>
+          </div>
+        </div>
+
+        <div class="exercise">
+          <div class="ex-header">
+            <span class="ex-badge bg-yellow c-yellow">Example</span>
+            <span class="ex-title">Two Sum — Brute Force → Optimized</span>
+          </div>
+          <div class="ex-body">
+            <div class="ex-problem">Find two numbers that add up to target. Return their indices.</div>
+            <div class="code"><span class="cm">// BRUTE FORCE — check every pair (slow but correct)</span>
+<span class="ck">for</span>(<span class="ck">int</span> i = <span class="cn">0</span>; i &lt; n; i++) {
+  <span class="ck">for</span>(<span class="ck">int</span> j = i+<span class="cn">1</span>; j &lt; n; j++) {
+    <span class="ck">if</span>(arr[i] + arr[j] == target)
+      <span class="ck">return new int</span>[]{i, j};
+  }
+}
+
+<span class="cm">// OPTIMIZED — use HashMap (fast)</span>
+<span class="cm">// Ask: "What am I recomputing?" → checking if partner exists</span>
+<span class="cm">// Fix: store what we've seen in a map</span>
+Map&lt;Integer, Integer&gt; map = <span class="ck">new</span> HashMap&lt;&gt;();
+<span class="ck">for</span>(<span class="ck">int</span> i = <span class="cn">0</span>; i &lt; arr.length; i++) {
+  <span class="ck">int</span> need = target - arr[i];
+  <span class="ck">if</span>(map.containsKey(need))
+    <span class="ck">return new int</span>[]{map.get(need), i};
+  map.put(arr[i], i);
+}</div>
+          </div>
+        </div>
+
+      </div>
+    </div>
+  </div>
+
+  <!-- PHASE 4 — PATTERN RECOGNITION -->
+  <div class="section">
+    <div class="section-tag">// Phase 4 of 5 — See the Pattern, Not the Problem</div>
+
+    <div class="phase">
+      <div class="phase-header">
+        <div class="phase-num c-purple">04</div>
+        <div class="phase-info">
+          <div class="phase-label c-purple">Phase Four</div>
+          <div class="phase-title">Train Your Eyes to See Patterns</div>
+          <div class="phase-sub">Expert programmers don't solve problems. They recognize patterns. This is a trainable skill.</div>
+        </div>
+      </div>
+      <div class="phase-body">
+
+        <div class="quote">
+          <p>"After 100 problems, you won't be solving problems anymore. <strong>You'll be recognizing which pattern to apply.</strong> That's the entire game."</p>
+        </div>
+
+        <div class="mental-model">
+          <div class="mm-icon">🧠</div>
+          <div class="mm-body">
+            <div class="mm-title">The Pattern Recognition Training Method</div>
+            <div class="mm-desc">After solving EVERY problem — write one sentence: <strong>"This problem was about _____ because _____."</strong><br><br>
+            Example: "This problem was about <strong>HashMap</strong> because I needed to check if I'd seen a value before."<br>
+            Example: "This problem was about <strong>sliding window</strong> because I needed the best contiguous subarray."<br><br>
+            Do this 50 times. Pattern recognition becomes automatic.</div>
+          </div>
+        </div>
+
+        <div class="mental-model">
+          <div class="mm-icon">🔑</div>
+          <div class="mm-body">
+            <div class="mm-title">The 5 Pattern Triggers — Memorize These</div>
+            <div class="mm-desc">
+              <strong>Sorted array + search</strong> → Binary Search<br>
+              <strong>Pair / subarray / substring</strong> → Two Pointers or Sliding Window<br>
+              <strong>Seen before / frequency</strong> → HashMap<br>
+              <strong>Last thing matters</strong> → Stack<br>
+              <strong>Shortest path / level by level</strong> → BFS Queue<br>
+              <strong>Smaller version of same problem</strong> → Recursion / DP
+            </div>
+          </div>
+        </div>
+
+        <div class="exercise">
+          <div class="ex-header">
+            <span class="ex-badge bg-purple c-purple">Exercise</span>
+            <span class="ex-title">Pattern Recognition Drill — Which pattern is each problem?</span>
+          </div>
+          <div class="ex-body">
+            <ul class="ex-steps">
+              <li data-s="1.">"Find longest substring without repeating characters" → <strong>Sliding Window</strong> (variable window, shrink when duplicate)</li>
+              <li data-s="2.">"Check if array has a pair adding to target" → <strong>HashMap</strong> (seen before?)</li>
+              <li data-s="3.">"Find minimum in sorted rotated array" → <strong>Binary Search</strong> (sorted = binary search)</li>
+              <li data-s="4.">"Valid parentheses string" → <strong>Stack</strong> (last opened must match current closing)</li>
+              <li data-s="5.">"Number of islands in a grid" → <strong>BFS/DFS</strong> (connected components)</li>
+              <li data-s="✓">Practice naming the pattern BEFORE solving. That's the skill.</li>
+            </ul>
+          </div>
+        </div>
+
+      </div>
+    </div>
+  </div>
+
+  <!-- PHASE 5 — AFTER SOLVING -->
+  <div class="section">
+    <div class="section-tag">// Phase 5 of 5 — The Step Most People Skip</div>
+
+    <div class="phase">
+      <div class="phase-header">
+        <div class="phase-num c-orange">05</div>
+        <div class="phase-info">
+          <div class="phase-label c-orange">Phase Five</div>
+          <div class="phase-title">What You Do After Solving Matters More</div>
+          <div class="phase-sub">Solving a problem gives you 20% of the value. What you do after gives you the other 80%.</div>
+        </div>
+      </div>
+      <div class="phase-body">
+
+        <div class="think-steps">
+          <div class="think-step">
+            <div class="think-left c-orange">①</div>
+            <div class="think-content">
+              <div class="think-title">Explain your solution out loud</div>
+              <div class="think-desc">Talk through every line like you're teaching someone. <strong>If you stumble — that's exactly what you don't own yet.</strong> Fix that part.</div>
+            </div>
+          </div>
+          <div class="think-step">
+            <div class="think-left c-orange">②</div>
+            <div class="think-content">
+              <div class="think-title">Write the one-sentence pattern label</div>
+              <div class="think-desc">"This was a <strong>[pattern]</strong> problem because <strong>[reason]</strong>." File this in your brain. This is pattern recognition training.</div>
+            </div>
+          </div>
+          <div class="think-step">
+            <div class="think-left c-orange">③</div>
+            <div class="think-content">
+              <div class="think-title">Ask: what if the input changes?</div>
+              <div class="think-desc">What if array is sorted? What if it has negatives? What if it's empty? <strong>Testing edge cases builds defensive thinking</strong> — what interviewers actually test.</div>
+            </div>
+          </div>
+          <div class="think-step">
+            <div class="think-left c-orange">④</div>
+            <div class="think-content">
+              <div class="think-title">Solve it again from scratch next day</div>
+              <div class="think-desc">Don't look at your solution. Solve it fresh. <strong>If you can solve it cold — you own it.</strong> If you can't — you memorized it, not learned it.</div>
+            </div>
+          </div>
+        </div>
+
+      </div>
+    </div>
+  </div>
+
+  <!-- COMMON MISTAKES -->
+  <div class="section">
+    <div class="section-tag">// The 6 Mistakes That Kill Logic Growth</div>
+    <div class="mistakes">
+      <div class="mistake">
+        <div class="mistake-icon">😵</div>
+        <div class="mistake-title">Jumping to code immediately</div>
+        <div class="mistake-fix">Fix: <strong>Always write HAVE / WANT / STEP first.</strong> Minimum 2 minutes before touching keyboard.</div>
+      </div>
+      <div class="mistake">
+        <div class="mistake-icon">🤖</div>
+        <div class="mistake-title">Opening AI when stuck</div>
+        <div class="mistake-fix">Fix: <strong>20 minutes minimum struggle.</strong> Ask for a hint only — never the solution.</div>
+      </div>
+      <div class="mistake">
+        <div class="mistake-icon">📖</div>
+        <div class="mistake-title">Reading the solution instead of solving</div>
+        <div class="mistake-fix">Fix: <strong>Reading solutions builds zero muscle.</strong> Only attempt counts. Wrong attempt still counts.</div>
+      </div>
+      <div class="mistake">
+        <div class="mistake-icon">🏃</div>
+        <div class="mistake-title">Rushing to the next problem</div>
+        <div class="mistake-fix">Fix: <strong>One problem deeply understood</strong> beats 10 problems half-understood. Always.</div>
+      </div>
+      <div class="mistake">
+        <div class="mistake-icon">🧩</div>
+        <div class="mistake-title">Memorizing solutions not patterns</div>
+        <div class="mistake-fix">Fix: After each problem ask <strong>"WHY does this approach work?"</strong> The why transfers. The solution doesn't.</div>
+      </div>
+      <div class="mistake">
+        <div class="mistake-icon">📅</div>
+        <div class="mistake-title">Practicing inconsistently</div>
+        <div class="mistake-fix">Fix: <strong>1 problem daily beats 10 problems once a week.</strong> Consistency builds the subconscious pattern library.</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 30 DAY PLAN -->
+  <div class="section">
+    <div class="section-tag">// Your 30-Day Logic Building Plan</div>
+    <div class="day-grid">
+      <div class="day-row">
+        <div class="day-label c-green">Week 1<br>Days 1–7</div>
+        <div class="day-content">
+          <div class="day-title">Foundation <span class="day-tag bg-green c-green">Arrays + Strings</span></div>
+          <div class="day-desc">1 problem/day. Focus 100% on HAVE/WANT/STEP + plain English first. Don't care about speed. Care about process. Problems: max, min, sum, reverse, palindrome, anagram.</div>
+        </div>
+      </div>
+      <div class="day-row">
+        <div class="day-label c-blue">Week 2<br>Days 8–14</div>
+        <div class="day-content">
+          <div class="day-title">Lookup Thinking <span class="day-tag bg-blue c-blue">HashMap + Two Pointers</span></div>
+          <div class="day-desc">Start recognizing "have I seen this before?" pattern. 1–2 problems/day. After each — write the one-sentence pattern label. Problems: Two Sum, group anagrams, valid palindrome II.</div>
+        </div>
+      </div>
+      <div class="day-row">
+        <div class="day-label c-yellow">Week 3<br>Days 15–21</div>
+        <div class="day-content">
+          <div class="day-title">Window Thinking <span class="day-tag bg-yellow c-yellow">Sliding Window + Binary Search</span></div>
+          <div class="day-desc">Train the "expand and shrink" mental model. Binary search on sorted arrays. 2 problems/day. Re-solve week 1 problems from scratch — check if you own them.</div>
+        </div>
+      </div>
+      <div class="day-row">
+        <div class="day-label c-purple">Week 4<br>Days 22–30</div>
+        <div class="day-content">
+          <div class="day-title">Recursive Thinking <span class="day-tag bg-purple c-purple">Stack + Recursion + Trees</span></div>
+          <div class="day-desc">The hardest mental shift — trusting recursion. Draw every call on paper first. 2 problems/day. Goal: feel the base case → recursive case rhythm click naturally.</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- THE 5 GOLDEN RULES -->
+  <div class="section">
+    <div class="section-tag">// The 5 Golden Rules of Logic Building</div>
+    <div class="rule-grid">
+      <div class="rule-card">
+        <div class="rule-n c-green">01</div>
+        <div class="rule-title">Paper Before Screen</div>
+        <div class="rule-desc">Always trace examples by hand first. Your hand knows things your brain forgets.</div>
+      </div>
+      <div class="rule-card">
+        <div class="rule-n c-blue">02</div>
+        <div class="rule-title">English Before Code</div>
+        <div class="rule-desc">Write the solution in plain English sentences before any syntax. Code is just translated English.</div>
+      </div>
+      <div class="rule-card">
+        <div class="rule-n c-yellow">03</div>
+        <div class="rule-title">Dumb Before Smart</div>
+        <div class="rule-desc">Brute force first, always. A working slow solution is your launch pad for optimization.</div>
+      </div>
+      <div class="rule-card">
+        <div class="rule-n c-purple">04</div>
+        <div class="rule-title">Why Before Next</div>
+        <div class="rule-desc">Never move to the next problem without knowing WHY your solution works. The why is everything.</div>
+      </div>
+      <div class="rule-card">
+        <div class="rule-n c-orange">05</div>
+        <div class="rule-title">Daily Over Binge</div>
+        <div class="rule-desc">1 problem every day beats 10 problems on Sunday. Logic builds through consistency, not volume.</div>
+      </div>
+      <div class="rule-card">
+        <div class="rule-n c-red">⚠</div>
+        <div class="rule-title">The Anti-Rule</div>
+        <div class="rule-desc">Never open AI for the answer. A hint is okay after 20 mins. The answer is theft from your own growth.</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- FOOTER -->
+  <div class="footer">
+    <div class="footer-main">Logic is not found. It is built.</div>
+    <div class="footer-sub">
+      One problem. Every day. Full process — no shortcuts.<br>
+      <strong>Paper → English → Brute Force → Pattern → Why</strong><br><br>
+      30 days from now, you won't recognize how you used to think. 🔥
+    </div>
+  </div>
+
+</div>
+</body>
+</html>

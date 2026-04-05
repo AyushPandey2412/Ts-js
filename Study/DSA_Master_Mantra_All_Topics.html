@@ -1,0 +1,1261 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>DSA Master Mantra — All Topics</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Fira+Code:wght@400;500;600&family=Outfit:wght@300;400;500;600;700;800&display=swap');
+
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --bg: #0d0d0f;
+    --card: #141416;
+    --card2: #1a1a1e;
+    --border: #2a2a2e;
+    --text: #f0f0f0;
+    --text-soft: #999;
+    --text-faint: #555;
+    --green: #00e5a0;
+    --blue: #4da6ff;
+    --yellow: #ffd94d;
+    --red: #ff6b6b;
+    --purple: #b57bff;
+    --orange: #ff9f4a;
+    --pink: #ff6eb4;
+    --cyan: #4dd9ff;
+    --lime: #a8ff3e;
+  }
+
+  body {
+    background: var(--bg);
+    font-family: 'Outfit', sans-serif;
+    color: var(--text);
+    padding: 32px 16px 80px;
+    line-height: 1.6;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  .container { max-width: 920px; margin: 0 auto; }
+
+  /* HEADER */
+  .header {
+    text-align: center;
+    margin-bottom: 40px;
+    padding: 52px 32px;
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 20px;
+    position: relative;
+    overflow: hidden;
+  }
+
+  .header::before {
+    content: '';
+    position: absolute;
+    top: -80px; left: 50%;
+    transform: translateX(-50%);
+    width: 400px; height: 400px;
+    background: radial-gradient(circle, rgba(0,229,160,0.06) 0%, transparent 70%);
+    pointer-events: none;
+  }
+
+  .header-label {
+    font-family: 'Fira Code', monospace;
+    font-size: 11px;
+    color: var(--green);
+    letter-spacing: 0.2em;
+    text-transform: uppercase;
+    margin-bottom: 14px;
+  }
+
+  .header h1 {
+    font-size: 38px;
+    font-weight: 800;
+    letter-spacing: -1px;
+    margin-bottom: 10px;
+    background: linear-gradient(135deg, #fff 0%, #777 100%);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+  }
+
+  .header p { color: var(--text-soft); font-size: 15px; font-weight: 300; }
+
+  /* UNIVERSAL MANTRA */
+  .universal {
+    background: linear-gradient(135deg, rgba(0,229,160,0.07), rgba(77,166,255,0.07));
+    border: 1px solid rgba(0,229,160,0.2);
+    border-radius: 16px;
+    padding: 32px;
+    margin-bottom: 48px;
+    text-align: center;
+  }
+
+  .universal .label {
+    font-family: 'Fira Code', monospace;
+    font-size: 11px;
+    color: var(--green);
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    margin-bottom: 14px;
+  }
+
+  .universal-mantra {
+    font-size: 20px;
+    font-weight: 700;
+    color: #fff;
+    line-height: 1.5;
+    margin-bottom: 12px;
+  }
+
+  .universal-mantra span { color: var(--green); }
+  .universal-sub { font-size: 13px; color: var(--text-soft); }
+
+  /* NAV */
+  .nav {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-bottom: 40px;
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 16px;
+  }
+
+  .nav a {
+    font-family: 'Fira Code', monospace;
+    font-size: 11px;
+    padding: 6px 12px;
+    border-radius: 6px;
+    text-decoration: none;
+    border: 1px solid var(--border);
+    color: var(--text-soft);
+    transition: all 0.15s;
+    white-space: nowrap;
+  }
+
+  .nav a:hover { color: #fff; border-color: #555; }
+
+  /* TOPIC CARD */
+  .topic {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 20px;
+    margin-bottom: 28px;
+    overflow: hidden;
+  }
+
+  .topic-header {
+    padding: 24px 28px 20px;
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    align-items: flex-start;
+    gap: 18px;
+  }
+
+  .topic-icon {
+    font-size: 28px;
+    line-height: 1;
+    margin-top: 2px;
+    flex-shrink: 0;
+  }
+
+  .topic-meta { flex: 1; }
+
+  .topic-num {
+    font-family: 'Fira Code', monospace;
+    font-size: 10px;
+    letter-spacing: 0.15em;
+    text-transform: uppercase;
+    margin-bottom: 4px;
+  }
+
+  .topic-title {
+    font-size: 20px;
+    font-weight: 700;
+    color: #fff;
+    margin-bottom: 6px;
+  }
+
+  .topic-mantra {
+    font-size: 13px;
+    font-style: italic;
+    padding: 8px 14px;
+    border-radius: 8px;
+    display: inline-block;
+    margin-top: 4px;
+    font-weight: 500;
+  }
+
+  .topic-body {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 0;
+  }
+
+  .topic-col {
+    padding: 20px 28px;
+    border-right: 1px solid var(--border);
+  }
+
+  .topic-col:last-child { border-right: none; }
+
+  .col-label {
+    font-family: 'Fira Code', monospace;
+    font-size: 10px;
+    letter-spacing: 0.15em;
+    text-transform: uppercase;
+    margin-bottom: 12px;
+  }
+
+  /* TRIGGER QUESTIONS */
+  .trigger-list { list-style: none; }
+
+  .trigger-list li {
+    font-size: 13px;
+    color: var(--text-soft);
+    padding: 5px 0;
+    padding-left: 16px;
+    position: relative;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .trigger-list li:last-child { border-bottom: none; }
+
+  .trigger-list li::before {
+    content: '?';
+    position: absolute;
+    left: 0;
+    font-family: 'Fira Code', monospace;
+    font-size: 10px;
+    font-weight: 600;
+    top: 6px;
+  }
+
+  /* STEPS */
+  .step-list { list-style: none; }
+
+  .step-list li {
+    font-size: 12.5px;
+    color: var(--text-soft);
+    padding: 4px 0 4px 20px;
+    position: relative;
+    line-height: 1.5;
+  }
+
+  .step-list li::before {
+    content: attr(data-n);
+    position: absolute;
+    left: 0;
+    font-family: 'Fira Code', monospace;
+    font-size: 10px;
+    font-weight: 600;
+    top: 5px;
+  }
+
+  .step-list li strong { color: #fff; }
+
+  /* KEYWORDS + EXAMPLES ROW */
+  .topic-footer {
+    padding: 14px 28px;
+    border-top: 1px solid var(--border);
+    display: flex;
+    gap: 32px;
+    flex-wrap: wrap;
+    align-items: flex-start;
+  }
+
+  .kw-block { flex: 1; min-width: 200px; }
+
+  .kw-label {
+    font-family: 'Fira Code', monospace;
+    font-size: 10px;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--text-faint);
+    margin-bottom: 8px;
+  }
+
+  .kw-tags { display: flex; flex-wrap: wrap; gap: 6px; }
+
+  .kw-tag {
+    font-family: 'Fira Code', monospace;
+    font-size: 10.5px;
+    padding: 3px 9px;
+    border-radius: 4px;
+    border: 1px solid var(--border);
+    color: var(--text-soft);
+    background: var(--card2);
+  }
+
+  .ex-tag {
+    font-size: 11px;
+    padding: 3px 9px;
+    border-radius: 4px;
+    color: var(--text-soft);
+    background: var(--card2);
+    border: 1px solid var(--border);
+  }
+
+  /* CODE SNIPPET */
+  .code-block {
+    background: var(--card2);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 14px 16px;
+    margin-top: 8px;
+    font-family: 'Fira Code', monospace;
+    font-size: 11.5px;
+    color: #ccc;
+    line-height: 1.7;
+    white-space: pre;
+    overflow-x: auto;
+  }
+
+  .code-block .cm { color: var(--text-faint); }
+  .code-block .ck { color: var(--blue); }
+  .code-block .cv { color: var(--green); }
+  .code-block .cs { color: var(--yellow); }
+  .code-block .cn { color: var(--orange); }
+
+  /* TOPIC FULL WIDTH COL */
+  .topic-body.full .topic-col {
+    grid-column: 1 / -1;
+    border-right: none;
+  }
+
+  .topic-body.three {
+    grid-template-columns: 1fr 1fr 1fr;
+  }
+
+  /* COLOR THEMES */
+  .t-green  { --tc: var(--green);  }
+  .t-blue   { --tc: var(--blue);   }
+  .t-yellow { --tc: var(--yellow); }
+  .t-purple { --tc: var(--purple); }
+  .t-red    { --tc: var(--red);    }
+  .t-orange { --tc: var(--orange); }
+  .t-pink   { --tc: var(--pink);   }
+  .t-cyan   { --tc: var(--cyan);   }
+  .t-lime   { --tc: var(--lime);   }
+
+  .topic .topic-num          { color: var(--tc); }
+  .topic .col-label          { color: var(--tc); }
+  .topic .trigger-list li::before { color: var(--tc); }
+  .topic .step-list li::before    { color: var(--tc); }
+  .topic .topic-mantra       { background: color-mix(in srgb, var(--tc) 10%, transparent); color: var(--tc); border: 1px solid color-mix(in srgb, var(--tc) 25%, transparent); }
+
+  /* SECTION DIVIDER */
+  .divider {
+    text-align: center;
+    margin: 48px 0 32px;
+    position: relative;
+  }
+
+  .divider::before {
+    content: '';
+    position: absolute;
+    top: 50%; left: 0; right: 0;
+    height: 1px;
+    background: var(--border);
+  }
+
+  .divider span {
+    position: relative;
+    background: var(--bg);
+    padding: 0 16px;
+    font-family: 'Fira Code', monospace;
+    font-size: 11px;
+    color: var(--text-faint);
+    letter-spacing: 0.15em;
+    text-transform: uppercase;
+  }
+
+  /* FOOTER */
+  .footer {
+    text-align: center;
+    padding: 36px;
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    margin-top: 48px;
+  }
+
+  .footer-title { font-size: 17px; font-weight: 700; color: var(--green); margin-bottom: 8px; }
+  .footer-sub { font-size: 13px; color: var(--text-soft); line-height: 1.8; }
+
+  @media (max-width: 640px) {
+    .topic-body { grid-template-columns: 1fr; }
+    .topic-body .topic-col { border-right: none; border-bottom: 1px solid var(--border); }
+    .topic-body .topic-col:last-child { border-bottom: none; }
+    .topic-body.three { grid-template-columns: 1fr; }
+    .header h1 { font-size: 26px; }
+    .universal-mantra { font-size: 16px; }
+    .code-block { font-size: 10px; }
+  }
+</style>
+</head>
+<body>
+<div class="container">
+
+  <!-- HEADER -->
+  <div class="header">
+    <div class="header-label">// DSA Master Guide — All Topics</div>
+    <h1>One Mantra Per Topic</h1>
+    <p>Every DSA category. One trigger question. One approach. One starting template.</p>
+  </div>
+
+  <!-- UNIVERSAL MANTRA -->
+  <div class="universal">
+    <div class="label">// The Universal Mantra (works for everything)</div>
+    <div class="universal-mantra">"<span>What do I have</span>, <span>what do I want</span>, and what's the <span>smallest step</span> to get there?"</div>
+    <div class="universal-sub">Apply this FIRST on every problem before anything below. Then use the topic-specific mantra.</div>
+  </div>
+
+  <!-- NAV -->
+  <div class="nav">
+    <a href="#arrays">Arrays</a>
+    <a href="#strings">Strings</a>
+    <a href="#hashmap">HashMap</a>
+    <a href="#twopointers">Two Pointers</a>
+    <a href="#sliding">Sliding Window</a>
+    <a href="#stack">Stack</a>
+    <a href="#queue">Queue</a>
+    <a href="#linked">Linked List</a>
+    <a href="#binary">Binary Search</a>
+    <a href="#recursion">Recursion</a>
+    <a href="#trees">Trees</a>
+    <a href="#graphs">Graphs</a>
+    <a href="#dp">Dynamic Programming</a>
+    <a href="#greedy">Greedy</a>
+    <a href="#heap">Heap / Priority Queue</a>
+  </div>
+
+  <div class="divider"><span>// linear data structures</span></div>
+
+  <!-- 1. ARRAYS -->
+  <div class="topic t-green" id="arrays">
+    <div class="topic-header">
+      <div class="topic-icon">🔢</div>
+      <div class="topic-meta">
+        <div class="topic-num">Topic 01 · Arrays</div>
+        <div class="topic-title">Arrays</div>
+        <div class="topic-mantra">"Can I solve this by walking through once and tracking one thing?"</div>
+      </div>
+    </div>
+    <div class="topic-body">
+      <div class="topic-col">
+        <div class="col-label">Trigger Questions</div>
+        <ul class="trigger-list">
+          <li>Am I looking for a max/min/sum across the whole array?</li>
+          <li>Do I need to check every element once?</li>
+          <li>Is the answer a single value I build while looping?</li>
+          <li>Can I solve it without extra space?</li>
+        </ul>
+      </div>
+      <div class="topic-col">
+        <div class="col-label">Default Approach</div>
+        <ul class="step-list">
+          <li data-n="1."><strong>Set a result variable</strong> — first element or 0</li>
+          <li data-n="2."><strong>Loop through array</strong> — index 0 to end</li>
+          <li data-n="3."><strong>Update result</strong> — when condition is met</li>
+          <li data-n="4."><strong>Return result</strong> after loop ends</li>
+        </ul>
+        <div class="code-block"><span class="ck">let</span> <span class="cv">result</span> = arr[<span class="cn">0</span>]
+<span class="ck">for</span>(<span class="ck">let</span> i = <span class="cn">0</span>; i &lt; arr.length; i++) {
+  <span class="ck">if</span>(arr[i] &gt; result) result = arr[i]
+}
+<span class="ck">return</span> result</div>
+      </div>
+    </div>
+    <div class="topic-footer">
+      <div class="kw-block">
+        <div class="kw-label">Magic Words</div>
+        <div class="kw-tags">
+          <span class="kw-tag">maximum</span><span class="kw-tag">minimum</span><span class="kw-tag">sum</span><span class="kw-tag">count</span><span class="kw-tag">rotate</span><span class="kw-tag">reverse</span><span class="kw-tag">duplicate</span>
+        </div>
+      </div>
+      <div class="kw-block">
+        <div class="kw-label">Classic Problems</div>
+        <div class="kw-tags">
+          <span class="ex-tag">Max in array</span><span class="ex-tag">Second largest</span><span class="ex-tag">Move zeros</span><span class="ex-tag">Missing number</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 2. STRINGS -->
+  <div class="topic t-cyan" id="strings">
+    <div class="topic-header">
+      <div class="topic-icon">🔤</div>
+      <div class="topic-meta">
+        <div class="topic-num">Topic 02 · Strings</div>
+        <div class="topic-title">Strings</div>
+        <div class="topic-mantra">"Is this a character frequency problem or a pattern matching problem?"</div>
+      </div>
+    </div>
+    <div class="topic-body">
+      <div class="topic-col">
+        <div class="col-label">Trigger Questions</div>
+        <ul class="trigger-list">
+          <li>Do I need to count how often each character appears?</li>
+          <li>Am I checking if two strings are related (anagram, palindrome)?</li>
+          <li>Am I looking for a substring pattern?</li>
+          <li>Can I use the string as an array of characters?</li>
+        </ul>
+      </div>
+      <div class="topic-col">
+        <div class="col-label">Default Approach</div>
+        <ul class="step-list">
+          <li data-n="1."><strong>Frequency problem?</strong> → Use HashMap to count chars</li>
+          <li data-n="2."><strong>Palindrome?</strong> → Two pointers from both ends</li>
+          <li data-n="3."><strong>Anagram?</strong> → Compare frequency maps of both strings</li>
+          <li data-n="4."><strong>Substring?</strong> → Sliding window</li>
+        </ul>
+        <div class="code-block"><span class="cm">// frequency map — most string problems</span>
+<span class="ck">let</span> <span class="cv">map</span> = {}
+<span class="ck">for</span>(<span class="ck">let</span> ch <span class="ck">of</span> s) {
+  map[ch] = (map[ch] || <span class="cn">0</span>) + <span class="cn">1</span>
+}</div>
+      </div>
+    </div>
+    <div class="topic-footer">
+      <div class="kw-block">
+        <div class="kw-label">Magic Words</div>
+        <div class="kw-tags">
+          <span class="kw-tag">anagram</span><span class="kw-tag">palindrome</span><span class="kw-tag">frequency</span><span class="kw-tag">substring</span><span class="kw-tag">reverse</span><span class="kw-tag">unique</span>
+        </div>
+      </div>
+      <div class="kw-block">
+        <div class="kw-label">Classic Problems</div>
+        <div class="kw-tags">
+          <span class="ex-tag">Valid anagram</span><span class="ex-tag">Valid palindrome</span><span class="ex-tag">Longest unique substring</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 3. HASHMAP -->
+  <div class="topic t-yellow" id="hashmap">
+    <div class="topic-header">
+      <div class="topic-icon">🗺️</div>
+      <div class="topic-meta">
+        <div class="topic-num">Topic 03 · HashMap / HashSet</div>
+        <div class="topic-title">HashMap / HashSet</div>
+        <div class="topic-mantra">"Have I seen this before? Do I need to remember something for later?"</div>
+      </div>
+    </div>
+    <div class="topic-body">
+      <div class="topic-col">
+        <div class="col-label">Trigger Questions</div>
+        <ul class="trigger-list">
+          <li>Do I need to find a pair that adds to a target?</li>
+          <li>Am I checking if something was seen before?</li>
+          <li>Do I need to count frequency of elements?</li>
+          <li>Am I grouping elements by some property?</li>
+        </ul>
+      </div>
+      <div class="topic-col">
+        <div class="col-label">Default Approach</div>
+        <ul class="step-list">
+          <li data-n="1."><strong>Create empty map/set</strong> before the loop</li>
+          <li data-n="2."><strong>For each element</strong> — check if what you NEED is in the map</li>
+          <li data-n="3."><strong>If found</strong> → answer found, return it</li>
+          <li data-n="4."><strong>If not found</strong> → store current element in map</li>
+        </ul>
+        <div class="code-block"><span class="ck">let</span> <span class="cv">map</span> = <span class="ck">new</span> Map()
+<span class="ck">for</span>(<span class="ck">let</span> i = <span class="cn">0</span>; i &lt; arr.length; i++) {
+  <span class="ck">let</span> need = target - arr[i]
+  <span class="ck">if</span>(map.has(need)) <span class="ck">return</span> [map.get(need), i]
+  map.set(arr[i], i)
+}</div>
+      </div>
+    </div>
+    <div class="topic-footer">
+      <div class="kw-block">
+        <div class="kw-label">Magic Words</div>
+        <div class="kw-tags">
+          <span class="kw-tag">pair</span><span class="kw-tag">two sum</span><span class="kw-tag">duplicate</span><span class="kw-tag">frequency</span><span class="kw-tag">group</span><span class="kw-tag">seen before</span>
+        </div>
+      </div>
+      <div class="kw-block">
+        <div class="kw-label">Classic Problems</div>
+        <div class="kw-tags">
+          <span class="ex-tag">Two Sum</span><span class="ex-tag">Group Anagrams</span><span class="ex-tag">First duplicate</span><span class="ex-tag">Top K frequent</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 4. TWO POINTERS -->
+  <div class="topic t-blue" id="twopointers">
+    <div class="topic-header">
+      <div class="topic-icon">👉👈</div>
+      <div class="topic-meta">
+        <div class="topic-num">Topic 04 · Two Pointers</div>
+        <div class="topic-title">Two Pointers</div>
+        <div class="topic-mantra">"Can I use one pointer from the left and one from the right and move them toward each other?"</div>
+      </div>
+    </div>
+    <div class="topic-body">
+      <div class="topic-col">
+        <div class="col-label">Trigger Questions</div>
+        <ul class="trigger-list">
+          <li>Is the array sorted (or can I sort it)?</li>
+          <li>Am I looking for a pair that satisfies a condition?</li>
+          <li>Am I checking something from both ends (palindrome)?</li>
+          <li>Do I need to remove duplicates in-place?</li>
+        </ul>
+      </div>
+      <div class="topic-col">
+        <div class="col-label">Default Approach</div>
+        <ul class="step-list">
+          <li data-n="1."><strong>left = 0, right = end</strong> — place pointers at both ends</li>
+          <li data-n="2."><strong>while left &lt; right</strong> — loop until they meet</li>
+          <li data-n="3."><strong>Check condition</strong> — too big? move right left. Too small? move left right.</li>
+          <li data-n="4."><strong>Found it?</strong> — return answer</li>
+        </ul>
+        <div class="code-block"><span class="ck">let</span> <span class="cv">left</span> = <span class="cn">0</span>, <span class="cv">right</span> = arr.length - <span class="cn">1</span>
+<span class="ck">while</span>(left &lt; right) {
+  <span class="ck">let</span> sum = arr[left] + arr[right]
+  <span class="ck">if</span>(sum === target) <span class="ck">return</span> [left, right]
+  <span class="ck">else if</span>(sum &lt; target) left++
+  <span class="ck">else</span> right--
+}</div>
+      </div>
+    </div>
+    <div class="topic-footer">
+      <div class="kw-block">
+        <div class="kw-label">Magic Words</div>
+        <div class="kw-tags">
+          <span class="kw-tag">sorted array</span><span class="kw-tag">pair sum</span><span class="kw-tag">palindrome</span><span class="kw-tag">remove duplicates</span><span class="kw-tag">container</span>
+        </div>
+      </div>
+      <div class="kw-block">
+        <div class="kw-label">Classic Problems</div>
+        <div class="kw-tags">
+          <span class="ex-tag">Two Sum II</span><span class="ex-tag">Valid Palindrome</span><span class="ex-tag">Container with water</span><span class="ex-tag">3Sum</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 5. SLIDING WINDOW -->
+  <div class="topic t-orange" id="sliding">
+    <div class="topic-header">
+      <div class="topic-icon">🪟</div>
+      <div class="topic-meta">
+        <div class="topic-num">Topic 05 · Sliding Window</div>
+        <div class="topic-title">Sliding Window</div>
+        <div class="topic-mantra">"Am I looking for the best subarray or substring? Expand right, shrink left when invalid."</div>
+      </div>
+    </div>
+    <div class="topic-body">
+      <div class="topic-col">
+        <div class="col-label">Trigger Questions</div>
+        <ul class="trigger-list">
+          <li>Am I looking for a contiguous subarray/substring?</li>
+          <li>Is the window size fixed (k elements) or variable?</li>
+          <li>Am I maximizing or minimizing the window?</li>
+          <li>Does adding an element violate a constraint?</li>
+        </ul>
+      </div>
+      <div class="topic-col">
+        <div class="col-label">Default Approach</div>
+        <ul class="step-list">
+          <li data-n="1."><strong>left = 0</strong>, track window state (sum/count/map)</li>
+          <li data-n="2."><strong>Expand right</strong> — add arr[right] to window</li>
+          <li data-n="3."><strong>Window invalid?</strong> — shrink from left until valid again</li>
+          <li data-n="4."><strong>Update best result</strong> at every valid state</li>
+        </ul>
+        <div class="code-block"><span class="ck">let</span> <span class="cv">left</span> = <span class="cn">0</span>, <span class="cv">best</span> = <span class="cn">0</span>, <span class="cv">curr</span> = <span class="cn">0</span>
+<span class="ck">for</span>(<span class="ck">let</span> right = <span class="cn">0</span>; right &lt; arr.length; right++) {
+  curr += arr[right]            <span class="cm">// expand</span>
+  <span class="ck">while</span>(curr &gt; limit) {
+    curr -= arr[left++]         <span class="cm">// shrink</span>
+  }
+  best = Math.max(best, right - left + <span class="cn">1</span>)
+}</div>
+      </div>
+    </div>
+    <div class="topic-footer">
+      <div class="kw-block">
+        <div class="kw-label">Magic Words</div>
+        <div class="kw-tags">
+          <span class="kw-tag">subarray</span><span class="kw-tag">substring</span><span class="kw-tag">consecutive</span><span class="kw-tag">k elements</span><span class="kw-tag">longest</span><span class="kw-tag">shortest</span>
+        </div>
+      </div>
+      <div class="kw-block">
+        <div class="kw-label">Classic Problems</div>
+        <div class="kw-tags">
+          <span class="ex-tag">Max sum subarray</span><span class="ex-tag">Longest unique substring</span><span class="ex-tag">Min window substring</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 6. STACK -->
+  <div class="topic t-red" id="stack">
+    <div class="topic-header">
+      <div class="topic-icon">📚</div>
+      <div class="topic-meta">
+        <div class="topic-num">Topic 06 · Stack</div>
+        <div class="topic-title">Stack</div>
+        <div class="topic-mantra">"Does the LAST thing I saw affect what I do with the CURRENT thing?"</div>
+      </div>
+    </div>
+    <div class="topic-body">
+      <div class="topic-col">
+        <div class="col-label">Trigger Questions</div>
+        <ul class="trigger-list">
+          <li>Do I need to match opening and closing pairs?</li>
+          <li>Does the previous element affect the current one?</li>
+          <li>Am I looking for the next greater/smaller element?</li>
+          <li>Is there a nested structure (expressions, tags)?</li>
+        </ul>
+      </div>
+      <div class="topic-col">
+        <div class="col-label">Default Approach</div>
+        <ul class="step-list">
+          <li data-n="1."><strong>Create empty stack</strong> — stack = []</li>
+          <li data-n="2."><strong>Loop through</strong> each element</li>
+          <li data-n="3."><strong>Peek top</strong> — does current match/complete the top?</li>
+          <li data-n="4."><strong>Yes → pop.</strong> No → push current.</li>
+          <li data-n="5."><strong>Empty stack at end</strong> = valid/balanced</li>
+        </ul>
+        <div class="code-block"><span class="ck">let</span> <span class="cv">stack</span> = []
+<span class="ck">for</span>(<span class="ck">let</span> ch <span class="ck">of</span> s) {
+  <span class="ck">if</span>(isOpen(ch)) stack.push(ch)
+  <span class="ck">else</span> {
+    <span class="ck">if</span>(stack.length === <span class="cn">0</span>) <span class="ck">return false</span>
+    <span class="ck">if</span>(!matches(stack.pop(), ch)) <span class="ck">return false</span>
+  }
+}
+<span class="ck">return</span> stack.length === <span class="cn">0</span></div>
+      </div>
+    </div>
+    <div class="topic-footer">
+      <div class="kw-block">
+        <div class="kw-label">Magic Words</div>
+        <div class="kw-tags">
+          <span class="kw-tag">brackets</span><span class="kw-tag">parentheses</span><span class="kw-tag">next greater</span><span class="kw-tag">previous smaller</span><span class="kw-tag">nested</span><span class="kw-tag">undo</span>
+        </div>
+      </div>
+      <div class="kw-block">
+        <div class="kw-label">Classic Problems</div>
+        <div class="kw-tags">
+          <span class="ex-tag">Valid Parentheses</span><span class="ex-tag">Daily Temperatures</span><span class="ex-tag">Min Stack</span><span class="ex-tag">Evaluate expression</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 7. QUEUE -->
+  <div class="topic t-lime" id="queue">
+    <div class="topic-header">
+      <div class="topic-icon">🎡</div>
+      <div class="topic-meta">
+        <div class="topic-num">Topic 07 · Queue</div>
+        <div class="topic-title">Queue</div>
+        <div class="topic-mantra">"Am I processing things in the order they arrived — first in, first out?"</div>
+      </div>
+    </div>
+    <div class="topic-body">
+      <div class="topic-col">
+        <div class="col-label">Trigger Questions</div>
+        <ul class="trigger-list">
+          <li>Am I processing level by level (BFS)?</li>
+          <li>Do I need to handle things in arrival order?</li>
+          <li>Am I simulating a real-world queue (tasks, people)?</li>
+          <li>Do I need a sliding window maximum?</li>
+        </ul>
+      </div>
+      <div class="topic-col">
+        <div class="col-label">Default Approach</div>
+        <ul class="step-list">
+          <li data-n="1."><strong>queue = [start]</strong> — initialize with starting element</li>
+          <li data-n="2."><strong>while queue not empty</strong> — keep processing</li>
+          <li data-n="3."><strong>shift() from front</strong> — process current item</li>
+          <li data-n="4."><strong>push() to back</strong> — add next items to process</li>
+        </ul>
+        <div class="code-block"><span class="ck">let</span> <span class="cv">queue</span> = [start]
+<span class="ck">while</span>(queue.length > <span class="cn">0</span>) {
+  <span class="ck">let</span> curr = queue.shift()  <span class="cm">// take from front</span>
+  <span class="cm">// process curr</span>
+  <span class="cm">// add next items to queue</span>
+  queue.push(next)
+}</div>
+      </div>
+    </div>
+    <div class="topic-footer">
+      <div class="kw-block">
+        <div class="kw-label">Magic Words</div>
+        <div class="kw-tags">
+          <span class="kw-tag">level order</span><span class="kw-tag">BFS</span><span class="kw-tag">shortest path</span><span class="kw-tag">process in order</span><span class="kw-tag">sliding max</span>
+        </div>
+      </div>
+      <div class="kw-block">
+        <div class="kw-label">Classic Problems</div>
+        <div class="kw-tags">
+          <span class="ex-tag">Level order traversal</span><span class="ex-tag">Rotting oranges</span><span class="ex-tag">Sliding window max</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 8. LINKED LIST -->
+  <div class="topic t-pink" id="linked">
+    <div class="topic-header">
+      <div class="topic-icon">🔗</div>
+      <div class="topic-meta">
+        <div class="topic-num">Topic 08 · Linked List</div>
+        <div class="topic-title">Linked List</div>
+        <div class="topic-mantra">"Use slow and fast pointers. Draw the pointers on paper before touching code."</div>
+      </div>
+    </div>
+    <div class="topic-body">
+      <div class="topic-col">
+        <div class="col-label">Trigger Questions</div>
+        <ul class="trigger-list">
+          <li>Is there a cycle in the list?</li>
+          <li>Do I need the middle node?</li>
+          <li>Do I need the Nth node from the end?</li>
+          <li>Do I need to reverse the list?</li>
+        </ul>
+      </div>
+      <div class="topic-col">
+        <div class="col-label">Default Approach</div>
+        <ul class="step-list">
+          <li data-n="1."><strong>Slow + fast pointer</strong> — slow moves 1 step, fast moves 2</li>
+          <li data-n="2."><strong>Cycle?</strong> → they will eventually meet</li>
+          <li data-n="3."><strong>Middle?</strong> → when fast reaches end, slow is at middle</li>
+          <li data-n="4."><strong>Reverse?</strong> → prev, curr, next — rewire one by one</li>
+        </ul>
+        <div class="code-block"><span class="cm">// slow & fast — cycle / middle</span>
+<span class="ck">let</span> slow = head, fast = head
+<span class="ck">while</span>(fast && fast.next) {
+  slow = slow.next
+  fast = fast.next.next
+  <span class="ck">if</span>(slow === fast) <span class="ck">return true</span> <span class="cm">// cycle</span>
+}</div>
+      </div>
+    </div>
+    <div class="topic-footer">
+      <div class="kw-block">
+        <div class="kw-label">Magic Words</div>
+        <div class="kw-tags">
+          <span class="kw-tag">cycle</span><span class="kw-tag">middle</span><span class="kw-tag">reverse</span><span class="kw-tag">merge</span><span class="kw-tag">nth from end</span><span class="kw-tag">palindrome list</span>
+        </div>
+      </div>
+      <div class="kw-block">
+        <div class="kw-label">Classic Problems</div>
+        <div class="kw-tags">
+          <span class="ex-tag">Detect cycle</span><span class="ex-tag">Reverse list</span><span class="ex-tag">Merge two lists</span><span class="ex-tag">Find middle</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="divider"><span>// searching & sorting</span></div>
+
+  <!-- 9. BINARY SEARCH -->
+  <div class="topic t-green" id="binary">
+    <div class="topic-header">
+      <div class="topic-icon">🔍</div>
+      <div class="topic-meta">
+        <div class="topic-num">Topic 09 · Binary Search</div>
+        <div class="topic-title">Binary Search</div>
+        <div class="topic-mantra">"Is the array sorted? Can I cut the search space in half every step?"</div>
+      </div>
+    </div>
+    <div class="topic-body">
+      <div class="topic-col">
+        <div class="col-label">Trigger Questions</div>
+        <ul class="trigger-list">
+          <li>Is the input sorted (or can I think of it as sorted)?</li>
+          <li>Am I searching for a specific value or position?</li>
+          <li>Am I finding first/last occurrence of something?</li>
+          <li>Can I eliminate half the possibilities each step?</li>
+        </ul>
+      </div>
+      <div class="topic-col">
+        <div class="col-label">Default Approach</div>
+        <ul class="step-list">
+          <li data-n="1."><strong>left = 0, right = end</strong></li>
+          <li data-n="2."><strong>mid = Math.floor((left+right)/2)</strong></li>
+          <li data-n="3."><strong>Found?</strong> → return mid</li>
+          <li data-n="4."><strong>Too small?</strong> → left = mid + 1</li>
+          <li data-n="5."><strong>Too big?</strong> → right = mid - 1</li>
+        </ul>
+        <div class="code-block"><span class="ck">let</span> left = <span class="cn">0</span>, right = arr.length - <span class="cn">1</span>
+<span class="ck">while</span>(left &lt;= right) {
+  <span class="ck">let</span> mid = Math.floor((left + right) / <span class="cn">2</span>)
+  <span class="ck">if</span>(arr[mid] === target) <span class="ck">return</span> mid
+  <span class="ck">else if</span>(arr[mid] &lt; target) left = mid + <span class="cn">1</span>
+  <span class="ck">else</span> right = mid - <span class="cn">1</span>
+}
+<span class="ck">return</span> -<span class="cn">1</span></div>
+      </div>
+    </div>
+    <div class="topic-footer">
+      <div class="kw-block">
+        <div class="kw-label">Magic Words</div>
+        <div class="kw-tags">
+          <span class="kw-tag">sorted</span><span class="kw-tag">find position</span><span class="kw-tag">first occurrence</span><span class="kw-tag">last occurrence</span><span class="kw-tag">rotated</span><span class="kw-tag">peak</span>
+        </div>
+      </div>
+      <div class="kw-block">
+        <div class="kw-label">Classic Problems</div>
+        <div class="kw-tags">
+          <span class="ex-tag">Binary search</span><span class="ex-tag">Search rotated array</span><span class="ex-tag">Find peak element</span><span class="ex-tag">Sqrt(x)</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="divider"><span>// recursion & trees</span></div>
+
+  <!-- 10. RECURSION -->
+  <div class="topic t-purple" id="recursion">
+    <div class="topic-header">
+      <div class="topic-icon">🔄</div>
+      <div class="topic-meta">
+        <div class="topic-num">Topic 10 · Recursion</div>
+        <div class="topic-title">Recursion</div>
+        <div class="topic-mantra">"What's the smallest version of this problem? Solve that. Then build up."</div>
+      </div>
+    </div>
+    <div class="topic-body">
+      <div class="topic-col">
+        <div class="col-label">Trigger Questions</div>
+        <ul class="trigger-list">
+          <li>Can I solve this problem if I already had the answer to a smaller version?</li>
+          <li>Is there a natural stopping point (base case)?</li>
+          <li>Am I generating all combinations or subsets?</li>
+          <li>Is the problem defined in terms of itself?</li>
+        </ul>
+      </div>
+      <div class="topic-col">
+        <div class="col-label">Default Approach</div>
+        <ul class="step-list">
+          <li data-n="1."><strong>Define base case FIRST</strong> — when do I stop?</li>
+          <li data-n="2."><strong>Trust the recursion</strong> — assume it works on smaller input</li>
+          <li data-n="3."><strong>Use that result</strong> — combine smaller answer into current</li>
+          <li data-n="4."><strong>Return the combined result</strong></li>
+        </ul>
+        <div class="code-block"><span class="ck">function</span> <span class="cv">solve</span>(n) {
+  <span class="cm">// 1. base case — ALWAYS first</span>
+  <span class="ck">if</span>(n &lt;= <span class="cn">0</span>) <span class="ck">return</span> <span class="cn">0</span>
+
+  <span class="cm">// 2. recursive case</span>
+  <span class="ck">return</span> n + solve(n - <span class="cn">1</span>)
+}</div>
+      </div>
+    </div>
+    <div class="topic-footer">
+      <div class="kw-block">
+        <div class="kw-label">Magic Words</div>
+        <div class="kw-tags">
+          <span class="kw-tag">subsets</span><span class="kw-tag">combinations</span><span class="kw-tag">permutations</span><span class="kw-tag">generate all</span><span class="kw-tag">factorial</span><span class="kw-tag">fibonacci</span>
+        </div>
+      </div>
+      <div class="kw-block">
+        <div class="kw-label">Classic Problems</div>
+        <div class="kw-tags">
+          <span class="ex-tag">Subsets</span><span class="ex-tag">Permutations</span><span class="ex-tag">Power set</span><span class="ex-tag">Fibonacci</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 11. TREES -->
+  <div class="topic t-orange" id="trees">
+    <div class="topic-header">
+      <div class="topic-icon">🌳</div>
+      <div class="topic-meta">
+        <div class="topic-num">Topic 11 · Trees</div>
+        <div class="topic-title">Trees (Binary Tree / BST)</div>
+        <div class="topic-mantra">"Every tree problem = solve for left subtree + solve for right subtree + combine."</div>
+      </div>
+    </div>
+    <div class="topic-body">
+      <div class="topic-col">
+        <div class="col-label">Trigger Questions</div>
+        <ul class="trigger-list">
+          <li>Do I need height/depth of the tree?</li>
+          <li>Do I need to visit nodes in a specific order (in/pre/post)?</li>
+          <li>Am I searching for a path or value?</li>
+          <li>Level by level? → BFS. Deep first? → DFS/recursion.</li>
+        </ul>
+      </div>
+      <div class="topic-col">
+        <div class="col-label">Default Approach</div>
+        <ul class="step-list">
+          <li data-n="1."><strong>Base case</strong> — if node is null, return 0/null/false</li>
+          <li data-n="2."><strong>Recurse left</strong> — get answer from left subtree</li>
+          <li data-n="3."><strong>Recurse right</strong> — get answer from right subtree</li>
+          <li data-n="4."><strong>Combine</strong> — use both results to compute current answer</li>
+        </ul>
+        <div class="code-block"><span class="ck">function</span> <span class="cv">height</span>(node) {
+  <span class="ck">if</span>(!node) <span class="ck">return</span> <span class="cn">0</span>          <span class="cm">// base</span>
+  <span class="ck">let</span> left  = height(node.left)  <span class="cm">// left</span>
+  <span class="ck">let</span> right = height(node.right) <span class="cm">// right</span>
+  <span class="ck">return</span> <span class="cn">1</span> + Math.max(left, right) <span class="cm">// combine</span>
+}</div>
+      </div>
+    </div>
+    <div class="topic-footer">
+      <div class="kw-block">
+        <div class="kw-label">Magic Words</div>
+        <div class="kw-tags">
+          <span class="kw-tag">height</span><span class="kw-tag">depth</span><span class="kw-tag">path sum</span><span class="kw-tag">inorder</span><span class="kw-tag">level order</span><span class="kw-tag">symmetric</span><span class="kw-tag">BST</span>
+        </div>
+      </div>
+      <div class="kw-block">
+        <div class="kw-label">Classic Problems</div>
+        <div class="kw-tags">
+          <span class="ex-tag">Max depth</span><span class="ex-tag">Path sum</span><span class="ex-tag">Inorder traversal</span><span class="ex-tag">LCA</span><span class="ex-tag">Symmetric tree</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="divider"><span>// graphs & advanced</span></div>
+
+  <!-- 12. GRAPHS -->
+  <div class="topic t-cyan" id="graphs">
+    <div class="topic-header">
+      <div class="topic-icon">🌐</div>
+      <div class="topic-meta">
+        <div class="topic-num">Topic 12 · Graphs</div>
+        <div class="topic-title">Graphs (BFS / DFS)</div>
+        <div class="topic-mantra">"Shortest path = BFS. Explore everything = DFS. Always track visited."</div>
+      </div>
+    </div>
+    <div class="topic-body">
+      <div class="topic-col">
+        <div class="col-label">Trigger Questions</div>
+        <ul class="trigger-list">
+          <li>Am I finding the SHORTEST path? → BFS</li>
+          <li>Am I exploring ALL paths or checking if path exists? → DFS</li>
+          <li>Am I counting connected components (islands)?</li>
+          <li>Is there a cycle in the graph?</li>
+        </ul>
+      </div>
+      <div class="topic-col">
+        <div class="col-label">Default Approach</div>
+        <ul class="step-list">
+          <li data-n="1."><strong>visited = new Set()</strong> — ALWAYS track visited</li>
+          <li data-n="2."><strong>BFS</strong> → queue, process level by level</li>
+          <li data-n="3."><strong>DFS</strong> → recursion or stack, go deep first</li>
+          <li data-n="4."><strong>For each neighbor</strong> — if not visited, add to queue/recurse</li>
+        </ul>
+        <div class="code-block"><span class="cm">// BFS template</span>
+<span class="ck">let</span> queue = [start], visited = <span class="ck">new</span> Set([start])
+<span class="ck">while</span>(queue.length) {
+  <span class="ck">let</span> curr = queue.shift()
+  <span class="ck">for</span>(<span class="ck">let</span> nei <span class="ck">of</span> graph[curr]) {
+    <span class="ck">if</span>(!visited.has(nei)) {
+      visited.add(nei)
+      queue.push(nei)
+    }
+  }
+}</div>
+      </div>
+    </div>
+    <div class="topic-footer">
+      <div class="kw-block">
+        <div class="kw-label">Magic Words</div>
+        <div class="kw-tags">
+          <span class="kw-tag">connected</span><span class="kw-tag">islands</span><span class="kw-tag">shortest path</span><span class="kw-tag">cycle</span><span class="kw-tag">neighbors</span><span class="kw-tag">reach</span><span class="kw-tag">flood fill</span>
+        </div>
+      </div>
+      <div class="kw-block">
+        <div class="kw-label">Classic Problems</div>
+        <div class="kw-tags">
+          <span class="ex-tag">Number of islands</span><span class="ex-tag">Clone graph</span><span class="ex-tag">Word ladder</span><span class="ex-tag">Course schedule</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 13. DYNAMIC PROGRAMMING -->
+  <div class="topic t-yellow" id="dp">
+    <div class="topic-header">
+      <div class="topic-icon">⚡</div>
+      <div class="topic-meta">
+        <div class="topic-num">Topic 13 · Dynamic Programming</div>
+        <div class="topic-title">Dynamic Programming</div>
+        <div class="topic-mantra">"Am I solving the same subproblem multiple times? Store the answer. Never compute twice."</div>
+      </div>
+    </div>
+    <div class="topic-body">
+      <div class="topic-col">
+        <div class="col-label">Trigger Questions</div>
+        <ul class="trigger-list">
+          <li>Am I asked for maximum/minimum ways to do something?</li>
+          <li>Am I counting how many ways to reach a goal?</li>
+          <li>Does the answer to position i depend on previous positions?</li>
+          <li>Would brute force recursion repeat the same calculation?</li>
+        </ul>
+      </div>
+      <div class="topic-col">
+        <div class="col-label">Default Approach</div>
+        <ul class="step-list">
+          <li data-n="1."><strong>Define dp[i]</strong> — what does this value mean?</li>
+          <li data-n="2."><strong>Set base case</strong> — dp[0] or dp[1]</li>
+          <li data-n="3."><strong>Write transition</strong> — how does dp[i] depend on previous?</li>
+          <li data-n="4."><strong>Return dp[n]</strong> — the final answer</li>
+        </ul>
+        <div class="code-block"><span class="cm">// climbing stairs — classic DP</span>
+<span class="ck">let</span> dp = <span class="ck">new</span> Array(n + <span class="cn">1</span>).fill(<span class="cn">0</span>)
+dp[<span class="cn">1</span>] = <span class="cn">1</span>
+dp[<span class="cn">2</span>] = <span class="cn">2</span>
+<span class="ck">for</span>(<span class="ck">let</span> i = <span class="cn">3</span>; i &lt;= n; i++) {
+  dp[i] = dp[i-<span class="cn">1</span>] + dp[i-<span class="cn">2</span>]  <span class="cm">// transition</span>
+}
+<span class="ck">return</span> dp[n]</div>
+      </div>
+    </div>
+    <div class="topic-footer">
+      <div class="kw-block">
+        <div class="kw-label">Magic Words</div>
+        <div class="kw-tags">
+          <span class="kw-tag">how many ways</span><span class="kw-tag">minimum cost</span><span class="kw-tag">maximum profit</span><span class="kw-tag">can you reach</span><span class="kw-tag">optimal</span>
+        </div>
+      </div>
+      <div class="kw-block">
+        <div class="kw-label">Classic Problems</div>
+        <div class="kw-tags">
+          <span class="ex-tag">Climbing stairs</span><span class="ex-tag">Coin change</span><span class="ex-tag">House robber</span><span class="ex-tag">Longest increasing subsequence</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 14. GREEDY -->
+  <div class="topic t-lime" id="greedy">
+    <div class="topic-header">
+      <div class="topic-icon">💰</div>
+      <div class="topic-meta">
+        <div class="topic-num">Topic 14 · Greedy</div>
+        <div class="topic-title">Greedy</div>
+        <div class="topic-mantra">"What's the best local choice right now? Make it. Don't look back."</div>
+      </div>
+    </div>
+    <div class="topic-body">
+      <div class="topic-col">
+        <div class="col-label">Trigger Questions</div>
+        <ul class="trigger-list">
+          <li>Can I make a locally optimal choice at each step?</li>
+          <li>Does sorting first reveal the right order to pick?</li>
+          <li>Am I maximizing profit or minimizing cost greedily?</li>
+          <li>Does picking the best option now never hurt the future?</li>
+        </ul>
+      </div>
+      <div class="topic-col">
+        <div class="col-label">Default Approach</div>
+        <ul class="step-list">
+          <li data-n="1."><strong>Sort if needed</strong> — order often reveals the greedy choice</li>
+          <li data-n="2."><strong>Loop through</strong> — make the best local decision each step</li>
+          <li data-n="3."><strong>Never revisit</strong> — greedy never goes back</li>
+          <li data-n="4."><strong>Track result</strong> — accumulate as you go</li>
+        </ul>
+        <div class="code-block"><span class="cm">// max profit — buy low sell high</span>
+<span class="ck">let</span> profit = <span class="cn">0</span>
+<span class="ck">for</span>(<span class="ck">let</span> i = <span class="cn">1</span>; i &lt; prices.length; i++) {
+  <span class="ck">if</span>(prices[i] > prices[i-<span class="cn">1</span>]) {
+    profit += prices[i] - prices[i-<span class="cn">1</span>]
+  }
+}
+<span class="ck">return</span> profit</div>
+      </div>
+    </div>
+    <div class="topic-footer">
+      <div class="kw-block">
+        <div class="kw-label">Magic Words</div>
+        <div class="kw-tags">
+          <span class="kw-tag">maximum profit</span><span class="kw-tag">minimum intervals</span><span class="kw-tag">jump game</span><span class="kw-tag">activity selection</span><span class="kw-tag">optimal local</span>
+        </div>
+      </div>
+      <div class="kw-block">
+        <div class="kw-label">Classic Problems</div>
+        <div class="kw-tags">
+          <span class="ex-tag">Best time to buy stock</span><span class="ex-tag">Jump game</span><span class="ex-tag">Meeting rooms</span><span class="ex-tag">Gas station</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 15. HEAP -->
+  <div class="topic t-red" id="heap">
+    <div class="topic-header">
+      <div class="topic-icon">🏔️</div>
+      <div class="topic-meta">
+        <div class="topic-num">Topic 15 · Heap / Priority Queue</div>
+        <div class="topic-title">Heap / Priority Queue</div>
+        <div class="topic-mantra">"Do I always need the smallest or largest element instantly? Use a heap."</div>
+      </div>
+    </div>
+    <div class="topic-body">
+      <div class="topic-col">
+        <div class="col-label">Trigger Questions</div>
+        <ul class="trigger-list">
+          <li>Do I need the top K largest or smallest elements?</li>
+          <li>Do I need instant access to the minimum or maximum?</li>
+          <li>Am I merging K sorted lists?</li>
+          <li>Do I need a running median as numbers come in?</li>
+        </ul>
+      </div>
+      <div class="topic-col">
+        <div class="col-label">Default Approach</div>
+        <ul class="step-list">
+          <li data-n="1."><strong>Top K smallest?</strong> → Max heap of size K</li>
+          <li data-n="2."><strong>Top K largest?</strong> → Min heap of size K</li>
+          <li data-n="3."><strong>Add element</strong> — push to heap</li>
+          <li data-n="4."><strong>Heap size &gt; K?</strong> — pop the top (remove worst)</li>
+          <li data-n="5."><strong>Remaining heap</strong> = your K elements</li>
+        </ul>
+        <div class="code-block"><span class="cm">// Top K frequent — use a min heap</span>
+<span class="cm">// JS: simulate with sorted array for interviews</span>
+<span class="ck">let</span> freq = <span class="ck">new</span> Map()
+<span class="ck">for</span>(<span class="ck">let</span> n <span class="ck">of</span> nums) freq.set(n, (freq.get(n)||<span class="cn">0</span>)+<span class="cn">1</span>)
+<span class="ck">return</span> [...freq.entries()]
+  .sort((a,b) => b[<span class="cn">1</span>] - a[<span class="cn">1</span>])
+  .slice(<span class="cn">0</span>, k).map(e => e[<span class="cn">0</span>])</div>
+      </div>
+    </div>
+    <div class="topic-footer">
+      <div class="kw-block">
+        <div class="kw-label">Magic Words</div>
+        <div class="kw-tags">
+          <span class="kw-tag">top K</span><span class="kw-tag">K largest</span><span class="kw-tag">K smallest</span><span class="kw-tag">median stream</span><span class="kw-tag">merge K lists</span><span class="kw-tag">priority</span>
+        </div>
+      </div>
+      <div class="kw-block">
+        <div class="kw-label">Classic Problems</div>
+        <div class="kw-tags">
+          <span class="ex-tag">Kth largest element</span><span class="ex-tag">Top K frequent</span><span class="ex-tag">Find median stream</span><span class="ex-tag">Merge K lists</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- FOOTER -->
+  <div class="footer">
+    <div class="footer-title">The Only System You Need</div>
+    <div class="footer-sub">
+      1. Ask the universal mantra — <strong>HAVE / WANT / STEP</strong><br>
+      2. Spot the magic words → find the topic above<br>
+      3. Apply the topic mantra → write brute force first<br>
+      4. <strong>20 minutes struggle minimum before any help</strong><br><br>
+      One problem daily. That's it. 💪
+    </div>
+  </div>
+
+</div>
+</body>
+</html>
