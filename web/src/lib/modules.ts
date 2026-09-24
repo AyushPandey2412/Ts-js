@@ -146,6 +146,16 @@ export const MODULES: ModuleMeta[] = [
     badge: 'Metaprogramming'
   },
   {
+    id: '13',
+    slug: '13-error-handling-and-debugging',
+    number: '13',
+    title: 'Error Handling, Call Stack Reconstruction & Debugging',
+    subtitle: 'V8 Stack Unwinding, try/catch/finally Invariants, Custom Error Hierarchies & Telemetry',
+    fileName: '13-ERROR-HANDLING-AND-DEBUGGING.md',
+    estimatedSections: 16,
+    badge: 'Reliability & Fault Tolerance'
+  },
+  {
     id: 'async',
     slug: 'javascript-async-programming-complete',
     number: '14-16',
