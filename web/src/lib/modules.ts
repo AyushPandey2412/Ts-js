@@ -126,6 +126,16 @@ export const MODULES: ModuleMeta[] = [
     badge: 'Object Mechanics'
   },
   {
+    id: '11',
+    slug: '11-classes-and-oop-patterns',
+    number: '11',
+    title: 'Classes, OOP Patterns & Private Encapsulation',
+    subtitle: 'ES6 Desugaring, #private Fields, Dual-Linkage Inheritance, V8 Shapes & Enterprise Patterns',
+    fileName: '11-CLASSES-AND-OOP-PATTERNS.md',
+    estimatedSections: 18,
+    badge: 'OOP Architecture'
+  },
+  {
     id: 'async',
     slug: 'javascript-async-programming-complete',
     number: '14-16',
