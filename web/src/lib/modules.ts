@@ -136,6 +136,16 @@ export const MODULES: ModuleMeta[] = [
     badge: 'OOP Architecture'
   },
   {
+    id: '12',
+    slug: '12-regular-expressions-and-symbols',
+    number: '12',
+    title: 'Regular Expressions, Symbols & Metaprogramming',
+    subtitle: 'V8 Irregexp Internals, ReDoS Defense, Well-Known Symbols & Metaprogramming Protocols',
+    fileName: '12-REGULAR-EXPRESSIONS-AND-SYMBOLS.md',
+    estimatedSections: 16,
+    badge: 'Metaprogramming'
+  },
+  {
     id: 'async',
     slug: 'javascript-async-programming-complete',
     number: '14-16',
