@@ -97,8 +97,38 @@ export const MODULES: ModuleMeta[] = [
   },
   {
     id: '08',
-    slug: 'javascript-async-programming-complete',
+    slug: '08-scopes-and-closures',
     number: '08',
+    title: 'Scopes & Closures',
+    subtitle: 'Lexical Environments, Scope Chains, V8 Heap Context Allocation, Stale Closures & Token Buckets',
+    fileName: '08-SCOPES-AND-CLOSURES.md',
+    estimatedSections: 18,
+    badge: 'Memory & Scope'
+  },
+  {
+    id: '09',
+    slug: '09-the-this-keyword-and-bindings',
+    number: '09',
+    title: 'The this Keyword & Bindings',
+    subtitle: '4 Binding Rules, Lexical Arrow this, Reference Records, Polyfills, Fluent Builders & Active Record',
+    fileName: '09-THE-THIS-KEYWORD-AND-BINDINGS.md',
+    estimatedSections: 18,
+    badge: 'Execution Model'
+  },
+  {
+    id: '10',
+    slug: '10-prototypes-and-inheritance',
+    number: '10',
+    title: 'Prototypes, Prototypal Inheritance & Delegation',
+    subtitle: '[[Prototype]], Chain Traversal, Shadowing, ES5 Inheritance, V8 ValidityCells & Prototype Pollution Defense',
+    fileName: '10-PROTOTYPES-AND-INHERITANCE.md',
+    estimatedSections: 18,
+    badge: 'Object Mechanics'
+  },
+  {
+    id: 'async',
+    slug: 'javascript-async-programming-complete',
+    number: '14-16',
     title: 'Asynchronous Programming Complete',
     subtitle: '172-Section Textbook: Event Loop, Tasks/Microtasks, Promises, Concurrency Pools, Workers & Streams',
     fileName: 'JavaScript_Async_Programming_Complete.md',
