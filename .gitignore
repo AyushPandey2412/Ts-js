@@ -1,0 +1,33 @@
+# Dependencies
+node_modules/
+web/node_modules/
+/.pnp
+.pnp.js
+
+# Production builds
+.next/
+web/.next/
+web/out/
+build/
+dist/
+
+# Next.js / Turbopack cache
+.turbo/
+web/.turbo/
+
+# Environment variables
+.env*.local
+.env
+
+# Logs
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# System and editor files
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+.vscode/
+.idea/
