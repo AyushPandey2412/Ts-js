@@ -164,6 +164,16 @@ export const MODULES: ModuleMeta[] = [
     fileName: 'JavaScript_Async_Programming_Complete.md',
     estimatedSections: 172,
     badge: 'Senior Masterclass'
+  },
+  {
+    id: '17',
+    slug: '17-modules-and-code-organization',
+    number: '17',
+    title: 'Modules, Dependency Graphs & Code Organization',
+    subtitle: 'IIFE, CommonJS Wrapper, ESM 3-Phase Lifecycle, Live Bindings, Top-Level Await & Dual-Package Hazard',
+    fileName: '17-MODULES-AND-CODE-ORGANIZATION.md',
+    estimatedSections: 16,
+    badge: 'Architecture & Bundling'
   }
 ];
 
