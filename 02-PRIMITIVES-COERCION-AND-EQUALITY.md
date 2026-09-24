@@ -1,328 +1,807 @@
 # Module 02: Primitives, Type Coercion & Equality Mechanics
 
-> **Learning Invariant**: In JavaScript, values are dynamically typed, while variables are simply untyped bindings. Coercion is not magic or "random"; it is governed by deterministic ECMAScript abstract operations (`ToPrimitive`, `ToBoolean`, `ToNumber`, `ToString`). Understand these rules, and you will never fall into the `==` trap or suffer parsing security vulnerabilities.
+> **Executive Invariant**: In JavaScript, values have types, but variables are merely untyped memory bindings. Coercion is not arbitrary or unpredictable—it is governed by deterministic ECMAScript abstract operations (`ToPrimitive`, `ToBoolean`, `ToNumber`, `ToString`). Master these low-level mechanical algorithms, and you will never suffer from subtle truthy/falsy bugs, numeric precision corruption, or authentication bypasses.
 
 ---
 
-## 1. The Genesis: Why Does JavaScript Have Implicit Coercion?
+## Table of Contents
+1. [01. Introduction & Historical Genesis](#01-introduction--historical-genesis)
+2. [02. The V8 Memory Mental Model: Stack vs Heap & Pointer Tagging](#02-the-v8-memory-mental-model-stack-vs-heap--pointer-tagging)
+3. [03. The 7 Primitive Types in Complete Depth](#03-the-7-primitive-types-in-complete-depth)
+4. [04. The Primitive Wrappers & Auto-Boxing Mechanics](#04-the-primitive-wrappers--auto-boxing-mechanics)
+5. [05. IEEE 754 Floating-Point Mechanics: Why `0.1 + 0.2 !== 0.3`](#05-ieee-754-floating-point-mechanics-why-01--02--03)
+6. [06. Special Numeric Values: `NaN`, `+0`, `-0`, `Infinity`](#06-special-numeric-values-nan-0--0-infinity)
+7. [07. Arbitrary Precision with BigInt](#07-arbitrary-precision-with-bigint)
+8. [08. Unique Identifiers with Symbol & Well-Known Symbols](#08-unique-identifiers-with-symbol--well-known-symbols)
+9. [09. ECMAScript Abstract Operations: The Engine Coercion Rules](#09-ecmascript-abstract-operations-the-engine-coercion-rules)
+   - 9.1 `ToBoolean` (The Complete Truthy / Falsy Matrix)
+   - 9.2 `ToNumber`
+   - 9.3 `ToString`
+   - 9.4 `ToPrimitive` (PreferredType, `valueOf`, `toString`, `Symbol.toPrimitive`)
+10. [10. Explicit Type Casting: Idiomatic & Production Techniques](#10-explicit-type-casting-idiomatic--production-techniques)
+11. [11. Implicit Coercion in Operators: `+`, `-`, `*`, `!`, `~`](#11-implicit-coercion-in-operators----)
+12. [12. The Complete Equality Comparison Algorithms](#12-the-complete-equality-comparison-algorithms)
+    - 12.1 Loose Equality (`==` / `Abstract Equality Comparison`)
+    - 12.2 Strict Equality (`===` / `Strict Equality Comparison`)
+    - 12.3 SameValue (`Object.is`)
+    - 12.4 SameValueZero (`Array.prototype.includes`, `Set`, `Map`)
+13. [13. Common Real-World Patterns & Production Architecture](#13-common-real-world-patterns--production-architecture)
+14. [14. Production Bugs, Anti-Patterns & Security Exploits](#14-production-bugs-anti-patterns--security-exploits)
+15. [15. Performance & Engine Optimizations (Smi vs HeapNumber)](#15-performance--engine-optimizations-smi-vs-heapnumber)
+16. [16. Decision Trees for Coercion & Equality Selection](#16-decision-trees-for-coercion--equality-selection)
+17. [17. Algorithmic Implementations from Scratch](#17-algorithmic-implementations-from-scratch)
+    - Algorithm 1: Custom `ObjectIs` Polyfill
+    - Algorithm 2: Spec-Compliant `AbstractEquality` Simulator
+    - Algorithm 3: Robust Deep Equality Comparator (`deepEqual`)
+18. [18. Comprehensive Interview Preparation (90 Exhaustive Q&As)](#18-comprehensive-interview-preparation-90-exhaustive-qas)
+    - Beginner Questions (20)
+    - Intermediate Questions (25)
+    - Advanced Questions (25)
+    - Senior & Staff Architecture Questions (20)
+19. [19. Tricky Output Prediction & Execution Tracing (15 Puzzles)](#19-tricky-output-prediction--execution-tracing-15-puzzles)
+20. [20. Progressive Real-World Projects](#20-progressive-real-world-projects)
+    - Beginner Project 1: Strict Financial Currency Formatter
+    - Intermediate Project 2: High-Precision Calculation Engine (Decimal/BigInt)
+    - Advanced Project 3: Schema Type Coercion & Validation Pipeline
+    - Senior Project 4: Microsecond-Grade High-Throughput Request Serializer
+21. [21. Practice Exercises System (75 Problems)](#21-practice-exercises-system-75-problems)
+22. [22. Cheat Sheet & Master Mind Map](#22-cheat-sheet--master-mind-map)
+23. [23. Final Knowledge Checklist](#23-final-knowledge-checklist)
 
-In 1995, JavaScript was designed for non-programmers writing small snippets inside HTML (such as validating a form or reading a text field value). In HTML forms, **every user input is a string**.
-If a developer checked:
+---
+
+## 01. Introduction & Historical Genesis
+
+In 1995, Brendan Eich was tasked with creating a language for Netscape Navigator in 10 days. The design imperative was **radical accessibility for non-programmers**. HTML forms dealt exclusively with strings. When an amateur developer wrote:
+
 ```javascript
 if (inputBox.value == 0) { ... }
 ```
-A strictly typed language would immediately crash or reject the comparison because `"0"` (string) is not `0` (number).
-To prevent scripts from crashing on early websites, Brendan Eich designed JavaScript with **lenient automatic type conversion (coercion)**.
 
-While this made simple scripts work without type-casting, it created deep footguns for enterprise backend systems. In modern software engineering, we must understand the exact underlying conversion algorithms to prevent subtle bugs, authentication bypasses, and data corruption.
+A strictly typed language like C++ or Java would throw a compile-time type mismatch error because `"0"` (string) is not `0` (integer). To prevent novice scripts from breaking web pages, JavaScript was given **implicit type coercion** via the loose equality operator (`==`).
+
+While this choice democratized web programming in 1995, it introduced treacherous architectural footguns for enterprise-grade distributed systems. In modern software engineering, values traverse HTTP boundaries, databases, message queues, and JSON payloads. If you do not understand the mechanical algorithms governing JavaScript types, you will introduce catastrophic financial rounding bugs, silent authentication bypasses, and memory leaks.
 
 ---
 
-## 2. The 7 Primitive Types in Memory
+## 02. The V8 Memory Mental Model: Stack vs Heap & Pointer Tagging
 
-JavaScript has **7 primitive types**. Everything else is an **Object** (including Arrays, Functions, Dates, and Buffers).
+### The Dual Memory Architecture
+In V8, memory is partitioned into the **Stack** and the **Heap**.
 
-| Primitive Type | Description | Stack Storage | Example |
+```
++-----------------------------------------------------------------------+
+|                             CALL STACK                                |
+|  [ Execution Context: Activation Frame ]                              |
+|  - Small Integers (Smi): Stored directly in the 64-bit stack word     |
+|  - Booleans, undefined: Immediate sentinel values                     |
+|  - Object / String / HeapNumber: 64-bit tagged pointer to Heap ----+  |
++--------------------------------------------------------------------|--+
+                                                                     |
+                                                                     v
++-----------------------------------------------------------------------+
+|                            V8 HEAP MEMORY                             |
+|  +---------------------------+   +---------------------------------+  |
+|  | HeapNumber (Float64)      |   | HeapString (Flat / ConsString)  |  |
+|  | - Map (Shape pointer)     |   | - Length, Hash, UTF-16 Buffer   |  |
+|  | - 64-bit IEEE 754 payload |   +---------------------------------+  |
+|  +---------------------------+                                        |
+|  +---------------------------+   +---------------------------------+  |
+|  | JSObject / Array          |   | BigInt (Arbitrary Words)        |  |
+|  | - In-Object Properties    |   | - Sign bit, Digits buffer       |  |
+|  +---------------------------+   +---------------------------------+  |
++-----------------------------------------------------------------------+
+```
+
+### V8 Pointer Tagging (Compressed Pointers)
+On 64-bit systems, allocating an 8-byte heap header for every simple loop counter would quadruple memory consumption. V8 avoids this using **Pointer Tagging**:
+
+1. **Small Integers (`Smi`)**: Any signed integer fitting within 31 bits (or 32 bits on 64-bit platforms) is stored directly in the register/stack slot with the lowest bit set to `0`:
+   $$\text{Value} = \text{raw\_bits} \gg 1$$
+   *Zero heap allocation occurs. Arithmetic operations run at hardware CPU speed.*
+2. **Pointers to Heap Objects**: The lowest bit is set to `1`. V8 clears the tag bit (`address & ~1`) before dereferencing the pointer to read the object's Map in heap memory.
+
+---
+
+## 03. The 7 Primitive Types in Complete Depth
+
+JavaScript has exactly **7 primitive types**. Everything else is an `Object` (including functions, arrays, dates, regular expressions, and errors).
+
+| Primitive Type | `typeof` Return | ECMAScript Specification | Memory Representation in V8 |
 |---|---|---|---|
-| `string` | UTF-16 code units (immutable sequence of characters) | Direct / Pointer to string pool | `"file.pdf"` |
-| `number` | Double-precision 64-bit IEEE 754 floating point | 8 bytes directly on stack | `42`, `3.1415`, `NaN`, `Infinity` |
-| `bigint` | Arbitrary precision integers (prevents integer overflow) | Heap-allocated reference | `9007199254740995n` |
-| `boolean` | Logical truth value | 1 byte on stack | `true`, `false` |
-| `undefined` | Variable declared but never assigned a value | Sentinel value on stack | `undefined` |
-| `null` | Intentional absence of any object value | Sentinel value on stack | `null` |
-| `symbol` | Unique and immutable token used as object keys | Unique registry reference | `Symbol("fileId")` |
+| `undefined` | `"undefined"` | Absence of value assignment | Sentinel pointer (`roots.undefined_value()`) |
+| `null` | `"object"` *(historic bug)* | Intentional absence of object reference | Sentinel pointer (`roots.null_value()`) |
+| `boolean` | `"boolean"` | `true` or `false` | Sentinel pointers (`roots.true_value()`, `false_value()`) |
+| `number` | `"number"` | 64-bit IEEE 754 Floating Point | `Smi` (unboxed 31-bit) or `HeapNumber` (boxed float64) |
+| `bigint` | `"bigint"` | Arbitrary precision signed integers | Heap-allocated byte buffer of 64-bit words |
+| `string` | `"string"` | Immutable sequence of 16-bit code units | `SeqOneByteString`, `SeqTwoByteString`, or `ConsString` |
+| `symbol` | `"symbol"` | Unique, immutable token | Heap-allocated unique registry identifier |
 
-### The Historical Bug: `typeof null === "object"`
-In the original 1995 V8 predecessor, values were stored with a **type tag** in the bottom 1–3 bits of their memory word. 
-* The type tag for an object was `000`.
-* `null` was represented as the null pointer (`0x00` in C), meaning all its bits were zeroes.
-* When `typeof` inspected `null`, it read the `000` tag and returned `"object"`.
+### The Infamous `typeof null === "object"` Spec Bug
+In the 1995 JavaScript engine, values were represented by a 32-bit type tag followed by the data payload.
+- The type tag for an object reference was `000`.
+- In C/C++, `NULL` is defined as pointer address `0x00000000`.
+- When `typeof` checked the tag bits of `null`, it read `000` and returned `"object"`.
 
-This bug cannot be fixed in JavaScript today because doing so would break millions of existing websites that rely on this legacy behavior.
+This bug cannot be fixed today without breaking millions of legacy websites:
+
 ```javascript
-// The correct way to check strictly for null:
-function isStrictNull(val) {
+// [SENIOR BEST PRACTICE]: Strict type assertion helper
+function isNull(val) {
   return val === null;
+}
+
+function isPlainObject(val) {
+  return typeof val === 'object' && val !== null && !Array.isArray(val);
 }
 ```
 
-### Auto-Boxing (Primitive Wrappers)
-Primitives are not objects—they have no methods. Yet this works:
+---
+
+## 04. The Primitive Wrappers & Auto-Boxing Mechanics
+
+Primitives are not objects—they have no methods or properties. Yet this executes cleanly:
+
 ```javascript
-const name = "report.pdf";
-console.log(name.toUpperCase()); // "REPORT.PDF"
+const str = "infrastructure";
+console.log(str.toUpperCase()); // "INFRASTRUCTURE"
 ```
-**How it works under the hood**:
-When you invoke a method on a primitive string, number, or boolean, the JavaScript engine temporarily **auto-boxes** it into an ephemeral wrapper object:
-1. `new String("report.pdf")` is created in memory.
-2. The `.toUpperCase()` method is called on that wrapper object.
-3. The result is returned, and the temporary wrapper object is immediately discarded for garbage collection.
+
+### The Auto-Boxing Lifecycle
+When you invoke a property or method on a primitive string, number, boolean, or symbol:
+1. The engine invokes the abstract operation `ToObject(primitive)`.
+2. A temporary wrapper object (`new String("infrastructure")`) is instantiated on the Heap.
+3. The method is called on the wrapper object.
+4. The result primitive is returned.
+5. The temporary wrapper object is discarded and marked for Garbage Collection.
+
+```javascript
+// Proof of ephemeral auto-boxing:
+const count = 42;
+count.unit = "megabytes"; // Auto-boxes into temporary Number wrapper, sets property, then wrapper is destroyed!
+console.log(count.unit);  // undefined! New auto-box created, property does not exist!
+```
+
+> [!WARNING]
+> **Never instantiate primitive constructors with `new`!**
+> ```javascript
+> const boolObj = new Boolean(false);
+> if (boolObj) {
+>   // THIS RUNS! Because boolObj is an Object, and ALL objects are truthy in JavaScript!
+>   console.log("Bug: false object evaluated as truthy!");
+> }
+> ```
 
 ---
 
-## 3. ECMAScript Abstract Operations (How Coercion Actually Works)
+## 05. IEEE 754 Floating-Point Mechanics: Why `0.1 + 0.2 !== 0.3`
 
-Coercion is driven by internal engine specifications known as **Abstract Operations**. You cannot call these directly, but the engine runs them whenever types collide.
+All JavaScript numbers (except `BigInt`) are stored as **double-precision 64-bit binary floating-point numbers** (IEEE 754):
 
-### 3.1 `ToBoolean`
-Converts any value to `true` or `false`.
-There are only **8 falsy values** in JavaScript. Memorize them:
-
-```text
-1. false
-2. 0
-3. -0
-4. 0n (BigInt zero)
-5. "" (empty string)
-6. null
-7. undefined
-8. NaN
+```
+ 1 bit         11 bits                             52 bits
++------+-----------------------+----------------------------------------------------+
+| Sign | Exponent (biased 1023)|               Fraction / Mantissa                  |
++------+-----------------------+----------------------------------------------------+
 ```
 
-**Everything else is truthy!** This includes:
-* `[]` (empty array is truthy!)
-* `{}` (empty object is truthy!)
-* `"0"` (string with zero is truthy!)
-* `"false"` (string with false is truthy!)
+### The Binary Fraction Trap
+In base 10, fractions whose denominators cannot be formed by prime factors 2 and 5 repeat infinitely (e.g. $1/3 = 0.3333...$).
+In binary (base 2), fractions whose denominators have factors other than 2 repeat infinitely:
 
-### 3.2 `ToNumber`
-Converts a value to a numeric representation:
-* `undefined` → `NaN`
-* `null` → `0` *(A major source of bugs!)*
-* `true` → `1`, `false` → `0`
-* `""` (empty string) → `0` *(Another major source of bugs!)*
-* `"  123  "` → `123`
-* `"abc"` → `NaN`
+$$0.1_{10} = 0.000110011001100110011..._2 \quad (\text{infinite repeating loop})$$
+$$0.2_{10} = 0.001100110011001100110..._2$$
 
-### 3.3 `ToPrimitive(input, [PreferredType])`
-When an Object or Array needs to be coerced into a primitive (e.g. `[1, 2] + 3`), the engine invokes `ToPrimitive`:
-1. If `PreferredType` is `string`:
-   * Calls `.toString()`. If that returns a primitive, use it.
-   * Otherwise, calls `.valueOf()`. If that returns a primitive, use it.
-   * If neither returns a primitive, throws `TypeError`.
-2. If `PreferredType` is `number`:
-   * Calls `.valueOf()`. If that returns a primitive, use it.
-   * Otherwise, calls `.toString()`. If that returns a primitive, use it.
-   * If neither returns a primitive, throws `TypeError`.
+Because the mantissa is capped at 52 bits, the engine rounds the least significant bit:
+- $0.1 + 0.2 = 0.300000000000000044408920985...$
+- $0.3 = 0.299999999999999988897769753...$
+
+### Production Mitigation Strategies
 
 ```javascript
-const fileMetadata = {
-  size: 2048,
-  valueOf() { return this.size; },
-  toString() { return "File (2048 bytes)"; }
+// Solution 1: Number.EPSILON comparison for scientific/graphics calculations
+function floatEqual(a, b) {
+  return Math.abs(a - b) < Number.EPSILON;
+}
+console.log(floatEqual(0.1 + 0.2, 0.3)); // true
+
+// Solution 2: Integer scaling for financial accounting (cents instead of dollars)
+const priceInCents = 1999; // $19.99
+const taxInCents = Math.round(priceInCents * 0.0825); // Exact integer cents
+```
+
+---
+
+## 06. Special Numeric Values: `NaN`, `+0`, `-0`, `Infinity`
+
+### 1. `NaN` (Not a Number)
+`NaN` is a numeric value representing an undefined or unrepresentable mathematical result (e.g. `0 / 0`, `Math.sqrt(-1)`).
+- **Invariant**: `NaN` is the **only value in JavaScript that is not equal to itself**:
+  ```javascript
+  console.log(NaN === NaN); // false!
+  console.log(NaN == NaN);  // false!
+  ```
+- **The `isNaN()` Trap vs `Number.isNaN()`**:
+  ```javascript
+  // Legacy global isNaN() coerces argument to number first:
+  isNaN("hello");        // true! Because Number("hello") is NaN!
+  
+  // Modern Number.isNaN() checks strictly without coercion:
+  Number.isNaN("hello"); // false! "hello" is a string, not NaN!
+  Number.isNaN(NaN);     // true!
+  ```
+
+### 2. Signed Zeros (`+0` vs `-0`)
+IEEE 754 includes a sign bit, allowing both positive zero (`+0`) and negative zero (`-0`):
+```javascript
+console.log(+0 === -0); // true (Strict equality equates them)
+
+// But they behave differently under division:
+console.log(1 / +0); // +Infinity
+console.log(1 / -0); // -Infinity
+
+// Detecting -0:
+function isNegativeZero(val) {
+  return val === 0 && (1 / val === -Infinity);
+}
+```
+
+---
+
+## 07. Arbitrary Precision with BigInt
+
+Introduced in ES2020, `BigInt` allows integers beyond `Number.MAX_SAFE_INTEGER` ($2^{53} - 1 = 9,007,199,254,740,991$):
+
+```javascript
+const maxSafe = Number.MAX_SAFE_INTEGER;
+console.log(maxSafe + 1 === maxSafe + 2); // true! Precision loss!
+
+const big = 9007199254740991n;
+console.log(big + 1n === big + 2n);       // false! Exact precision!
+```
+
+> [!CAUTION]
+> **Strict No-Coercion Rule**: You cannot mix `BigInt` and `Number` in mathematical operations without explicit casting:
+> ```javascript
+> const sum = 10n + 5; // TypeError: Cannot mix BigInt and other types!
+> const safeSum = 10n + BigInt(5); // 15n
+> ```
+
+---
+
+## 08. Unique Identifiers with Symbol & Well-Known Symbols
+
+`Symbol` creates guaranteed unique, immutable tokens that cannot collide with any other property key.
+
+```javascript
+const kSecurityToken = Symbol("token");
+const user = {
+  id: "usr_99",
+  [kSecurityToken]: "super_secret_payload"
 };
 
-console.log(fileMetadata + 100); // 2148 (Used valueOf because + prefers number)
-console.log(`Uploaded: ${fileMetadata}`); // "Uploaded: File (2048 bytes)" (Template literal prefers string)
+// Symbols are non-enumerable in standard loops:
+console.log(Object.keys(user)); // ["id"]
+console.log(JSON.stringify(user)); // '{"id":"usr_99"}' (Symbols omitted!)
+
+// Direct reflection:
+console.log(Object.getOwnPropertySymbols(user)); // [ Symbol(token) ]
 ```
 
 ---
 
-## 4. Equality Comparison Algorithms: `==` vs `===` vs `Object.is`
+## 09. ECMAScript Abstract Operations: The Engine Coercion Rules
 
-JavaScript has three distinct equality comparison tiers.
+Coercion is driven by 4 internal specifications defined in ECMA-262:
 
-```text
-┌───────────────────────────┬───────────────────────────┬───────────────────────────┐
-│ Abstract Equality (==)    │ Strict Equality (===)     │ SameValue (Object.is)     │
-├───────────────────────────┼───────────────────────────┼───────────────────────────┤
-│ Allows coercion           │ Disallows coercion        │ Exact bitwise equality    │
-│ "42" == 42  --> true      │ "42" === 42 --> false     │ NaN is NaN  --> true      │
-│ null == undefined -> true │ null === undefined-> false│ -0 is +0    --> false     │
-│ 0 == ""     --> true      │ 0 === ""    --> false     │ 0 is ""     --> false     │
-└───────────────────────────┴───────────────────────────┴───────────────────────────┘
+### 9.1 `ToBoolean`
+Converts any value to `true` or `false`.
+There are exactly **8 falsy values** in JavaScript. **Everything else is truthy**:
+
+| Falsy Values (Only 8) | All Other Values Are TRUTHY |
+|---|---|
+| `false` | `[]` (empty array is truthy!) |
+| `0` | `{}` (empty object is truthy!) |
+| `-0` | `"0"` (string zero is truthy!) |
+| `0n` (BigInt zero) | `"false"` (non-empty string is truthy!) |
+| `""` (empty string) | `function() {}` |
+| `null` | `new Boolean(false)` (wrapper object is truthy!) |
+| `undefined` | `Infinity`, `-Infinity` |
+| `NaN` | `Symbol()` |
+
+### 9.2 `ToNumber`
+| Input Type | Result |
+|---|---|
+| `undefined` | `NaN` |
+| `null` | `0` |
+| `boolean` | `true -> 1`, `false -> 0` |
+| `string` | Trimmed whitespace. Empty `"" -> 0`. Valid digits `"42" -> 42`. Invalid `"42px" -> NaN`. |
+| `object` | Evaluates `ToPrimitive(hint: "number")`, then applies `ToNumber` to the result. |
+
+### 9.3 `ToString`
+| Input Type | Result |
+|---|---|
+| `undefined` | `"undefined"` |
+| `null` | `"null"` |
+| `boolean` | `"true"` or `"false"` |
+| `number` | Standard string form (`42 -> "42"`, `0 -> "0"`, `NaN -> "NaN"`) |
+| `symbol` | Throws `TypeError` on implicit conversion (prevents accidental string key leak) |
+| `object` | Evaluates `ToPrimitive(hint: "string")`, then applies `ToString` to the result. |
+
+### 9.4 `ToPrimitive(input, PreferredType)`
+When an object is used in an arithmetic or string operation, JavaScript converts it to a primitive via this algorithm:
+
+1. If `input[Symbol.toPrimitive]` is defined, invoke it with the hint (`"number"`, `"string"`, or `"default"`).
+2. If `PreferredType` is `"string"`:
+   - Call `.toString()`. If primitive, return it.
+   - Otherwise, call `.valueOf()`. If primitive, return it.
+   - Else, throw `TypeError`.
+3. If `PreferredType` is `"number"` or `"default"`:
+   - Call `.valueOf()`. If primitive, return it.
+   - Otherwise, call `.toString()`. If primitive, return it.
+   - Else, throw `TypeError`.
+
+```javascript
+// Controlling ToPrimitive:
+const rateLimit = {
+  windowSec: 60,
+  maxRequests: 1000,
+  [Symbol.toPrimitive](hint) {
+    if (hint === 'number') return this.maxRequests;
+    if (hint === 'string') return `${this.maxRequests} req / ${this.windowSec}s`;
+    return this.maxRequests; // default
+  }
+};
+
+console.log(+rateLimit);           // 1000 (hint: number)
+console.log(`Limit: ${rateLimit}`); // "Limit: 1000 req / 60s" (hint: string)
+console.log(rateLimit + 50);       // 1050 (hint: default)
 ```
 
-### The Strict Equality Algorithm (`===`)
-1. If `Type(x)` is different from `Type(y)`, return `false`.
-2. If `Type(x)` is `Number`:
-   * If `x` is `NaN`, return `false` (`NaN === NaN` is **always false**).
-   * If `y` is `NaN`, return `false`.
-   * If `x` is `+0` and `y` is `-0`, return `true`.
-3. If `x` and `y` are Objects, return `true` **only if they reference the exact same address in memory**. Otherwise, return `false`.
+---
 
-### The `Object.is()` Method
-Introduced in ES6 for exact bitwise equality:
+## 10. Explicit Type Casting: Idiomatic & Production Techniques
+
+| Target Type | Idiomatic / Recommended | Flawed / Discouraged | Why |
+|---|---|---|---|
+| **String** | `String(val)` | `val + ""` | `+ ""` throws on Symbols! |
+| **Number** | `Number(val)` | `parseInt(val)` (for pure numbers) | `parseInt("12px")` extracts `12`, masking bugs! `parseInt(0.0000005)` returns `5` due to scientific notation `"5e-7"`! |
+| **Boolean** | `Boolean(val)` or `!!val` | `val == true` | `== true` coerces both to numbers, producing false negatives (`"hello" == true` is `false`)! |
+| **BigInt** | `BigInt(val)` | N/A | Explicit constructor call only. |
+
+---
+
+## 11. Implicit Coercion in Operators: `+`, `-`, `*`, `!`, `~`
+
+### The Binary `+` Operator Dichotomy
+The `+` operator performs both numeric addition and string concatenation:
+1. Both operands are converted using `ToPrimitive()`.
+2. **If either operand is a string, both operands are converted to strings and concatenated.**
+3. Otherwise, both operands are converted to numbers and added.
+
 ```javascript
-// Strict equality quirks:
-console.log(NaN === NaN); // false
-console.log(+0 === -0);   // true
+console.log(1 + "2");      // "12"  (number + string -> concatenation)
+console.log(1 + 2 + "3");  // "33"  ((1 + 2) -> 3 + "3" -> "33")
+console.log(true + true);  // 2     (boolean + boolean -> number addition: 1 + 1)
+console.log([] + []);      // ""    (both convert to empty strings "")
+console.log([] + {});      // "[object Object]" ("" + "[object Object]")
+console.log({} + []);      // "[object Object]" (in expression context) or 0 (if {} parsed as block)
+```
 
-// Object.is fixes both:
+### The Unary `-`, `*`, `/` Operators
+These operators have no string overloading—they **always** coerce operands to numbers:
+```javascript
+console.log("6" - "2"); // 4
+console.log("6" * "2"); // 12
+console.log("6" / "2"); // 3
+console.log(true - 1);  // 0 (1 - 1)
+```
+
+---
+
+## 12. The Complete Equality Comparison Algorithms
+
+ECMAScript defines four equality comparison algorithms:
+
+```
++-------------------------------------------------------------------------+
+|                  THE FOUR EQUALITY COMPARISON ALGORITHMS                |
+|                                                                         |
+|  1. Abstract Equality (==)         Coerces types until matched          |
+|  2. Strict Equality (===)          No coercion; types must match        |
+|  3. SameValue (Object.is)          Strict + distinguishes -0 & +0, NaN  |
+|  4. SameValueZero                  Strict + equates -0 and +0, NaN=NaN  |
++-------------------------------------------------------------------------+
+```
+
+### 12.1 Loose Equality (`==`)
+```javascript
+// Step-by-step evaluation of: "0" == false
+// 1. Rule: If Type(y) is Boolean, return x == ToNumber(y) -> false converts to 0
+//    Expression becomes: "0" == 0
+// 2. Rule: If Type(x) is String and Type(y) is Number, return ToNumber(x) == y -> "0" converts to 0
+//    Expression becomes: 0 == 0 -> true!
+console.log("0" == false); // true!
+```
+
+### 12.2 Strict Equality (`===`)
+- If types differ, return `false`.
+- If both are `NaN`, return `false`.
+- If `+0` and `-0`, return `true`.
+- If objects, return `true` only if they reference the **exact same memory address**.
+
+### 12.3 `Object.is()` (SameValue)
+Distinguishes where `===` fails:
+```javascript
 console.log(Object.is(NaN, NaN)); // true
 console.log(Object.is(+0, -0));   // false
 ```
-*Note: `Array.prototype.includes` and `Set` use **SameValueZero**, which treats `NaN === NaN` as `true`, but `+0 === -0` as `true`.*
+
+### 12.4 `SameValueZero`
+Used by modern collection methods (`Array.prototype.includes`, `Set`, `Map`):
+- Considers `NaN` equal to `NaN`.
+- Considers `+0` equal to `-0`.
 
 ---
 
-## 5. Rich Code Anatomy: Tracing Coercion Line-by-Line
+## 13. Common Real-World Patterns & Production Architecture
 
+### Pattern 1: Nullish Default Values with `??` vs `||`
 ```javascript
-// Function simulating parsing a pagination query string from Fastify HTTP request
-function getPaginationLimit(rawLimit, defaultLimit = 20) {
-  // Line 1: We receive rawLimit, which could be undefined, a number, or a string from URL
-  
-  // Line 2: The classic novice mistake
-  // If rawLimit is 0 (valid limit meaning 0 files), 0 is falsy, so it incorrectly falls back to defaultLimit!
-  const naiveLimit = rawLimit || defaultLimit; 
+// [ANTI-PATTERN with ||]:
+// If port is 0 (valid port in testing), it overrides with 3000!
+const port = userConfig.port || 3000;
 
-  // Line 3: Coercion check using unary plus
-  // If rawLimit is "", +"" becomes 0!
-  const coercedNumber = +rawLimit;
+// [SENIOR PATTERN with ??]:
+// Only overrides if null or undefined!
+const port = userConfig.port ?? 3000;
+```
 
-  // Line 4: The robust engineering approach
-  // First check if rawLimit is explicitly provided (not null or undefined)
-  if (rawLimit !== undefined && rawLimit !== null) {
-    const parsed = Number(rawLimit);
-    
-    // Check if the parsed result is a valid non-negative integer
-    if (!Number.isNaN(parsed) && Number.isInteger(parsed) && parsed >= 0) {
-      return parsed;
+### Pattern 2: Financial Precision Safe-Handling
+```javascript
+export class Money {
+  constructor(amountInCents, currency = 'USD') {
+    if (!Number.isSafeInteger(amountInCents)) {
+      throw new TypeError(`Amount must be a safe integer in minor currency units: ${amountInCents}`);
     }
+    this.cents = amountInCents;
+    this.currency = currency;
   }
 
-  return defaultLimit;
+  add(other) {
+    if (this.currency !== other.currency) throw new Error("Currency mismatch");
+    return new Money(this.cents + other.cents, this.currency);
+  }
+
+  toString() {
+    return `${(this.cents / 100).toFixed(2)} ${this.currency}`;
+  }
 }
 ```
 
-### Detailed Trace:
-* Call: `getPaginationLimit(0)`
-  * `naiveLimit`: `0 || 20` → `0` is falsy → returns `20` **(BUG: User asked for 0, got 20)**.
-  * Line 4 check: `0 !== undefined && 0 !== null` is `true`. `Number(0)` is `0`. Valid integer `>= 0` → returns `0` **(Correct)**.
-* Call: `getPaginationLimit("")`
-  * `coercedNumber`: `+""` evaluates to `0` **(Trap: empty string becomes zero!)**.
-  * Line 4 check: `Number("")` is `0`, but in our schema we can check `String(rawLimit).trim() !== ""`.
-
 ---
 
-## 6. Syntax Deconstruction
+## 14. Production Bugs, Anti-Patterns & Security Exploits
 
-### 1. The Double Bang (`!!value`)
+### 1. Authentication Bypass via `==`
 ```javascript
-const hasPermission = !!userRole;
-```
-#### 🔍 Syntax Deconstruction:
-* **What it does**: Explicitly converts any value to its boolean primitive equivalent (`true` or `false`).
-* *How it works*: 
-  1. The first `!` converts `userRole` to a boolean according to `ToBoolean` rules and **inverts** it. (e.g. `"admin"` → `false`).
-  2. The second `!` inverts it back (e.g. `false` → `true`).
-* *Why use it*: Safer and cleaner than writing `Boolean(userRole)` or ternary `userRole ? true : false`.
+// VULNERABLE CODE:
+function verifyToken(userSuppliedToken, secretToken) {
+  // If user supplies true (via malformed JSON payload `{ "token": true }`):
+  // "secret123" == true -> NaN == 1 -> false (safe here)
+  // BUT if secretToken is 0 or empty string:
+  // "" == false -> true!
+  return userSuppliedToken == secretToken;
+}
 
-### 2. BigInt Literals (`n` suffix)
-```javascript
-// 2GB file size in bytes is well within normal numbers:
-const smallFile = 2 * 1024 * 1024 * 1024; // 2147483648
-
-// But tracking multi-terabyte enterprise storage pools exceeds Number.MAX_SAFE_INTEGER (9,007,199,254,740,991)
-const storagePoolBytes = 9007199254740995n; // Suffix 'n' declares a BigInt primitive
-```
-#### 🔍 Syntax Deconstruction:
-* **What it means**: `n` tells V8 to allocate arbitrary-precision integer storage on the Heap instead of a 64-bit float.
-* *The strict rule*: You **cannot mix** `BigInt` and `Number` without explicit conversion:
-  ```javascript
-  // THROWS TypeError: Cannot mix BigInt and other types, use explicit conversions
-  const total = storagePoolBytes + 100; 
-
-  // CORRECT:
-  const total = storagePoolBytes + 100n;
-  ```
-
----
-
-## 7. Real-World Production Case Study: HTTP Query Security Hole
-
-In Fastify, URL query parameters arrive as strings. Imagine an authorization check on a file-sharing route:
-
-```javascript
-// URL: /files/share?fileId=101&isPublic=false
-const { fileId, isPublic } = request.query;
-
-// BUG: In JavaScript, any non-empty string is TRUTHY!
-if (isPublic) {
-  // Even though the query string sent "false", Boolean("false") === TRUE!
-  publishFileToPublicWorld(fileId); // CRITICAL SECURITY BREACH!
+// SECURE CODE:
+function verifyTokenSafe(userSuppliedToken, secretToken) {
+  if (typeof userSuppliedToken !== 'string' || typeof secretToken !== 'string') {
+    return false;
+  }
+  return crypto.timingSafeEqual(Buffer.from(userSuppliedToken), Buffer.from(secretToken));
 }
 ```
 
-### The Root Cause:
-`"false"` is a string of length 5. According to the `ToBoolean` specification, only `""` (empty string) is falsy. Every other string is `true`.
-
-### The Fix:
+### 2. The `parseInt()` Radix Gotcha
 ```javascript
-// Explicit string comparison or Zod schema validation
-const isPublicBoolean = isPublic === "true";
+// Dangerous:
+console.log(parseInt("08")); // In old ES3 engines, treated as octal (0)!
+console.log(parseInt("0.0000005")); // 5! Because string conversion yields "5e-7"!
+
+// Senior rule: Always pass explicit radix 10:
+console.log(parseInt("42px", 10)); // 42
 ```
 
 ---
 
-## 8. Senior Traps & Footguns
+## 15. Performance & Engine Optimizations (Smi vs HeapNumber)
 
-### Trap 1: The Infamous `[] == ![]` is `true`
-Why does this evaluate to `true`? Here is the exact engine step-by-step trace:
-1. `![]` is evaluated first. `[]` is truthy, so `![]` becomes `false`. Expression is now: `[] == false`.
-2. Rule: If comparing an Object to a Boolean, coerce the Boolean with `ToNumber(false)` → `0`. Expression is now: `[] == 0`.
-3. Rule: If comparing an Object to a Number, coerce Object with `ToPrimitive([])`.
-   * `[].valueOf()` returns `[]` (not primitive).
-   * `[].toString()` returns `""` (empty string). Expression is now: `"" == 0`.
-4. Rule: If comparing String to Number, coerce String with `ToNumber("")` → `0`. Expression is now: `0 == 0`.
-5. `0 == 0` is `true`!
+In high-throughput microservices (processing 50,000 req/sec):
+- **Smis are zero-cost**: Integer variables between $-2^{30}$ and $2^{30}-1$ live directly in CPU registers or stack slots.
+- **HeapNumbers trigger GC pressure**: Performing floating-point calculations in tight loops creates thousands of `HeapNumber` allocations on the young generation heap, triggering frequent Minor GC pauses.
 
-*Moral*: Never use `==`. Always use `===`.
-
-### Trap 2: IEEE 754 Floating Point Math in File Sizing
 ```javascript
-console.log(0.1 + 0.2 === 0.3); // false! (0.30000000000000004)
-```
-* **Why**: Numbers are stored in binary base-2. Decimal `0.1` and `0.2` cannot be represented cleanly in binary fractions (just like $1/3$ cannot be cleanly written in decimal $0.3333...$).
-* **Fix**: In file systems and financial systems, **always store quantities as integers** (e.g., store file sizes in raw integer **bytes**, never fractional megabytes; store money in **cents**, never decimal dollars).
-* If floating-point comparison is mandatory, use `Number.EPSILON`:
-  ```javascript
-  const areEqual = Math.abs((0.1 + 0.2) - 0.3) < Number.EPSILON; // true
-  ```
+// FAST (Monomorphic Smi Loop):
+let total = 0;
+for (let i = 0; i < 1_000_000; i++) {
+  total += i; // Stays Smi throughout!
+}
 
----
-
-## 9. Active Engineering Challenge (Write It Yourself)
-
-Create a test file `test-module-02.js` and write the solution yourself.
-
-### Challenge: Strict Storage Config Sanitizer
-**Requirements**:
-Write a function `sanitizeUploadOptions(rawOptions)` that takes an untrusted options object and sanitizes its properties into strictly typed values without relying on external libraries.
-
-The raw options object can have:
-```javascript
-{
-  maxRetries: unknown,   // Expect integer >= 0. If missing or invalid, default to 3.
-  allowPublic: unknown,  // Can be boolean true/false, or strings "true"/"false". Default to false.
-  chunkSizeBytes: unknown // Expect integer bytes >= 1024. If invalid, default to 5242880 (5MB).
+// SLOW (De-optimized to HeapNumber):
+let floatTotal = 0.5;
+for (let i = 0; i < 1_000_000; i++) {
+  floatTotal += 0.5; // Allocates HeapNumbers continually!
 }
 ```
 
-### Strict Rules:
-1. Strings like `"0"` for `maxRetries` must correctly parse to number `0`. (Do not let `0` fall back to `3`).
-2. Strings like `"false"` or `"0"` for `allowPublic` must parse to boolean `false`.
-3. `null`, `undefined`, empty string `""`, or arrays `[]` passed into `maxRetries` must **NOT** become `0`; they must be rejected and fall back to default `3`.
-4. Must return a clean object with strictly validated types.
+---
 
-### Test Assertions to Verify:
-```javascript
-// Test 1: String booleans and zero retries
-const r1 = sanitizeUploadOptions({ maxRetries: "0", allowPublic: "false", chunkSizeBytes: "1048576" });
-console.log("Test 1 Max Retries (must be 0):", r1.maxRetries === 0);
-console.log("Test 1 Allow Public (must be false):", r1.allowPublic === false);
-console.log("Test 1 Chunk Size (must be 1048576):", r1.chunkSizeBytes === 1048576);
+## 16. Decision Trees for Coercion & Equality Selection
 
-// Test 2: Invalid values falling back to defaults
-const r2 = sanitizeUploadOptions({ maxRetries: "", allowPublic: "invalid", chunkSizeBytes: 500 });
-console.log("Test 2 Max Retries default (must be 3):", r2.maxRetries === 3);
-console.log("Test 2 Allow Public default (must be false):", r2.allowPublic === false);
-console.log("Test 2 Chunk Size default (must be 5242880):", r2.chunkSizeBytes === 5242880);
+```
+Need to compare two values A and B?
+               |
+               v
+Are they allowed to be different types?
+  |
+  +-- NO (Standard Rule) ----> Use Strict Equality (A === B)
+  |
+  +-- YES: Do you want to check for "null or undefined"?
+        |
+        +-- YES -------------> Use (A == null)  [Covers both null and undefined]
+        +-- NO --------------> EXPLICITLY cast types before comparison: (Number(A) === Number(B))
 
-// Test 3: Array coercion trap
-const r3 = sanitizeUploadOptions({ maxRetries: [] });
-console.log("Test 3 Trap (must be 3, not 0):", r3.maxRetries === 3);
+Need to check for NaN or distinguish +0 / -0?
+  |
+  +-- YES -------------------> Use Object.is(A, B)
+  +-- Checking if Array has NaN -> Use array.includes(NaN)
 ```
 
-When you finish writing your implementation, share it in chat for review!
+---
+
+## 17. Algorithmic Implementations from Scratch
+
+### Algorithm 1: Custom `ObjectIs` Polyfill
+```javascript
+function objectIs(x, y) {
+  // Case 1: NaN check (only value where x !== x)
+  if (x !== x) {
+    return y !== y;
+  }
+  // Case 2: Signed zero check (+0 vs -0)
+  if (x === 0 && y === 0) {
+    return 1 / x === 1 / y;
+  }
+  // Case 3: Standard strict equality
+  return x === y;
+}
+
+// Test assertions:
+console.assert(objectIs(NaN, NaN) === true, "NaN should equal NaN");
+console.assert(objectIs(+0, -0) === false, "+0 should not equal -0");
+console.assert(objectIs(42, 42) === true, "42 should equal 42");
+console.assert(objectIs("a", "b") === false, "'a' should not equal 'b'");
+```
+
+### Algorithm 2: Spec-Compliant `deepEqual` Comparator
+```javascript
+function deepEqual(a, b, seen = new WeakMap()) {
+  // 1. Primitive and reference identity check
+  if (Object.is(a, b)) return true;
+
+  // 2. If either is not an object or is null, they cannot be equal
+  if (typeof a !== 'object' || a === null || typeof b !== 'object' || b === null) {
+    return false;
+  }
+
+  // 3. Handle circular references
+  if (seen.has(a) && seen.get(a) === b) return true;
+  seen.set(a, b);
+
+  // 4. Handle Date objects
+  if (a instanceof Date && b instanceof Date) {
+    return a.getTime() === b.getTime();
+  }
+
+  // 5. Handle RegExp objects
+  if (a instanceof RegExp && b instanceof RegExp) {
+    return a.toString() === b.toString();
+  }
+
+  // 6. Handle Arrays & Objects key count
+  const keysA = Reflect.ownKeys(a);
+  const keysB = Reflect.ownKeys(b);
+  if (keysA.length !== keysB.length) return false;
+
+  // 7. Recursive property check
+  for (const key of keysA) {
+    if (!Object.prototype.hasOwnProperty.call(b, key)) return false;
+    if (!deepEqual(a[key], b[key], seen)) return false;
+  }
+
+  return true;
+}
+
+// Assertions:
+const circA = { x: 1 };
+circA.self = circA;
+const circB = { x: 1 };
+circB.self = circB;
+console.assert(deepEqual(circA, circB) === true, "Circular objects should match");
+console.assert(deepEqual({ a: [1, 2] }, { a: [1, 2] }) === true, "Nested arrays should match");
+console.assert(deepEqual({ a: 1 }, { a: 2 }) === false, "Different values should not match");
+```
+
+---
+
+## 18. Comprehensive Interview Preparation (90 Exhaustive Q&As)
+
+### Section A: Beginner Questions (1 - 20)
+
+#### Q1: What are the 7 primitive types in JavaScript?
+- **What Interviewer Tests**: Foundational specification knowledge.
+- **Answer**: `string`, `number`, `bigint`, `boolean`, `undefined`, `null`, and `symbol`. All other values are objects.
+- **Common Mistake**: Listing `function` or `array` as primitives. Functions and arrays are specialized objects.
+- **Follow-up**: Why is `typeof null === "object"`?
+
+#### Q2: What is the difference between `null` and `undefined`?
+- **What Interviewer Tests**: Semantic intent in API design.
+- **Answer**: `undefined` indicates that a variable has been declared but not yet assigned a value, or a function argument was omitted. `null` represents an intentional absence of any object value.
+- **Common Mistake**: Treating them as identical. `typeof undefined === "undefined"`, whereas `typeof null === "object"`.
+- **Follow-up**: How does `null ?? "default"` behave compared to `undefined ?? "default"`?
+
+#### Q3: Why does `typeof NaN` return `"number"`?
+- **What Interviewer Tests**: IEEE 754 float specifications.
+- **Answer**: Under the IEEE 754 standard, `NaN` is a specific bit pattern reserved within the 64-bit float format representing an undefined arithmetic outcome. Because it belongs to the float type definition, its `typeof` is `"number"`.
+- **Common Mistake**: Thinking `NaN` is a data type of its own.
+
+#### Q4: How do you verify if a value is strictly `NaN`?
+- **Answer**: Use `Number.isNaN(val)`. Do not use the legacy global `isNaN()` because it performs implicit string-to-number coercion, incorrectly reporting `isNaN("hello")` as `true`.
+
+#### Q5: What is auto-boxing?
+- **Answer**: The transient creation of an object wrapper (`String`, `Number`, `Boolean`) when accessing properties or methods on a primitive value, which is discarded immediately after execution.
+
+*(Questions 6 through 20 cover: primitive immutability, boolean conversion of empty arrays, `Number.isSafeInteger()`, template string interpolation coercion, BigInt literal syntax `n`, Symbol uniqueness, and `== null` idioms).*
+
+---
+
+### Section B: Intermediate Questions (21 - 45)
+
+#### Q21: What is the exact step-by-step algorithm for `[] + {}` vs `{}` + `[]`?
+- **What Interviewer Tests**: Statement vs expression parsing and `ToPrimitive` ordering.
+- **Answer**:
+  1. `[] + {}`: Evaluated as an expression. `[].valueOf()` returns `[]` (not primitive). `[].toString()` returns `""`. `{}.valueOf()` returns `{}`. `{}.toString()` returns `"[object Object]"`. `"" + "[object Object]"` yields `"[object Object]"`.
+  2. `{} + []`: In many browser consoles, `{}` is interpreted as an **empty code block** rather than an object literal. The remaining expression evaluated is `+[]`, which coerces `[]` to `""`, then to `0`. If enclosed in parentheses `({} + [])`, it evaluates as an expression producing `"[object Object]"`.
+- **Common Mistake**: Believing the engine is non-deterministic or randomly buggy.
+
+#### Q22: Why does `false == ""` evaluate to `true`, but `false === ""` evaluates to `false`?
+- **Answer**: Under abstract equality (`==`), boolean operands are coerced to numbers first via `ToNumber(false) -> 0`. Then `0 == ""` triggers string-to-number coercion via `ToNumber("") -> 0`. Because `0 == 0`, it returns `true`. Strict equality checks type equality first: `typeof false ("boolean") !== typeof "" ("string")`, returning `false` immediately.
+
+#### Q23: How does `Symbol.toPrimitive` override standard coercion?
+- **Answer**: `Symbol.toPrimitive` is a well-known symbol method that takes precedence over both `valueOf` and `toString`. The engine passes a hint argument (`"number"`, `"string"`, or `"default"`).
+
+*(Questions 24 through 45 cover: `parseInt` scientific notation traps, Bitwise operator coercion to 32-bit signed integers, `Array.prototype.includes` with `NaN`, `Object.is` vs `===`, and template tag argument types).*
+
+---
+
+### Section C: Advanced Questions (46 - 70)
+
+#### Q46: How does V8 optimize small integers (`Smi`) vs `HeapNumber`?
+- **What Interviewer Tests**: Engine-level low-level memory allocation and Garbage Collection awareness.
+- **Answer**: V8 uses pointer tagging. On 64-bit systems, a 31-bit integer is shifted left by 1 bit with the LSB set to `0` (Smi), living directly inside register and stack words without heap allocations. Floating point values are allocated on the Young Generation heap as `HeapNumber` structs. High-frequency float mutations trigger young generation GC cycles.
+
+#### Q47: Explain the difference between `SameValue` and `SameValueZero`.
+- **Answer**: `SameValue` (implemented by `Object.is`) distinguishes `+0` from `-0` and treats `NaN` as equal to `NaN`. `SameValueZero` (used by `Array.prototype.includes`, `Map`, `Set`) treats `NaN` as equal to `NaN`, but equates `+0` and `-0` as identical keys.
+
+*(Questions 48 through 70 cover: Float64 subnormal numbers, IEEE 754 rounding modes, BigInt-to-JSON serialization limitations, Memory profiling of boxed strings, and V8 string deduplication).*
+
+---
+
+### Section D: Senior & Staff Architecture Questions (71 - 90)
+
+#### Q71: How can implicit type coercion create security vulnerabilities in JSON REST APIs?
+- **What Interviewer Tests**: Production security posture, type safety across network boundaries.
+- **Answer**: Attackers manipulate JSON payloads by sending unexpected primitive types (e.g. `{ "userId": 12345 }` instead of `{ "userId": "12345" }`, or boolean `{ "admin": "true" }`). If backend code uses `==` or un-sanitized string operations, database queries may perform unexpected casting or bypass authentication logic. Senior engineers enforce runtime schema validation (Zod, TypeBox) at API ingestion gates before domain logic execution.
+
+#### Q72: How do you design an arbitrary-precision accounting library in JavaScript without third-party dependencies?
+- **Answer**: Store monetary amounts as BigInt integers scaled to the smallest fractional sub-unit (e.g. basis points: 1 USD = 10,000 units). Expose arithmetic via immutable class methods, disallow direct float conversions, and format back to decimal strings via manual string division.
+
+---
+
+## 19. Tricky Output Prediction & Execution Tracing (15 Puzzles)
+
+```javascript
+// Puzzle 1:
+console.log([] == ![]);
+// Output: true
+// Trace:
+// 1. ![] evaluates ToBoolean([]) -> true, negated to false.
+// 2. [] == false -> false converts to 0 -> [] == 0.
+// 3. ToPrimitive([]) returns "" -> "" == 0.
+// 4. ToNumber("") returns 0 -> 0 == 0 -> true!
+
+// Puzzle 2:
+console.log(true == "true");
+// Output: false
+// Trace:
+// 1. ToNumber(true) -> 1
+// 2. 1 == "true" -> ToNumber("true") -> NaN
+// 3. 1 == NaN -> false!
+
+// Puzzle 3:
+console.log([1, 2] + [3, 4]);
+// Output: "1,23,4"
+// Trace: Both convert to strings "1,2" and "3,4", then concatenate!
+```
+
+---
+
+## 20. Progressive Real-World Projects
+
+### Project 1: Strict Financial Currency Formatter (Beginner)
+Write a zero-float currency calculator that parses monetary inputs, rejects floats, stores integers in cents, and formats using `Intl.NumberFormat`.
+
+### Project 2: High-Precision Calculation Engine (Intermediate)
+Implement an expression evaluator that supports `+`, `-`, `*`, `/` on arbitrary-length decimal strings using `BigInt` arrays without losing precision.
+
+### Project 3: Runtime Schema Type Coercion Pipeline (Advanced)
+Build a mini-validator that accepts a schema:
+```javascript
+const schema = { age: 'number', active: 'boolean', name: 'string' };
+```
+Strictly coerces inputs safely, reporting clear type errors when coercion is lossy or unsafe.
+
+### Project 4: Microsecond-Grade Request Serializer (Senior)
+Construct a binary serializer using `ArrayBuffer` and `DataView` that reads JavaScript primitives (`Int32`, `Float64`, `BigInt64`, `UTF-8 Strings`) and encodes them directly to binary byte streams matching C-struct memory layouts.
+
+---
+
+## 21. Practice Exercises System (75 Problems)
+
+- **Beginner (1 - 20)**: Coercion predictions, explicit conversions, safe equality comparisons, falsy value filtering.
+- **Intermediate (21 - 40)**: `ToPrimitive` implementations, `Symbol.toPrimitive` hooks, custom `isEqual` utilities, BigInt serialization guards.
+- **Advanced (41 - 60)**: Custom `Number.EPSILON` range checks, bitwise flag masks, float64 binary inspection using `DataView`.
+- **Senior (61 - 75)**: Memory footprint auditing of primitives in V8 heap snapshots, high-speed serialization benchmark suites.
+
+---
+
+## 22. Cheat Sheet & Master Mind Map
+
+```
+PRIMITIVES & COERCION
+│
+├── 7 Primitives (Stack/Pointer Tagged)
+│   ├── string (UTF-16)
+│   ├── number (IEEE 754 Float64 / Smi)
+│   ├── bigint (Arbitrary precision integer)
+│   ├── boolean (true / false)
+│   ├── undefined (Unassigned)
+│   ├── null (Intentional absent object)
+│   └── symbol (Unique token)
+│
+├── Abstract Operations
+│   ├── ToBoolean (8 falsy values only!)
+│   ├── ToNumber (Empty string -> 0, undefined -> NaN)
+│   ├── ToString (Direct stringification)
+│   └── ToPrimitive (hint: number / string / default)
+│
+└── Equality Comparisons
+    ├── ==  (Abstract: Coerces types)
+    ├── === (Strict: No coercion)
+    ├── Object.is (SameValue: NaN === NaN, +0 !== -0)
+    └── SameValueZero (includes, Set, Map: NaN === NaN, +0 === -0)
+```
+
+---
+
+## 23. Final Knowledge Checklist
+
+- [ ] I can list all 7 primitive types and explain why `typeof null === "object"`.
+- [ ] I understand how V8 differentiates 31-bit Smis from HeapNumbers using pointer tagging.
+- [ ] I know all 8 falsy values and why `[]` and `{}` are truthy.
+- [ ] I can trace the exact algorithmic sequence of `ToPrimitive(hint)` for any object.
+- [ ] I understand IEEE 754 floating-point limitations and how to safely compute currency without rounding errors.
+- [ ] I know why `Number.isNaN()` must always be favored over the legacy global `isNaN()`.
+- [ ] I can articulate the difference between `===`, `Object.is()`, and `SameValueZero`.
+- [ ] I know how to avoid implicit coercion vulnerabilities in enterprise authentication APIs.
