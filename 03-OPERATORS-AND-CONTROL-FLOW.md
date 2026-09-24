@@ -712,11 +712,91 @@ TurboFan Optimized (Peeled):
 if (N > 0) {
   doWork(arr[0]); // First iteration warms up type feedback
   for (let i = 1; i < N; i++) {
-    doWork_Optimized(arr[i]); // Highly optimized machine code!
+If elements inside `arr` change types halfway through the loop (e.g., from integers to objects), TurboFan's inline cache de-optimizes, reverting back to the slow interpreter!
+
+---
+
+# 15. REAL-WORLD PRODUCTION PATTERNS
+
+### 15.1 Guard Clauses & Early Exit Architecture
+Avoid nested "arrowhead" anti-patterns by inverting conditions into guard clauses:
+```javascript
+// Anti-Pattern: Deep Arrowhead Nesting
+function processOrder(order) {
+  if (order) {
+    if (order.isValid) {
+      if (order.items.length > 0) {
+        return submitOrder(order);
+      }
+    }
   }
+  return null;
+}
+
+// Senior Pattern: Clean Linear Guard Clauses
+function processOrder(order) {
+  if (!order || !order.isValid || !order.items?.length) return null;
+  return submitOrder(order);
 }
 ```
-If elements inside `arr` change types halfway through the loop (e.g., from integers to objects), TurboFan's inline cache de-optimizes, reverting back to the slow interpreter!
+
+### 15.2 Nullish Configuration Merge Pattern
+```javascript
+function initializeServer(options = {}) {
+  return {
+    port: options.port ?? 3000,
+    host: options.host ?? "localhost",
+    timeout: options.timeout ?? 5000,
+    debug: options.debug ?? false
+  };
+}
+```
+
+---
+
+# 16. PRODUCTION BUGS, ANTI-PATTERNS & SECURITY PITFALLS
+
+1. **Precedence Obscurity**: Writing `a + b * c >> d & e` without parentheses creates brittle code that causes silent logic failures.
+2. **React `0 && <Comp/>` Leak**: Causes raw zeros to render on public interfaces.
+3. **Sparse Array Holes via `delete`**: Using `delete arr[i]` damages V8 element kinds, degrading arrays from packed fast storage to holey slow dictionary mode.
+4. **Missing `break` in `switch`**: Accidental fall-through leaks unintended execution paths.
+
+---
+
+# 17. DECISION TREES FOR OPERATOR & CONTROL SELECTION
+
+### Fallback Operator Decision Tree:
+```text
+Need a fallback value for an expression?
+                 │
+                 ▼
+       Is 0, "", or false a
+     VALID, ACCEPTABLE value?
+        /                \
+       /                  \
+     YES                  NO
+      │                    │
+      ▼                    ▼
+Use ?? (Nullish)     Use || (Logical OR)
+Preserves 0, "",     Falls back on ANY
+and false            falsy value
+```
+
+### Loop Selection Decision Tree:
+```text
+Need to iterate over a data structure?
+                 │
+                 ▼
+          What is the target?
+        /          |         \
+       /           |          \
+   ARRAY        ITERABLE      OBJECT KEYS
+     │             │              │
+     ▼             ▼              ▼
+for...of OR     for...of       Object.keys(obj)
+Indexed for()   (Map/Set)      with for...of
+(Never for..in)                (Never raw for..in)
+```
 
 
 ---
