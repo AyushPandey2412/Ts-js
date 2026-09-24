@@ -64,7 +64,7 @@ export default function TracksCatalog() {
                         : 'bg-amber-950/80 text-amber-300 border-amber-800/80'
                     }`}
                   >
-                    {track.status === 'active' ? 'Live · 9 Modules' : 'Roadmap In Progress'}
+                    {track.status === 'active' ? `Live · ${track.modulesCount} Modules` : 'Roadmap In Progress'}
                   </span>
                 </div>
 

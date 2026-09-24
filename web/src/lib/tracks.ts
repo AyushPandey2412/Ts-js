@@ -31,7 +31,7 @@ export const TECHNOLOGY_TRACKS: TechnologyTrack[] = [
     status: 'active',
     tagline: 'Deep dive into ECMAScript specifications, memory architecture, and V8 internals.',
     description: 'Master the runtime mechanics of modern JavaScript: Call Stack, Heap Memory, Execution Contexts, Garbage Collection, Closures, Event Loop, Asynchronous pipelines, and algorithmic problem-solving.',
-    badge: '9 Modules · 70 Problems',
+    badge: '16 Modules · 70 Problems',
     accentColor: 'amber',
     topics: [
       'Call Stack & Heap',
@@ -44,7 +44,7 @@ export const TECHNOLOGY_TRACKS: TechnologyTrack[] = [
       'Arrays & Collections',
       'Promises & Concurrency'
     ],
-    modulesCount: 9,
+    modulesCount: 16,
     practiceCount: 70,
     syllabus: [
       {
@@ -104,11 +104,60 @@ export const TECHNOLOGY_TRACKS: TechnologyTrack[] = [
         slug: '07-objects-memory-and-cloning'
       },
       {
-        title: '08: Asynchronous Programming Complete',
+        title: '08: Scopes & Closures',
+        description: 'Lexical Environments, Scope Chains, V8 Heap Context Allocation, Stale Closures & Token Buckets.',
+        sectionsCount: 18,
+        status: 'available',
+        slug: '08-scopes-and-closures'
+      },
+      {
+        title: '09: The this Keyword & Bindings',
+        description: '4 Binding Rules, Lexical Arrow this, Reference Records, Polyfills, Fluent Builders & Active Record.',
+        sectionsCount: 18,
+        status: 'available',
+        slug: '09-the-this-keyword-and-bindings'
+      },
+      {
+        title: '10: Prototypes & Inheritance',
+        description: '[[Prototype]], Chain Traversal, Shadowing, ES5 Inheritance, V8 ValidityCells & Prototype Pollution Defense.',
+        sectionsCount: 18,
+        status: 'available',
+        slug: '10-prototypes-and-inheritance'
+      },
+      {
+        title: '11: Classes & OOP Patterns',
+        description: 'ES6 Desugaring, #private Fields, Dual-Linkage Inheritance, V8 Shapes & Enterprise Patterns.',
+        sectionsCount: 18,
+        status: 'available',
+        slug: '11-classes-and-oop-patterns'
+      },
+      {
+        title: '12: Regular Expressions & Symbols',
+        description: 'V8 Irregexp Internals, ReDoS Defense, Well-Known Symbols & Metaprogramming Protocols.',
+        sectionsCount: 16,
+        status: 'available',
+        slug: '12-regular-expressions-and-symbols'
+      },
+      {
+        title: '13: Error Handling & Debugging',
+        description: 'V8 Stack Unwinding, try/catch/finally Invariants, Custom Error Hierarchies & Telemetry.',
+        sectionsCount: 16,
+        status: 'available',
+        slug: '13-error-handling-and-debugging'
+      },
+      {
+        title: '14-16: Asynchronous Programming Complete',
         description: '172 sections: Microtask queue, Promise state machine, concurrency pools, web workers, and streams.',
         sectionsCount: 172,
         status: 'available',
         slug: 'javascript-async-programming-complete'
+      },
+      {
+        title: '17: Modules & Code Organization',
+        description: 'IIFE, CommonJS Wrapper, ESM 3-Phase Lifecycle, Live Bindings, Top-Level Await & Dual-Package Hazard.',
+        sectionsCount: 16,
+        status: 'available',
+        slug: '17-modules-and-code-organization'
       }
     ]
   },

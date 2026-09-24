@@ -62,7 +62,7 @@ export default function HomePage() {
         </div>
         <div className="bg-slate-900 border border-slate-800 p-4 rounded-lg">
           <div className="text-xs text-slate-500 font-medium">JavaScript Curriculum</div>
-          <div className="text-2xl font-bold text-white mt-1">9 / 9 Modules</div>
+          <div className="text-2xl font-bold text-white mt-1">{MODULES.length} Modules</div>
           <div className="text-[11px] text-emerald-400 mt-1">100% Complete & Live</div>
         </div>
         <div className="bg-slate-900 border border-slate-800 p-4 rounded-lg">
@@ -106,7 +106,7 @@ export default function HomePage() {
               </span>
             </div>
             <h2 className="text-lg font-bold text-white tracking-tight mt-1">
-              JavaScript Core & Runtime Internals (All 9 Modules)
+              JavaScript Core & Runtime Internals (All {MODULES.length} Modules)
             </h2>
           </div>
           <Link

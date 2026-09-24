@@ -200,7 +200,7 @@ export default function Sidebar({ searchIndex = [] }: SidebarProps) {
                               : 'bg-slate-800 text-slate-500'
                           }`}
                         >
-                          {t.status === 'active' ? '9 Mods' : 'Roadmap'}
+                          {t.status === 'active' ? `${t.modulesCount} Mods` : 'Roadmap'}
                         </span>
                       </>
                     ) : (
