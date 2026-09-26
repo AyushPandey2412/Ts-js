@@ -269,6 +269,16 @@ export const MODULES: ModuleMeta[] = [
     fileName: 'TS-06-OOP-CLASS-INTERNALS-AND-SOLID.md',
     estimatedSections: 18,
     badge: 'TS OOP & SOLID'
+  },
+  {
+    id: 'ts-07',
+    slug: 'ts-07-enterprise-design-patterns-and-builders',
+    number: 'TS-07',
+    title: 'Enterprise Design Patterns, Generic Builders & Reusable Architecture',
+    subtitle: 'Type-State Step-Builder, Generic Repository, Unit of Work, Middleware Pipelines & Railway-Oriented Result Monads',
+    fileName: 'TS-07-ENTERPRISE-DESIGN-PATTERNS-AND-BUILDERS.md',
+    estimatedSections: 18,
+    badge: 'TS Patterns & Architecture'
   }
 ];
 

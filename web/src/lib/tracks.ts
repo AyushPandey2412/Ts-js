@@ -260,7 +260,8 @@ export const TECHNOLOGY_TRACKS: TechnologyTrack[] = [
         title: '07: Enterprise Design Patterns & Reusable Architecture',
         description: 'Type-State Step-Builder, Generic Repository, Factory with dynamic registry, Observer, and Strategy patterns.',
         sectionsCount: 18,
-        status: 'planned'
+        status: 'available',
+        slug: 'ts-07-enterprise-design-patterns-and-builders'
       },
       {
         title: '08: Decorators (Stage 3), Metadata & IoC/DI Containers',
