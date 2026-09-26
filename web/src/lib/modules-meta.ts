@@ -249,6 +249,16 @@ export const MODULES: ModuleMeta[] = [
     fileName: 'TS-04-MAPPED-TYPES-AND-METAPROGRAMMING.md',
     estimatedSections: 18,
     badge: 'TS Metaprogramming'
+  },
+  {
+    id: 'ts-05',
+    slug: 'ts-05-template-literal-types-and-parsers',
+    number: 'TS-05',
+    title: 'Template Literal Types, Type Parsers & Compile-Time DSLs',
+    subtitle: 'Template Literals Grammar, Pattern Matching with infer, URL Route Extractors, SQL Column Projection & Type-Safe DSLs',
+    fileName: 'TS-05-TEMPLATE-LITERAL-TYPES-AND-PARSERS.md',
+    estimatedSections: 18,
+    badge: 'TS Parsers & DSLs'
   }
 ];
 

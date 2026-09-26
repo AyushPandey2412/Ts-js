@@ -246,7 +246,8 @@ export const TECHNOLOGY_TRACKS: TechnologyTrack[] = [
         title: '05: Template Literal Types & Type Parsers',
         description: 'Type-level string parsers, route param extractors (`:id`), and compile-time SQL/JSON schema validators.',
         sectionsCount: 18,
-        status: 'planned'
+        status: 'available',
+        slug: 'ts-05-template-literal-types-and-parsers'
       },
       {
         title: '06: Complete OOP, Class Internals & Modifiers',
