@@ -267,7 +267,8 @@ export const TECHNOLOGY_TRACKS: TechnologyTrack[] = [
         title: '08: Decorators (Stage 3), Metadata & IoC/DI Containers',
         description: 'TC39 Stage 3 Decorators (TS 5.0+), Decorator Metadata (`context.metadata`), and building an IoC container from scratch.',
         sectionsCount: 18,
-        status: 'planned'
+        status: 'available',
+        slug: 'ts-08-decorators-metadata-and-ioc'
       },
       {
         title: '09: Compiler Pipeline, AST & Custom Transformers',

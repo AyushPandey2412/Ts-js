@@ -279,6 +279,16 @@ export const MODULES: ModuleMeta[] = [
     fileName: 'TS-07-ENTERPRISE-DESIGN-PATTERNS-AND-BUILDERS.md',
     estimatedSections: 18,
     badge: 'TS Patterns & Architecture'
+  },
+  {
+    id: 'ts-08',
+    slug: 'ts-08-decorators-metadata-and-ioc',
+    number: 'TS-08',
+    title: 'Decorators (Stage 3), Metadata & IoC/DI Containers',
+    subtitle: 'TC39 Stage 3 Decorators, Decorator Metadata (Symbol.metadata), Auto-Accessors & Building an IoC Container from Scratch',
+    fileName: 'TS-08-DECORATORS-METADATA-AND-IOC.md',
+    estimatedSections: 18,
+    badge: 'TS Decorators & IoC'
   }
 ];
 
