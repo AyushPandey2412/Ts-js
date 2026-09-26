@@ -289,6 +289,16 @@ export const MODULES: ModuleMeta[] = [
     fileName: 'TS-08-DECORATORS-METADATA-AND-IOC.md',
     estimatedSections: 18,
     badge: 'TS Decorators & IoC'
+  },
+  {
+    id: 'ts-09',
+    slug: 'ts-09-compiler-pipeline-and-ast',
+    number: 'TS-09',
+    title: 'Compiler Pipeline, AST & Custom Transformers',
+    subtitle: '5-Phase Pipeline (Scanner, Parser, Binder, Checker, Emitter), AST Visitors, ts.factory & Code Generation',
+    fileName: 'TS-09-COMPILER-PIPELINE-AND-AST.md',
+    estimatedSections: 18,
+    badge: 'TS Compiler API'
   }
 ];
 

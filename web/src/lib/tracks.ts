@@ -274,7 +274,8 @@ export const TECHNOLOGY_TRACKS: TechnologyTrack[] = [
         title: '09: Compiler Pipeline, AST & Custom Transformers',
         description: 'Scanner, Parser, Binder, Checker, Emitter, AST visitors, and custom compiler plugins.',
         sectionsCount: 18,
-        status: 'planned'
+        status: 'available',
+        slug: 'ts-09-compiler-pipeline-and-ast'
       },
       {
         title: '10: Production tsconfig, Monorepos & Declarations',
