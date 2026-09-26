@@ -299,6 +299,46 @@ export default function Sidebar({ searchIndex = [] }: SidebarProps) {
             </div>
           </div>
 
+          {/* Notes Studio Section */}
+          <div className="pt-3 border-t border-slate-800/60">
+            {!isCollapsed ? (
+              <div className="text-[10px] font-semibold uppercase tracking-wider text-slate-400 px-2 mb-2">
+                Engineering Studio
+              </div>
+            ) : (
+              <div className="text-[9px] font-bold text-center text-slate-500 uppercase tracking-tighter mb-1.5">
+                STUDIO
+              </div>
+            )}
+
+            <Link
+              href="/notes"
+              onClick={() => setIsMobileOpen(false)}
+              className={`flex items-center justify-between px-2.5 py-2 rounded text-xs transition-colors ${
+                pathname === '/notes'
+                  ? 'bg-blue-600 text-white font-semibold'
+                  : 'text-slate-300 hover:bg-slate-800 hover:text-white'
+              }`}
+              title="Global Notes Studio & Masterclass Converter"
+            >
+              {!isCollapsed ? (
+                <>
+                  <div className="flex items-center space-x-2 truncate">
+                    <span>📝</span>
+                    <span className="font-medium truncate">Notes Studio</span>
+                  </div>
+                  <span className="text-[9.5px] px-1.5 py-0.5 rounded font-mono bg-emerald-950 text-emerald-300 border border-emerald-800/60 font-semibold">
+                    Word + MD
+                  </span>
+                </>
+              ) : (
+                <span className="mx-auto font-mono text-[11px] font-bold text-emerald-400">
+                  NOTE
+                </span>
+              )}
+            </Link>
+          </div>
+
           {/* Interview Arena Section */}
           <div className="pt-3 border-t border-slate-800/60">
             {!isCollapsed ? (

@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
+import Link from 'next/link';
 import type { TableOfContentsItem } from '@/lib/modules';
 
 interface Props {
@@ -123,11 +124,11 @@ export default function TableOfContents({
         <div className="p-3 border-b border-slate-800 shrink-0 bg-slate-900">
           {/* Quick Study Action Tools Pinned at Top of Right Sidebar */}
           {(onToggleNotes || onToggleSticky || onToggleEdit) && (
-            <div className="grid grid-cols-3 gap-1.5 mb-3">
+            <div className="grid grid-cols-4 gap-1 mb-3">
               {onToggleNotes && (
                 <button
                   onClick={onToggleNotes}
-                  className={`px-1.5 py-1 rounded text-[11px] font-medium border text-center transition-colors ${
+                  className={`px-1 py-1 rounded text-[10.5px] font-medium border text-center transition-colors ${
                     isNotesOpen
                       ? 'bg-blue-600 border-blue-500 text-white font-semibold shadow-xs'
                       : 'bg-slate-800 border-slate-700 text-slate-300 hover:text-white hover:bg-slate-750'
@@ -140,7 +141,7 @@ export default function TableOfContents({
               {onToggleSticky && (
                 <button
                   onClick={onToggleSticky}
-                  className={`px-1.5 py-1 rounded text-[11px] font-medium border text-center transition-colors ${
+                  className={`px-1 py-1 rounded text-[10.5px] font-medium border text-center transition-colors ${
                     isStickyOpen
                       ? 'bg-amber-600 border-amber-500 text-white font-semibold shadow-xs'
                       : 'bg-slate-800 border-slate-700 text-slate-300 hover:text-white hover:bg-slate-750'
@@ -153,16 +154,23 @@ export default function TableOfContents({
               {onToggleEdit && (
                 <button
                   onClick={onToggleEdit}
-                  className={`px-1.5 py-1 rounded text-[11px] font-medium border text-center transition-colors ${
+                  className={`px-1 py-1 rounded text-[10.5px] font-medium border text-center transition-colors ${
                     isEditMode
                       ? 'bg-emerald-600 border-emerald-500 text-white font-semibold shadow-xs'
                       : 'bg-slate-800 border-slate-700 text-slate-300 hover:text-white hover:bg-slate-750'
                   }`}
                   title="Enable inline document editing"
                 >
-                  {isEditMode ? 'Save' : 'Edit Doc'}
+                  {isEditMode ? 'Save' : 'Edit'}
                 </button>
               )}
+              <Link
+                href="/notes"
+                className="px-1 py-1 rounded text-[10.5px] font-medium border border-purple-800/80 bg-purple-950/40 text-purple-300 hover:bg-purple-900/60 hover:text-white text-center transition-colors flex items-center justify-center space-x-0.5"
+                title="Open Global Notes Studio"
+              >
+                <span>Studio</span>
+              </Link>
             </div>
           )}
 
