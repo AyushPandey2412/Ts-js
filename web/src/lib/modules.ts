@@ -174,6 +174,16 @@ export const MODULES: ModuleMeta[] = [
     fileName: '17-MODULES-AND-CODE-ORGANIZATION.md',
     estimatedSections: 16,
     badge: 'Architecture & Bundling'
+  },
+  {
+    id: '18',
+    slug: '18-nodejs-process-and-filesystem',
+    number: '18',
+    title: 'Node.js Process Architecture, Signals & Secure Filesystem',
+    subtitle: 'libuv Threadpool, POSIX Signals, fs/promises, Atomic Writes & Directory Traversal Defense',
+    fileName: '18-NODEJS-PROCESS-AND-FILESYSTEM.md',
+    estimatedSections: 15,
+    badge: 'Runtime & Filesystem'
   }
 ];
 
