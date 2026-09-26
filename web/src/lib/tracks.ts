@@ -239,7 +239,8 @@ export const TECHNOLOGY_TRACKS: TechnologyTrack[] = [
         title: '04: Mapped Types, Modifiers & Metaprogramming',
         description: 'Homomorphic mapped types, `+readonly`, `-?`, key remapping `as`, and deep immutability utilities.',
         sectionsCount: 18,
-        status: 'planned'
+        status: 'available',
+        slug: 'ts-04-mapped-types-and-metaprogramming'
       },
       {
         title: '05: Template Literal Types & Type Parsers',

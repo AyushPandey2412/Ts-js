@@ -239,6 +239,16 @@ export const MODULES: ModuleMeta[] = [
     fileName: 'TS-03-CONDITIONAL-TYPES-AND-INFERENCE.md',
     estimatedSections: 18,
     badge: 'TS Conditionals'
+  },
+  {
+    id: 'ts-04',
+    slug: 'ts-04-mapped-types-and-metaprogramming',
+    number: 'TS-04',
+    title: 'Mapped Types, Modifiers & Metaprogramming',
+    subtitle: 'Homomorphic Mapping, Modifier Manipulation (-readonly/-?), Key Remapping (as), never Filtering & Template Literals',
+    fileName: 'TS-04-MAPPED-TYPES-AND-METAPROGRAMMING.md',
+    estimatedSections: 18,
+    badge: 'TS Metaprogramming'
   }
 ];
 
