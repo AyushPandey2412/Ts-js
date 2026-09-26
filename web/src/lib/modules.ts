@@ -184,6 +184,16 @@ export const MODULES: ModuleMeta[] = [
     fileName: '18-NODEJS-PROCESS-AND-FILESYSTEM.md',
     estimatedSections: 15,
     badge: 'Runtime & Filesystem'
+  },
+  {
+    id: '19',
+    slug: '19-binary-data-and-buffers',
+    number: '19',
+    title: 'Binary Data, ArrayBuffers, TypedArrays & Node.js Buffers',
+    subtitle: 'Memory Layout, DataView, Endianness, Slab Allocator, Atomics & Zero-Copy Binary Protocols',
+    fileName: '19-BINARY-DATA-AND-BUFFERS.md',
+    estimatedSections: 15,
+    badge: 'Systems & Binary'
   }
 ];
 

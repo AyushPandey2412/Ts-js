@@ -31,7 +31,7 @@ export const TECHNOLOGY_TRACKS: TechnologyTrack[] = [
     status: 'active',
     tagline: 'Deep dive into ECMAScript specifications, memory architecture, and V8 internals.',
     description: 'Master the runtime mechanics of modern JavaScript: Call Stack, Heap Memory, Execution Contexts, Garbage Collection, Closures, Event Loop, Asynchronous pipelines, and algorithmic problem-solving.',
-    badge: '17 Modules · 70 Problems',
+    badge: '18 Modules · 70 Problems',
     accentColor: 'amber',
     topics: [
       'Call Stack & Heap',
@@ -44,7 +44,7 @@ export const TECHNOLOGY_TRACKS: TechnologyTrack[] = [
       'Arrays & Collections',
       'Promises & Concurrency'
     ],
-    modulesCount: 17,
+    modulesCount: 18,
     practiceCount: 70,
     syllabus: [
       {
@@ -165,6 +165,13 @@ export const TECHNOLOGY_TRACKS: TechnologyTrack[] = [
         sectionsCount: 15,
         status: 'available',
         slug: '18-nodejs-process-and-filesystem'
+      },
+      {
+        title: '19: Binary Data, ArrayBuffers & Buffers',
+        description: 'TypedArrays, DataView, Endianness, Slab Allocator, Atomics & Zero-Copy Binary Protocols.',
+        sectionsCount: 15,
+        status: 'available',
+        slug: '19-binary-data-and-buffers'
       }
     ]
   },
