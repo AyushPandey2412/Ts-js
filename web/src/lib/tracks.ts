@@ -187,51 +187,107 @@ export const TECHNOLOGY_TRACKS: TechnologyTrack[] = [
     name: 'TypeScript & Type Systems',
     shortName: 'TypeScript',
     category: 'languages',
-    status: 'in-progress',
+    status: 'active',
     tagline: 'Type-level programming, compiler architecture, and strict static analysis.',
-    description: 'From nominal vs structural type systems to advanced conditional types, template literal types, mapped types, distributive conditionals, and TypeScript Compiler API AST transformation.',
-    badge: 'Curriculum In Progress',
+    description: 'Master the TypeScript type system from set-theoretic foundations to compiler AST transformers: Top & Bottom types, structural subtyping, generics variance, conditional gymnastics, mapped types, template literal parsers, OOP architecture, and TC39 Stage 3 decorators.',
+    badge: '13 Modules · TS 5.x Mastery',
     accentColor: 'blue',
     topics: [
       'Structural Type Systems',
-      'Generics & Constraints',
-      'Conditional Types',
+      'Generics & Variance',
+      'Conditional & Mapped Types',
       'Template Literal Types',
-      'Mapped Types & Key Remapping',
-      'Type-Level Gymnastics',
-      'Branded Nominal Types',
+      'OOP & Class Modifiers',
+      'Reusable Architecture',
+      'Stage 3 Decorators & IoC',
       'Compiler API & AST',
-      'tsconfig Best Practices'
+      'tsconfig & Monorepos'
     ],
-    modulesCount: 8,
+    modulesCount: 13,
     syllabus: [
       {
+        title: '00: Curriculum Queue & Index',
+        description: 'Complete curriculum architecture, set theory foundations, type lattice, and learning roadmap.',
+        sectionsCount: 20,
+        status: 'available',
+        slug: 'ts-00-queue-and-index'
+      },
+      {
         title: '01: Type Architecture & Structural Subtyping',
-        description: 'Set theory in TypeScript: `unknown` vs `any` vs `never`, bottom types, and variance.',
+        description: 'Set theory in TypeScript: `unknown` vs `any` vs `never`, freshness trap, branded nominal types, and CFA narrowing.',
+        sectionsCount: 19,
+        status: 'available',
+        slug: 'ts-01-type-architecture-and-structural-subtyping'
+      },
+      {
+        title: '02: Generics, Constraints & Variance Formalism',
+        description: 'Generic constraints, inference, covariance, contravariance, invariance, and TS 5.0 `const` type params.',
+        sectionsCount: 18,
         status: 'in-progress'
       },
       {
-        title: '02: Generics & High-Order Type Operators',
-        description: 'Generic constraints, inference (`infer`), and recursive type definitions.',
+        title: '03: Conditional Types, Inference & Recursion',
+        description: 'Distributive conditional types, `infer` pattern matching, and tail-call recursion optimization.',
+        sectionsCount: 18,
         status: 'planned'
       },
       {
-        title: '03: Advanced Conditional & Mapped Types',
-        description: 'Distributive conditional types, key remapping with `as`, and deep immutable types.',
+        title: '04: Mapped Types, Modifiers & Metaprogramming',
+        description: 'Homomorphic mapped types, `+readonly`, `-?`, key remapping `as`, and deep immutability utilities.',
+        sectionsCount: 18,
         status: 'planned'
       },
       {
-        title: '04: Template Literal Types & String Manipulation',
-        description: 'Building type-safe route parsers, schema validators, and event buses at compile-time.',
+        title: '05: Template Literal Types & Type Parsers',
+        description: 'Type-level string parsers, route param extractors (`:id`), and compile-time SQL/JSON schema validators.',
+        sectionsCount: 18,
         status: 'planned'
       },
       {
-        title: '05: Compiler API, Transformers & AST',
-        description: 'Writing custom TypeScript compiler plugins and automated code migration AST scripts.',
+        title: '06: Complete OOP, Class Internals & Modifiers',
+        description: 'Access modifiers (`public`/`private`/`protected` vs `#private`), parameter properties, `override`, mixins, and SOLID design.',
+        sectionsCount: 18,
+        status: 'planned'
+      },
+      {
+        title: '07: Enterprise Design Patterns & Reusable Architecture',
+        description: 'Type-State Step-Builder, Generic Repository, Factory with dynamic registry, Observer, and Strategy patterns.',
+        sectionsCount: 18,
+        status: 'planned'
+      },
+      {
+        title: '08: Decorators (Stage 3), Metadata & IoC/DI Containers',
+        description: 'TC39 Stage 3 Decorators (TS 5.0+), Decorator Metadata (`context.metadata`), and building an IoC container from scratch.',
+        sectionsCount: 18,
+        status: 'planned'
+      },
+      {
+        title: '09: Compiler Pipeline, AST & Custom Transformers',
+        description: 'Scanner, Parser, Binder, Checker, Emitter, AST visitors, and custom compiler plugins.',
+        sectionsCount: 18,
+        status: 'planned'
+      },
+      {
+        title: '10: Production tsconfig, Monorepos & Declarations',
+        description: 'Strict flag matrix, `noUncheckedIndexedAccess`, `isolatedDeclarations` (TS 5.5), Project References, and Turborepo.',
+        sectionsCount: 18,
+        status: 'planned'
+      },
+      {
+        title: '11: Library Authoring, Packaging & Module Federation',
+        description: 'Modern `package.json` `"exports"` maps, Dual Package Hazard defense, declaration maps, and SemVer for types.',
+        sectionsCount: 18,
+        status: 'planned'
+      },
+      {
+        title: '12: Runtime Validation Interop & Schema Synthesis',
+        description: 'Single source of truth with Zod/TypeBox, custom refinements, transforms, and database ORM typing.',
+        sectionsCount: 18,
         status: 'planned'
       }
     ]
   },
+
   {
     id: 'react',
     name: 'React Internals & Architecture',

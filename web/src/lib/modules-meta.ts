@@ -199,5 +199,26 @@ export const MODULES: ModuleMeta[] = [
     fileName: '21-CRYPTO-HASHING-AND-INTEGRITY.md',
     estimatedSections: 15,
     badge: 'Security & Cryptography'
+  },
+  {
+    id: 'ts-00',
+    slug: 'ts-00-queue-and-index',
+    number: 'TS-00',
+    title: 'TypeScript Curriculum Queue & Index',
+    subtitle: 'Master Curriculum Roadmap, Set Theory Foundations, Type Lattice & 13-Module Progression',
+    fileName: 'TS-00-QUEUE-AND-INDEX.md',
+    estimatedSections: 20,
+    badge: 'TS Roadmap'
+  },
+  {
+    id: 'ts-01',
+    slug: 'ts-01-type-architecture-and-structural-subtyping',
+    number: 'TS-01',
+    title: 'Type Architecture, Set Theory & Structural Subtyping',
+    subtitle: 'Top & Bottom Types (unknown/any/never), Freshness Trap, Nominal Branding, CFA Narrowing & Type Guards',
+    fileName: 'TS-01-TYPE-ARCHITECTURE-AND-STRUCTURAL-SUBTYPING.md',
+    estimatedSections: 19,
+    badge: 'TS Foundations'
   }
 ];
+
