@@ -31,7 +31,7 @@ export const TECHNOLOGY_TRACKS: TechnologyTrack[] = [
     status: 'active',
     tagline: 'Deep dive into ECMAScript specifications, memory architecture, and V8 internals.',
     description: 'Master the runtime mechanics of modern JavaScript: Call Stack, Heap Memory, Execution Contexts, Garbage Collection, Closures, Event Loop, Asynchronous pipelines, and algorithmic problem-solving.',
-    badge: '18 Modules · 70 Problems',
+    badge: '19 Modules · 70 Problems',
     accentColor: 'amber',
     topics: [
       'Call Stack & Heap',
@@ -44,7 +44,7 @@ export const TECHNOLOGY_TRACKS: TechnologyTrack[] = [
       'Arrays & Collections',
       'Promises & Concurrency'
     ],
-    modulesCount: 18,
+    modulesCount: 19,
     practiceCount: 70,
     syllabus: [
       {
@@ -172,6 +172,13 @@ export const TECHNOLOGY_TRACKS: TechnologyTrack[] = [
         sectionsCount: 15,
         status: 'available',
         slug: '19-binary-data-and-buffers'
+      },
+      {
+        title: '21: Cryptography & Data Integrity',
+        description: 'node:crypto, Web Crypto API, OpenSSL, SHA-256, HMAC, AES-256-GCM, Timing Defense & Ed25519.',
+        sectionsCount: 15,
+        status: 'available',
+        slug: '21-crypto-hashing-and-integrity'
       }
     ]
   },

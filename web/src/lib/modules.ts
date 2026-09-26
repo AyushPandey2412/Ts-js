@@ -194,6 +194,16 @@ export const MODULES: ModuleMeta[] = [
     fileName: '19-BINARY-DATA-AND-BUFFERS.md',
     estimatedSections: 15,
     badge: 'Systems & Binary'
+  },
+  {
+    id: '21',
+    slug: '21-crypto-hashing-and-integrity',
+    number: '21',
+    title: 'Cryptography, Hashing & Data Integrity',
+    subtitle: 'node:crypto, Web Crypto API, OpenSSL, SHA-256, HMAC, AES-256-GCM, Timing Defense & Ed25519',
+    fileName: '21-CRYPTO-HASHING-AND-INTEGRITY.md',
+    estimatedSections: 15,
+    badge: 'Security & Cryptography'
   }
 ];
 

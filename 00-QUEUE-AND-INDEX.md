@@ -43,5 +43,5 @@ Every module in this series contains:
 | **17** | `17-MODULES-AND-CODE-ORGANIZATION.md` | CommonJS (`require`, `module.exports`) vs ESM (`import`, `export`), Live bindings in ESM vs copies in CJS, Dynamic imports, Circular dependencies, Top-level await | `[x] Completed` |
 | **18** | `18-NODEJS-PROCESS-AND-FILESYSTEM.md` | Node runtime architecture, `process.env`, Signals (`SIGTERM`, `SIGINT`) graceful shutdown, `fs/promises`, `path` module, Directory traversal security | `[x] Completed` |
 | **19** | `19-BINARY-DATA-AND-BUFFERS.md` | Binary numbers, Hex, Base64, The `Buffer` class, Memory allocation (`alloc` vs `allocUnsafe`), TypedArrays (`Uint8Array`), Buffer manipulation for files | `[x] Completed` |
-| **21** | `21-CRYPTO-HASHING-AND-INTEGRITY.md` | `node:crypto` module, Cryptographic hashing (SHA-256), Streaming hash generation for chunked file uploads, HMAC, Secure random bytes, UUIDs | `[ ] Up Next` |
+| **21** | `21-CRYPTO-HASHING-AND-INTEGRITY.md` | `node:crypto` module, Cryptographic hashing (SHA-256), Streaming hash generation for chunked file uploads, HMAC, Secure random bytes, UUIDs | `[x] Completed` |
 
