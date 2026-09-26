@@ -222,9 +222,11 @@ export const TECHNOLOGY_TRACKS: TechnologyTrack[] = [
       {
         title: '02: Generics, Constraints & Variance Formalism',
         description: 'Generic constraints, inference, covariance, contravariance, invariance, and TS 5.0 `const` type params.',
-        sectionsCount: 18,
-        status: 'in-progress'
+        sectionsCount: 19,
+        status: 'available',
+        slug: 'ts-02-generics-and-type-operators'
       },
+
       {
         title: '03: Conditional Types, Inference & Recursion',
         description: 'Distributive conditional types, `infer` pattern matching, and tail-call recursion optimization.',

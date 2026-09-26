@@ -219,6 +219,17 @@ export const MODULES: ModuleMeta[] = [
     fileName: 'TS-01-TYPE-ARCHITECTURE-AND-STRUCTURAL-SUBTYPING.md',
     estimatedSections: 19,
     badge: 'TS Foundations'
+  },
+  {
+    id: 'ts-02',
+    slug: 'ts-02-generics-and-type-operators',
+    number: 'TS-02',
+    title: 'Generics, Constraints & Variance Formalism',
+    subtitle: 'System F, Generic Constraints, Covariance/Contravariance/Invariance, in/out Modifiers, NoInfer<T> & <const T>',
+    fileName: 'TS-02-GENERICS-AND-TYPE-OPERATORS.md',
+    estimatedSections: 19,
+    badge: 'TS Generics'
   }
 ];
+
 
