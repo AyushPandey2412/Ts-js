@@ -229,7 +229,18 @@ export const MODULES: ModuleMeta[] = [
     fileName: 'TS-02-GENERICS-AND-TYPE-OPERATORS.md',
     estimatedSections: 19,
     badge: 'TS Generics'
+  },
+  {
+    id: 'ts-03',
+    slug: 'ts-03-conditional-types-and-inference',
+    number: 'TS-03',
+    title: 'Conditional Types, Inference & Recursion',
+    subtitle: 'Distributive Conditionals, infer Pattern Matching, Covariant/Contravariant UnionToIntersection & Tail-Call Optimization',
+    fileName: 'TS-03-CONDITIONAL-TYPES-AND-INFERENCE.md',
+    estimatedSections: 18,
+    badge: 'TS Conditionals'
   }
 ];
+
 
 

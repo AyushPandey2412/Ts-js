@@ -231,8 +231,10 @@ export const TECHNOLOGY_TRACKS: TechnologyTrack[] = [
         title: '03: Conditional Types, Inference & Recursion',
         description: 'Distributive conditional types, `infer` pattern matching, and tail-call recursion optimization.',
         sectionsCount: 18,
-        status: 'planned'
+        status: 'available',
+        slug: 'ts-03-conditional-types-and-inference'
       },
+
       {
         title: '04: Mapped Types, Modifiers & Metaprogramming',
         description: 'Homomorphic mapped types, `+readonly`, `-?`, key remapping `as`, and deep immutability utilities.',
