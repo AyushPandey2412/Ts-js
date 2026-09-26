@@ -253,7 +253,8 @@ export const TECHNOLOGY_TRACKS: TechnologyTrack[] = [
         title: '06: Complete OOP, Class Internals & Modifiers',
         description: 'Access modifiers (`public`/`private`/`protected` vs `#private`), parameter properties, `override`, mixins, and SOLID design.',
         sectionsCount: 18,
-        status: 'planned'
+        status: 'available',
+        slug: 'ts-06-oop-class-internals-and-solid'
       },
       {
         title: '07: Enterprise Design Patterns & Reusable Architecture',

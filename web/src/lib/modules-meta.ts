@@ -259,6 +259,16 @@ export const MODULES: ModuleMeta[] = [
     fileName: 'TS-05-TEMPLATE-LITERAL-TYPES-AND-PARSERS.md',
     estimatedSections: 18,
     badge: 'TS Parsers & DSLs'
+  },
+  {
+    id: 'ts-06',
+    slug: 'ts-06-oop-class-internals-and-solid',
+    number: 'TS-06',
+    title: 'Complete OOP, Class Internals, Modifiers & SOLID Principles',
+    subtitle: 'Dual-Type Nature, Access Modifiers (#private vs private), Polymorphic this, Mixins, Abstract Classes & SOLID Design',
+    fileName: 'TS-06-OOP-CLASS-INTERNALS-AND-SOLID.md',
+    estimatedSections: 18,
+    badge: 'TS OOP & SOLID'
   }
 ];
 
