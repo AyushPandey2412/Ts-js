@@ -281,7 +281,8 @@ export const TECHNOLOGY_TRACKS: TechnologyTrack[] = [
         title: '10: Production tsconfig, Monorepos & Declarations',
         description: 'Strict flag matrix, `noUncheckedIndexedAccess`, `isolatedDeclarations` (TS 5.5), Project References, and Turborepo.',
         sectionsCount: 18,
-        status: 'planned'
+        status: 'available',
+        slug: 'ts-10-production-tsconfig-monorepos-and-declarations'
       },
       {
         title: '11: Library Authoring, Packaging & Module Federation',

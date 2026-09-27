@@ -299,6 +299,16 @@ export const MODULES: ModuleMeta[] = [
     fileName: 'TS-09-COMPILER-PIPELINE-AND-AST.md',
     estimatedSections: 18,
     badge: 'TS Compiler API'
+  },
+  {
+    id: 'ts-10',
+    slug: 'ts-10-production-tsconfig-monorepos-and-declarations',
+    number: 'TS-10',
+    title: 'Production tsconfig, Monorepos, & Declarations',
+    subtitle: 'Strictness Matrix, isolatedDeclarations, Project References (composite: true), Declaration Maps & Dual-Package Defense',
+    fileName: 'TS-10-PRODUCTION-TSCONFIG-MONOREPOS-AND-DECLARATIONS.md',
+    estimatedSections: 18,
+    badge: 'TS Monorepos & Config'
   }
 ];
 
