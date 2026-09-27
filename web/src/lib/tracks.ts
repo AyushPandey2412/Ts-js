@@ -288,7 +288,8 @@ export const TECHNOLOGY_TRACKS: TechnologyTrack[] = [
         title: '11: Library Authoring, Packaging & Module Federation',
         description: 'Modern `package.json` `"exports"` maps, Dual Package Hazard defense, declaration maps, and SemVer for types.',
         sectionsCount: 18,
-        status: 'planned'
+        status: 'available',
+        slug: 'ts-11-library-authoring-packaging-and-module-federation'
       },
       {
         title: '12: Runtime Validation Interop & Schema Synthesis',

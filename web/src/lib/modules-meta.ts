@@ -309,6 +309,16 @@ export const MODULES: ModuleMeta[] = [
     fileName: 'TS-10-PRODUCTION-TSCONFIG-MONOREPOS-AND-DECLARATIONS.md',
     estimatedSections: 18,
     badge: 'TS Monorepos & Config'
+  },
+  {
+    id: 'ts-11',
+    slug: 'ts-11-library-authoring-packaging-and-module-federation',
+    number: 'TS-11',
+    title: 'Library Authoring, Packaging & Module Federation',
+    subtitle: 'Modern package.json exports, Dual-Package Hazard Defense, Declaration Rollups, Type Testing & Micro-Frontend Federation',
+    fileName: 'TS-11-LIBRARY-AUTHORING-PACKAGING-AND-MODULE-FEDERATION.md',
+    estimatedSections: 18,
+    badge: 'TS Libraries & Federation'
   }
 ];
 
