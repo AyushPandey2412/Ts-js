@@ -161,6 +161,16 @@ export const MODULES: ModuleMeta[] = [
     badge: 'Advanced Concurrency'
   },
   {
+    id: 'async-lab',
+    slug: 'async-promises-and-real-apis-lab',
+    number: 'LAB',
+    title: 'Hands-On Async Lab: Promises & Real-World APIs (Asynccc.js)',
+    subtitle: 'Food Court Buzzer Analogy, Callback Hell Evolution, JSONPlaceholder, PokéAPI & Resilient Error Handling',
+    fileName: 'ASYNC-REAL-WORLD-API-LAB.md',
+    estimatedSections: 6,
+    badge: 'Hands-On Lab'
+  },
+  {
     id: '17',
     slug: '17-modules-and-code-organization',
     number: '17',

@@ -153,6 +153,13 @@ export const TECHNOLOGY_TRACKS: TechnologyTrack[] = [
         slug: 'javascript-async-programming-complete'
       },
       {
+        title: 'LAB: Hands-On Async & Real APIs (Asynccc.js)',
+        description: 'Interactive Code Lab: Food Court Buzzer analogy, custom Promises, live JSONPlaceholder & PokéAPI calls, and error handling.',
+        sectionsCount: 6,
+        status: 'available',
+        slug: 'async-promises-and-real-apis-lab'
+      },
+      {
         title: '17: Modules & Code Organization',
         description: 'IIFE, CommonJS Wrapper, ESM 3-Phase Lifecycle, Live Bindings, Top-Level Await & Dual-Package Hazard.',
         sectionsCount: 16,
