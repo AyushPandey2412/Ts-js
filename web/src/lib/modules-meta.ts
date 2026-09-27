@@ -319,6 +319,16 @@ export const MODULES: ModuleMeta[] = [
     fileName: 'TS-11-LIBRARY-AUTHORING-PACKAGING-AND-MODULE-FEDERATION.md',
     estimatedSections: 18,
     badge: 'TS Libraries & Federation'
+  },
+  {
+    id: 'ts-12',
+    slug: 'ts-12-runtime-validation-and-schema-synthesis',
+    number: 'TS-12',
+    title: 'Runtime Validation Interop & Schema Synthesis',
+    subtitle: 'Single Source of Truth, Zod/TypeBox Pipelines, Drizzle/Prisma Synthesis, tRPC Boundaries & JIT Compilation',
+    fileName: 'TS-12-RUNTIME-VALIDATION-AND-SCHEMA-SYNTHESIS.md',
+    estimatedSections: 18,
+    badge: 'TS Validation & ORMs'
   }
 ];
 

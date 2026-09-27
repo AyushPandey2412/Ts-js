@@ -295,7 +295,8 @@ export const TECHNOLOGY_TRACKS: TechnologyTrack[] = [
         title: '12: Runtime Validation Interop & Schema Synthesis',
         description: 'Single source of truth with Zod/TypeBox, custom refinements, transforms, and database ORM typing.',
         sectionsCount: 18,
-        status: 'planned'
+        status: 'available',
+        slug: 'ts-12-runtime-validation-and-schema-synthesis'
       }
     ]
   },
