@@ -31,7 +31,7 @@ export const TECHNOLOGY_TRACKS: TechnologyTrack[] = [
     status: 'active',
     tagline: 'Deep dive into ECMAScript specifications, memory architecture, and V8 internals.',
     description: 'Master the runtime mechanics of modern JavaScript: Call Stack, Heap Memory, Execution Contexts, Garbage Collection, Closures, Event Loop, Asynchronous pipelines, and algorithmic problem-solving.',
-    badge: '19 Modules · 70 Problems',
+    badge: '20 Modules · 70 Problems',
     accentColor: 'amber',
     topics: [
       'Call Stack & Heap',
@@ -42,9 +42,10 @@ export const TECHNOLOGY_TRACKS: TechnologyTrack[] = [
       'Prototypes & Cloning',
       'Strings & Unicode',
       'Arrays & Collections',
-      'Promises & Concurrency'
+      'Promises & Concurrency',
+      'Destructuring & Patterns'
     ],
-    modulesCount: 19,
+    modulesCount: 20,
     practiceCount: 70,
     syllabus: [
       {
@@ -179,6 +180,13 @@ export const TECHNOLOGY_TRACKS: TechnologyTrack[] = [
         sectionsCount: 15,
         status: 'available',
         slug: '19-binary-data-and-buffers'
+      },
+      {
+        title: '20: Destructuring & Pattern Unpacking',
+        description: 'Array & Object Destructuring, Nested Patterns, Renaming, Default Values, Function Signatures, Dynamic Keys, Rest Operations & V8 Bytecode.',
+        sectionsCount: 20,
+        status: 'available',
+        slug: '20-destructuring-and-pattern-matching'
       },
       {
         title: '21: Cryptography & Data Integrity',

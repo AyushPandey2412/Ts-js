@@ -201,6 +201,16 @@ export const MODULES: ModuleMeta[] = [
     badge: 'Systems & Binary'
   },
   {
+    id: '20',
+    slug: '20-destructuring-and-pattern-matching',
+    number: '20',
+    title: 'Destructuring, Pattern Unpacking & Parameter Architecture',
+    subtitle: 'Array & Object Destructuring, Nested Patterns, Renaming, Default Values, Function Signatures, Dynamic Keys, Rest Operations & V8 Bytecode',
+    fileName: '20-DESTRUCTURING-AND-PATTERN-MATCHING.md',
+    estimatedSections: 20,
+    badge: 'Core Syntax & Patterns'
+  },
+  {
     id: '21',
     slug: '21-crypto-hashing-and-integrity',
     number: '21',
