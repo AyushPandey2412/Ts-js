@@ -1,4 +1,4 @@
-import type { Metadata } from 'next';
+import type { Metadata, Viewport } from 'next';
 import { Inter, JetBrains_Mono } from 'next/font/google';
 import './globals.css';
 import Sidebar from '@/components/Sidebar';
@@ -17,6 +17,13 @@ const jetbrainsMono = JetBrains_Mono({
   variable: '--font-mono',
   display: 'swap',
 });
+
+export const viewport: Viewport = {
+  width: 'device-width',
+  initialScale: 1,
+  maximumScale: 5,
+  themeColor: '#020617',
+};
 
 export const metadata: Metadata = {
   title: 'Engineering Academy — Multi-Stack Curriculum & Practice Platform',
@@ -37,12 +44,15 @@ export default function RootLayout({
       suppressHydrationWarning
     >
       <body
-        className="bg-slate-950 text-slate-100 flex min-h-screen antialiased font-sans"
+        className="bg-slate-950 text-slate-100 flex flex-col md:flex-row min-h-screen w-full antialiased font-sans overflow-x-hidden"
         suppressHydrationWarning
       >
         <ReadingProgressBar />
         <Sidebar searchIndex={searchIndex} />
-        <main id="main-content" className="flex-1 flex flex-col min-w-0 h-screen overflow-y-auto relative">
+        <main
+          id="main-content"
+          className="flex-1 flex flex-col min-w-0 w-full min-h-[calc(100vh-53px)] md:h-screen md:overflow-y-auto relative overflow-x-hidden"
+        >
           {children}
           <ScrollToTop />
         </main>

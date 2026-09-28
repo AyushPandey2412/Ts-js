@@ -118,6 +118,14 @@ export default function NotesStudioClient() {
 
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
+  // Responsive default layout on mobile
+  useEffect(() => {
+    if (typeof window !== 'undefined' && window.innerWidth < 768) {
+      setIsLibraryOpen(false);
+      setViewMode('editor');
+    }
+  }, []);
+
   // Load from localStorage on mount
   useEffect(() => {
     try {
@@ -400,11 +408,21 @@ export default function NotesStudioClient() {
         </div>
       )}
 
+      {/* Mobile backdrop for notes library */}
+      {isLibraryOpen && (
+        <div
+          onClick={() => setIsLibraryOpen(false)}
+          className="fixed inset-0 bg-black/60 z-25 md:hidden backdrop-blur-xs"
+        />
+      )}
+
       {/* Left Sidebar: Notes Library & Module Manager */}
       <aside
         className={`${
-          isLibraryOpen ? 'w-80' : 'w-0'
-        } transition-all duration-200 ease-in-out border-r border-slate-800 bg-slate-900/95 flex flex-col shrink-0 overflow-hidden z-20`}
+          isLibraryOpen
+            ? 'w-80 max-md:fixed max-md:inset-y-0 max-md:left-0 max-md:z-30 max-md:w-72 max-md:shadow-2xl'
+            : 'w-0'
+        } transition-all duration-200 ease-in-out border-r border-slate-800 bg-slate-900 flex flex-col shrink-0 overflow-hidden z-20`}
       >
         {/* Library Header */}
         <div className="p-3.5 border-b border-slate-800 flex items-center justify-between">
@@ -632,7 +650,7 @@ export default function NotesStudioClient() {
         </header>
 
         {/* Word-like Ribbon Toolbar */}
-        <div className="px-3 py-1.5 border-b border-slate-800 bg-slate-900/60 flex flex-wrap items-center gap-1 shrink-0 text-slate-300 text-xs">
+        <div className="px-3 py-1.5 border-b border-slate-800 bg-slate-900/60 flex items-center gap-1 shrink-0 text-slate-300 text-xs overflow-x-auto flex-nowrap scrollbar-none">
           {/* Headings */}
           <div className="flex items-center space-x-0.5 pr-2 border-r border-slate-800">
             <button
@@ -827,10 +845,10 @@ export default function NotesStudioClient() {
         </div>
 
         {/* Editor & Preview Workspace Container */}
-        <div className="flex-1 flex overflow-hidden">
+        <div className="flex-1 flex flex-col md:flex-row overflow-hidden">
           {/* Editor Pane */}
           {(viewMode === 'editor' || viewMode === 'split') && (
-            <div className={`flex flex-col h-full ${viewMode === 'split' ? 'w-1/2 border-r border-slate-800' : 'w-full'}`}>
+            <div className={`flex flex-col h-full ${viewMode === 'split' ? 'w-full md:w-1/2 border-b md:border-b-0 md:border-r border-slate-800' : 'w-full'}`}>
               <div className="px-4 py-1.5 bg-slate-900/40 border-b border-slate-800/80 flex items-center justify-between text-[11px] text-slate-400 font-mono">
                 <span className="flex items-center space-x-1.5">
                   <span className="w-2 h-2 rounded-full bg-blue-500 animate-pulse"></span>
@@ -846,7 +864,7 @@ export default function NotesStudioClient() {
                   saveCurrentNote(title, e.target.value, moduleSlug);
                 }}
                 placeholder="Start typing your engineering notes or paste text to convert..."
-                className="flex-1 w-full p-6 bg-slate-950 text-slate-100 font-mono text-sm leading-relaxed resize-none focus:outline-hidden overflow-y-auto"
+                className="flex-1 w-full p-4 sm:p-6 bg-slate-950 text-slate-100 font-mono text-sm leading-relaxed resize-none focus:outline-hidden overflow-y-auto"
                 spellCheck={false}
               />
             </div>
@@ -854,7 +872,7 @@ export default function NotesStudioClient() {
 
           {/* Masterclass Preview Pane */}
           {(viewMode === 'preview' || viewMode === 'split') && (
-            <div className={`flex flex-col h-full bg-slate-900/30 overflow-hidden ${viewMode === 'split' ? 'w-1/2' : 'w-full'}`}>
+            <div className={`flex flex-col h-full bg-slate-900/30 overflow-hidden ${viewMode === 'split' ? 'w-full md:w-1/2' : 'w-full'}`}>
               <div className="px-4 py-1.5 bg-slate-900/60 border-b border-slate-800/80 flex items-center justify-between text-[11px] text-slate-400 font-mono">
                 <span className="flex items-center space-x-1.5">
                   <span className="w-2 h-2 rounded-full bg-emerald-500"></span>

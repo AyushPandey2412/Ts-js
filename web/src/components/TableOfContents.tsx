@@ -25,6 +25,7 @@ export default function TableOfContents({
 }: Props) {
   const [filter, setFilter] = useState('');
   const [activeId, setActiveId] = useState<string>('');
+  const [isMobileTocOpen, setIsMobileTocOpen] = useState(false);
 
   const filteredToc = toc.filter(
     (item) =>
@@ -80,16 +81,27 @@ export default function TableOfContents({
         window.history.pushState(null, '', `#${fallback.id}`);
       }
     }
+    setIsMobileTocOpen(false);
   };
 
   return (
     <>
       {/* Mobile Floating Action Dock (Visible only on < lg screens) */}
-      <div className="lg:hidden fixed bottom-6 right-20 z-40 flex items-center space-x-1.5 bg-slate-900/95 border border-slate-700 px-2 py-1.5 rounded-full shadow-xl backdrop-blur-xs text-xs">
+      <div className="lg:hidden fixed bottom-5 right-4 z-40 flex items-center space-x-1.5 bg-slate-900/95 border border-slate-700 px-3 py-1.5 rounded-full shadow-2xl backdrop-blur-md text-xs">
+        {toc.length > 0 && (
+          <button
+            onClick={() => setIsMobileTocOpen(!isMobileTocOpen)}
+            className={`px-2.5 py-1 rounded-full text-[11px] font-semibold border transition-colors ${
+              isMobileTocOpen ? 'bg-indigo-600 text-white border-indigo-500' : 'bg-slate-800 text-slate-300 border-slate-700'
+            }`}
+          >
+            📑 TOC
+          </button>
+        )}
         {onToggleNotes && (
           <button
             onClick={onToggleNotes}
-            className={`px-2 py-1 rounded-full text-[11px] font-semibold border ${
+            className={`px-2.5 py-1 rounded-full text-[11px] font-semibold border transition-colors ${
               isNotesOpen ? 'bg-blue-600 text-white border-blue-500' : 'bg-slate-800 text-slate-300 border-slate-700'
             }`}
           >
@@ -99,7 +111,7 @@ export default function TableOfContents({
         {onToggleSticky && (
           <button
             onClick={onToggleSticky}
-            className={`px-2 py-1 rounded-full text-[11px] font-semibold border ${
+            className={`px-2.5 py-1 rounded-full text-[11px] font-semibold border transition-colors ${
               isStickyOpen ? 'bg-amber-600 text-white border-amber-500' : 'bg-slate-800 text-slate-300 border-slate-700'
             }`}
           >
@@ -109,7 +121,7 @@ export default function TableOfContents({
         {onToggleEdit && (
           <button
             onClick={onToggleEdit}
-            className={`px-2 py-1 rounded-full text-[11px] font-semibold border ${
+            className={`px-2.5 py-1 rounded-full text-[11px] font-semibold border transition-colors ${
               isEditMode ? 'bg-emerald-600 text-white border-emerald-500' : 'bg-slate-800 text-slate-300 border-slate-700'
             }`}
           >
@@ -117,6 +129,69 @@ export default function TableOfContents({
           </button>
         )}
       </div>
+
+      {/* Mobile Table of Contents Modal Bottom Drawer */}
+      {isMobileTocOpen && (
+        <>
+          <div
+            onClick={() => setIsMobileTocOpen(false)}
+            className="fixed inset-0 bg-black/60 z-40 lg:hidden backdrop-blur-xs"
+          />
+          <div className="fixed inset-x-0 bottom-0 max-h-[75vh] bg-slate-900 border-t border-slate-700 rounded-t-2xl shadow-2xl z-50 flex flex-col lg:hidden animate-in slide-in-from-bottom duration-200">
+            <div className="p-4 border-b border-slate-800 shrink-0">
+              <div className="flex items-center justify-between mb-2">
+                <span className="font-bold text-slate-200 text-xs uppercase tracking-wider">
+                  Table of Contents ({filteredToc.length})
+                </span>
+                <div className="flex items-center space-x-2">
+                  <button
+                    onClick={() => {
+                      const main = document.getElementById('main-content');
+                      if (main) main.scrollTo({ top: 0, behavior: 'smooth' });
+                      setIsMobileTocOpen(false);
+                    }}
+                    className="text-[11px] text-slate-300 bg-slate-800 px-2 py-0.5 rounded border border-slate-700"
+                  >
+                    &uarr; Top
+                  </button>
+                  <button
+                    onClick={() => setIsMobileTocOpen(false)}
+                    className="text-slate-400 hover:text-white px-2 py-0.5 rounded bg-slate-800 border border-slate-700 text-xs font-bold"
+                  >
+                    ✕
+                  </button>
+                </div>
+              </div>
+              <input
+                type="text"
+                placeholder="Filter chapters..."
+                value={filter}
+                onChange={(e) => setFilter(e.target.value)}
+                className="w-full bg-slate-950 border border-slate-800 rounded px-3 py-1.5 text-xs text-slate-200 placeholder-slate-500 focus:outline-none focus:border-blue-500"
+              />
+            </div>
+            <div className="flex-1 overflow-y-auto p-4 space-y-1">
+              {filteredToc.map((item, idx) => {
+                const isActive = activeId === item.id;
+                return (
+                  <a
+                    key={idx}
+                    href={`#${item.id}`}
+                    onClick={(e) => scrollToHeading(e, item.id)}
+                    className={`block py-2 transition-colors truncate rounded px-2.5 text-xs ${
+                      isActive
+                        ? 'text-blue-400 bg-slate-800 font-bold border-l-2 border-blue-500'
+                        : 'text-slate-300 hover:bg-slate-800/60'
+                    } ${item.level === 2 ? 'pl-4 text-[11.5px]' : 'font-semibold'}`}
+                  >
+                    {item.text}
+                  </a>
+                );
+              })}
+            </div>
+          </div>
+        </>
+      )}
 
       {/* Permanently Fixed Right Sidebar */}
       <aside className="w-64 lg:w-72 hidden lg:flex flex-col fixed top-0 right-0 h-screen bg-slate-900 border-l border-slate-800 text-xs z-30 shrink-0">

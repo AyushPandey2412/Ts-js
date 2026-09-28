@@ -88,13 +88,21 @@ export default function InteractiveReader({ slug, meta, initialHtml, toc }: Prop
   const [isStickyMinimized, setIsStickyMinimized] = useState(false);
   const [stickyColor, setStickyColor] = useState<StickyColor>('amber');
   const [stickyPos, setStickyPos] = useState<{ x: number; y: number }>(() => {
-    if (typeof window === 'undefined') return { x: 320, y: 100 };
+    if (typeof window === 'undefined') return { x: 16, y: 70 };
     try {
       const saved = localStorage.getItem('js_masterclass_sticky_pos');
-      if (saved) return JSON.parse(saved);
-      return { x: Math.max(20, window.innerWidth - 650), y: 100 };
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        const maxX = Math.max(10, window.innerWidth - 300);
+        const maxY = Math.max(10, window.innerHeight - 150);
+        return {
+          x: Math.min(Math.max(10, parsed.x), maxX),
+          y: Math.min(Math.max(10, parsed.y), maxY)
+        };
+      }
+      return { x: Math.max(10, Math.min(20, window.innerWidth - 300)), y: 70 };
     } catch {
-      return { x: 320, y: 100 };
+      return { x: 16, y: 70 };
     }
   });
 
@@ -105,7 +113,7 @@ export default function InteractiveReader({ slug, meta, initialHtml, toc }: Prop
   // Text selection highlight popup state
   const [selectionPopup, setSelectionPopup] = useState<{ x: number; y: number } | null>(null);
 
-  // Handle Dragging Sticky Note
+  // Handle Dragging Sticky Note (Mouse & Touch)
   const handleStickyHeaderMouseDown = (e: React.MouseEvent) => {
     isDraggingRef.current = true;
     dragOffsetRef.current = {
@@ -114,10 +122,40 @@ export default function InteractiveReader({ slug, meta, initialHtml, toc }: Prop
     };
   };
 
+  const handleStickyHeaderTouchStart = (e: React.TouchEvent) => {
+    if (e.touches.length > 0) {
+      isDraggingRef.current = true;
+      dragOffsetRef.current = {
+        x: e.touches[0].clientX - stickyPos.x,
+        y: e.touches[0].clientY - stickyPos.y
+      };
+    }
+  };
+
+  const handleStickyHeaderTouchMove = (e: React.TouchEvent) => {
+    if (!isDraggingRef.current || e.touches.length === 0) return;
+    const clientX = e.touches[0].clientX;
+    const clientY = e.touches[0].clientY;
+    const newX = Math.max(10, Math.min(window.innerWidth - 280, clientX - dragOffsetRef.current.x));
+    const newY = Math.max(10, Math.min(window.innerHeight - 80, clientY - dragOffsetRef.current.y));
+    setStickyPos({ x: newX, y: newY });
+  };
+
+  const handleStickyHeaderTouchEnd = () => {
+    if (isDraggingRef.current) {
+      isDraggingRef.current = false;
+      try {
+        localStorage.setItem(stickyPosKey, JSON.stringify(stickyPos));
+      } catch {
+        // Ignore
+      }
+    }
+  };
+
   useEffect(() => {
     const handleMouseMove = (e: MouseEvent) => {
       if (!isDraggingRef.current) return;
-      const newX = Math.max(10, Math.min(window.innerWidth - 300, e.clientX - dragOffsetRef.current.x));
+      const newX = Math.max(10, Math.min(window.innerWidth - 280, e.clientX - dragOffsetRef.current.x));
       const newY = Math.max(10, Math.min(window.innerHeight - 80, e.clientY - dragOffsetRef.current.y));
       setStickyPos({ x: newX, y: newY });
     };
@@ -404,11 +442,14 @@ export default function InteractiveReader({ slug, meta, initialHtml, toc }: Prop
       {isStickyOpen && (
         <div
           style={{ top: `${stickyPos.y}px`, left: `${stickyPos.x}px` }}
-          className={`fixed z-40 w-72 ${theme.bg} border-2 ${theme.border} rounded-lg shadow-2xl overflow-hidden flex flex-col`}
+          className={`fixed z-40 w-[calc(100vw-32px)] max-w-xs ${theme.bg} border-2 ${theme.border} rounded-lg shadow-2xl overflow-hidden flex flex-col`}
         >
           {/* Draggable Header */}
           <div
             onMouseDown={handleStickyHeaderMouseDown}
+            onTouchStart={handleStickyHeaderTouchStart}
+            onTouchMove={handleStickyHeaderTouchMove}
+            onTouchEnd={handleStickyHeaderTouchEnd}
             className={`${theme.header} px-3 py-2 flex items-center justify-between text-xs font-bold border-b border-white/10 cursor-grab active:cursor-grabbing select-none`}
             title="Click and drag to move anywhere on your screen"
           >
@@ -471,53 +512,60 @@ export default function InteractiveReader({ slug, meta, initialHtml, toc }: Prop
 
       {/* Docked Notes Panel (Zero backdrop blur - side-by-side reading!) */}
       {isNotesOpen && (
-        <div className="fixed top-0 right-0 h-screen w-80 sm:w-96 bg-slate-900 border-l border-slate-700 shadow-2xl z-40 flex flex-col p-4 animate-in slide-in-from-right duration-150">
-          <div className="flex items-center justify-between pb-3 border-b border-slate-800 mb-3">
-            <div>
-              <h3 className="text-sm font-bold text-white tracking-tight flex items-center space-x-1.5">
-                <span>&#9998;</span>
-                <span>Module Notes</span>
-              </h3>
-              <span className="text-[11px] text-slate-400">
-                Module {meta.number}: {meta.title.slice(0, 24)}...
-              </span>
-            </div>
-            <button
-              onClick={() => setIsNotesOpen(false)}
-              className="px-2 py-1 rounded bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-white text-xs font-semibold border border-slate-700"
-              title="Close notes panel"
-            >
-              Close
-            </button>
-          </div>
-
-          <textarea
-            value={moduleNotes}
-            onChange={(e) => handleNotesChange(e.target.value)}
-            placeholder="Type your notes while reading the document on the left. No blur, auto-saved continuously..."
-            className="flex-1 w-full bg-slate-950 border border-slate-800 rounded p-3 text-xs text-slate-200 placeholder-slate-500 resize-none focus:outline-none focus:border-blue-500 font-mono leading-relaxed"
+        <>
+          {/* Mobile backdrop for notes drawer */}
+          <div
+            onClick={() => setIsNotesOpen(false)}
+            className="fixed inset-0 bg-black/60 z-35 sm:hidden backdrop-blur-xs"
           />
-
-          <div className="flex items-center justify-between pt-3 border-t border-slate-800 mt-3 text-xs">
-            <span className="text-slate-500 font-mono">{moduleNotes.length} chars</span>
-            <div className="flex items-center space-x-2">
+          <div className="fixed top-0 right-0 h-screen w-full sm:w-96 max-w-full bg-slate-900 border-l border-slate-700 shadow-2xl z-40 flex flex-col p-4 animate-in slide-in-from-right duration-150">
+            <div className="flex items-center justify-between pb-3 border-b border-slate-800 mb-3">
+              <div>
+                <h3 className="text-sm font-bold text-white tracking-tight flex items-center space-x-1.5">
+                  <span>&#9998;</span>
+                  <span>Module Notes</span>
+                </h3>
+                <span className="text-[11px] text-slate-400">
+                  Module {meta.number}: {meta.title.slice(0, 24)}...
+                </span>
+              </div>
               <button
-                onClick={exportNotes}
-                className="px-2.5 py-1 rounded bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-medium border border-slate-700"
-                title="Export notes as .txt file"
+                onClick={() => setIsNotesOpen(false)}
+                className="px-2 py-1 rounded bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-white text-xs font-semibold border border-slate-700"
+                title="Close notes panel"
               >
-                Export .txt
-              </button>
-              <button
-                onClick={() => handleNotesChange('')}
-                className="px-2 py-1 text-slate-500 hover:text-rose-400 text-xs"
-                title="Clear all notes"
-              >
-                Clear
+                Close
               </button>
             </div>
+
+            <textarea
+              value={moduleNotes}
+              onChange={(e) => handleNotesChange(e.target.value)}
+              placeholder="Type your notes while reading the document on the left. No blur, auto-saved continuously..."
+              className="flex-1 w-full bg-slate-950 border border-slate-800 rounded p-3 text-xs text-slate-200 placeholder-slate-500 resize-none focus:outline-none focus:border-blue-500 font-mono leading-relaxed"
+            />
+
+            <div className="flex items-center justify-between pt-3 border-t border-slate-800 mt-3 text-xs">
+              <span className="text-slate-500 font-mono">{moduleNotes.length} chars</span>
+              <div className="flex items-center space-x-2">
+                <button
+                  onClick={exportNotes}
+                  className="px-2.5 py-1 rounded bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-medium border border-slate-700"
+                  title="Export notes as .txt file"
+                >
+                  Export .txt
+                </button>
+                <button
+                  onClick={() => handleNotesChange('')}
+                  className="px-2 py-1 text-slate-500 hover:text-rose-400 text-xs"
+                  title="Clear all notes"
+                >
+                  Clear
+                </button>
+              </div>
+            </div>
           </div>
-        </div>
+        </>
       )}
     </div>
   );

@@ -828,7 +828,7 @@ export default function InterviewClient() {
       )}
 
       {/* Main Content Area */}
-      <div className="flex-1 max-w-5xl mx-auto px-4 sm:px-8 py-8 min-w-0 pr-16 sm:pr-20 space-y-6">
+      <div className="flex-1 max-w-5xl mx-auto px-4 sm:px-8 py-6 sm:py-8 min-w-0 space-y-6">
         {/* Breadcrumb */}
         <div className="flex items-center space-x-2 text-xs text-slate-500">
           <Link href="/" className="hover:text-slate-300 transition-colors">
@@ -896,7 +896,7 @@ export default function InterviewClient() {
         </div>
 
         {/* Tech Stack Switcher Tabs */}
-        <div className="flex flex-wrap items-center gap-1.5 p-1.5 bg-slate-900 border border-slate-800 rounded-lg">
+        <div className="flex items-center gap-1.5 p-1.5 bg-slate-900 border border-slate-800 rounded-lg overflow-x-auto flex-nowrap scrollbar-none">
           {(
             [
               { id: 'javascript', label: 'JavaScript' },
