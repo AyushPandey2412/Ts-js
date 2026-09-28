@@ -4,6 +4,7 @@ import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import SearchModal from './SearchModal';
+import Logo from './Logo';
 import type { SearchItem } from '@/lib/search-index';
 import { TECHNOLOGY_TRACKS } from '@/lib/tracks';
 
@@ -57,10 +58,8 @@ export default function Sidebar({ searchIndex = [] }: SidebarProps) {
           <span>Menu</span>
         </button>
         <Link href="/" className="flex items-center space-x-2">
-          <div className="w-6 h-6 rounded bg-blue-600 text-white font-black text-[10px] flex items-center justify-center font-mono">
-            ENG
-          </div>
-          <span className="text-xs font-bold text-white tracking-tight">Engineering Academy</span>
+          <Logo size={24} className="shrink-0" />
+          <span className="text-xs font-bold text-white tracking-tight">DevMastery</span>
         </Link>
         <button
           onClick={() => setIsSearchOpen(true)}
@@ -96,15 +95,13 @@ export default function Sidebar({ searchIndex = [] }: SidebarProps) {
               onClick={() => setIsMobileOpen(false)}
               className="flex items-center space-x-2.5 truncate group mr-2"
             >
-              <div className="w-8 h-8 rounded bg-blue-600 text-white font-black text-xs flex items-center justify-center tracking-tighter shadow-sm font-mono shrink-0 select-none group-hover:scale-105 transition-transform">
-                ENG
-              </div>
+              <Logo size={32} className="shrink-0 group-hover:scale-105 transition-transform" />
               <div className="truncate">
-                <div className="text-[9.5px] uppercase tracking-wider text-blue-400 font-bold font-mono">
-                  Masterclass
+                <div className="text-[9.5px] uppercase tracking-wider text-cyan-400 font-bold font-mono">
+                  Full-Stack & Systems
                 </div>
-                <div className="text-sm font-bold text-white tracking-tight leading-none group-hover:text-blue-400 transition-colors">
-                  Engineering Academy
+                <div className="text-sm font-bold text-white tracking-tight leading-none group-hover:text-cyan-400 transition-colors">
+                  DevMastery
                 </div>
               </div>
             </Link>
@@ -112,10 +109,10 @@ export default function Sidebar({ searchIndex = [] }: SidebarProps) {
             <Link
               href="/"
               onClick={() => setIsMobileOpen(false)}
-              className="w-8 h-8 rounded bg-blue-600 text-white font-black text-xs flex items-center justify-center tracking-tighter shadow-sm font-mono shrink-0 mx-auto select-none"
-              title="Engineering Academy Home"
+              className="mx-auto select-none"
+              title="DevMastery Home"
             >
-              ENG
+              <Logo size={28} className="hover:scale-105 transition-transform" />
             </Link>
           )}
 

@@ -2,24 +2,29 @@ import React from 'react';
 import Link from 'next/link';
 import { MODULES } from '@/lib/modules';
 import TracksCatalog from '@/components/TracksCatalog';
+import Logo from '@/components/Logo';
 
 export default function HomePage() {
   return (
     <div className="max-w-6xl mx-auto px-4 sm:px-6 py-10 w-full space-y-12">
       {/* Platform Hero Banner */}
       <div className="border-b border-slate-800 pb-8">
-        <div className="flex items-center space-x-2 mb-2">
-          <span className="text-xs font-mono font-bold uppercase tracking-wider text-blue-400">
-            ENGINEERING CURRICULUM PLATFORM
-          </span>
-          <span className="text-[10px] bg-slate-800 text-slate-300 px-2 py-0.5 rounded border border-slate-700">
-            Multi-Track Academy
-          </span>
+        <div className="flex items-center space-x-3.5 mb-3">
+          <Logo size={44} className="shrink-0" />
+          <div>
+            <div className="flex items-center space-x-2">
+              <span className="text-xs font-mono font-bold uppercase tracking-wider text-cyan-400">
+                DevMastery
+              </span>
+              <span className="text-[10px] bg-slate-800 text-slate-300 px-2 py-0.5 rounded border border-slate-700">
+                Systems & Full-Stack Platform
+              </span>
+            </div>
+            <h1 className="text-2xl sm:text-3xl md:text-4xl font-extrabold text-white tracking-tight mt-0.5">
+              Full-Stack & Systems Masterclass Platform
+            </h1>
+          </div>
         </div>
-
-        <h1 className="text-3xl sm:text-4xl font-extrabold text-white tracking-tight mb-3">
-          Full-Stack & Systems Masterclass Platform
-        </h1>
         <p className="text-slate-400 text-sm max-w-3xl leading-relaxed mb-6">
           Rigorous, zero-fluff engineering curriculums built from official specifications and runtime internals. From ECMAScript memory and V8 JIT pipelines to PostgreSQL MVCC, Redis data structures, NestJS microservices, and React Fiber architecture.
         </p>

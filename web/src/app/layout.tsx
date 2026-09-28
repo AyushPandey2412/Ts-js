@@ -26,8 +26,15 @@ export const viewport: Viewport = {
 };
 
 export const metadata: Metadata = {
-  title: 'Engineering Academy — Multi-Stack Curriculum & Practice Platform',
+  title: 'DevMastery — Elite Full-Stack & Systems Engineering Platform',
   description: 'Zero-fluff technical curriculums across JavaScript, TypeScript, React, NestJS, PostgreSQL, Redis, and 70 Graded Algorithms.',
+  icons: {
+    icon: [
+      { url: '/icon.svg', type: 'image/svg+xml' },
+    ],
+    shortcut: '/icon.svg',
+    apple: '/icon.svg',
+  },
 };
 
 export default function RootLayout({
