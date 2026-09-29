@@ -4,6 +4,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import Link from 'next/link';
 import type { ModuleMeta, TableOfContentsItem, ModuleNavigation } from '@/lib/modules';
 import TableOfContents from '@/components/TableOfContents';
+import CodePlayground from '@/components/CodePlayground';
 
 interface Props {
   slug: string;
@@ -61,6 +62,7 @@ export default function InteractiveReader({ slug, meta, initialHtml, toc, naviga
     }
   });
   const [isEditMode, setIsEditMode] = useState(false);
+  const [isPlaygroundOpen, setIsPlaygroundOpen] = useState(false);
 
   // Derived content
   const htmlContent = customHtml ?? initialHtml;
@@ -370,20 +372,31 @@ export default function InteractiveReader({ slug, meta, initialHtml, toc, naviga
       <div className="max-w-4xl mx-auto px-4 sm:px-8 py-8 min-w-0">
         {/* Module Header */}
         <div className="border-b border-slate-800 pb-5 mb-6">
-          <div className="flex items-center justify-between gap-3 mb-3">
+          <div className="flex flex-wrap items-center justify-between gap-3 mb-3">
             <div className="text-xs font-mono text-blue-400 font-bold">
               Module {meta.number} / {meta.badge}
             </div>
 
-            {hasCustomEdits && !isEditMode && (
+            <div className="flex items-center space-x-2">
               <button
-                onClick={resetDocumentEdits}
-                className="px-2 py-1 rounded text-[11px] text-slate-500 hover:text-rose-400 bg-slate-900 border border-slate-800 hover:border-rose-900/50 transition-colors"
-                title="Reset to official textbook original"
+                onClick={() => setIsPlaygroundOpen(true)}
+                className="flex items-center space-x-1.5 px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 active:bg-emerald-700 text-white text-xs font-bold shadow-md shadow-emerald-950/40 transition-all hover:scale-[1.02] active:scale-[0.98] cursor-pointer ring-1 ring-emerald-400/40"
+                title="Open VS Code in-browser code runner"
               >
-                Reset to Original
+                <span>▶</span>
+                <span>Run Code (VS Code)</span>
               </button>
-            )}
+
+              {hasCustomEdits && !isEditMode && (
+                <button
+                  onClick={resetDocumentEdits}
+                  className="px-2 py-1 rounded text-[11px] text-slate-500 hover:text-rose-400 bg-slate-900 border border-slate-800 hover:border-rose-900/50 transition-colors"
+                  title="Reset to official textbook original"
+                >
+                  Reset to Original
+                </button>
+              )}
+            </div>
           </div>
 
           <h1 className="text-2xl sm:text-3xl font-extrabold text-white tracking-tight mb-2">
@@ -493,6 +506,8 @@ export default function InteractiveReader({ slug, meta, initialHtml, toc, naviga
       {/* Permanently Fixed Right Table of Contents with Integrated Action Tools */}
       <TableOfContents
         toc={toc}
+        onTogglePlayground={() => setIsPlaygroundOpen(!isPlaygroundOpen)}
+        isPlaygroundOpen={isPlaygroundOpen}
         onToggleNotes={() => setIsNotesOpen(!isNotesOpen)}
         isNotesOpen={isNotesOpen}
         onToggleSticky={() => setIsStickyOpen(!isStickyOpen)}
@@ -629,6 +644,26 @@ export default function InteractiveReader({ slug, meta, initialHtml, toc, naviga
             </div>
           </div>
         </>
+      )}
+
+      {/* Embedded VS Code Playground & Code Runner */}
+      <CodePlayground
+        slug={slug}
+        moduleTitle={meta.title}
+        isOpen={isPlaygroundOpen}
+        onClose={() => setIsPlaygroundOpen(false)}
+      />
+
+      {/* Floating Quick Action Button: Run Code */}
+      {!isPlaygroundOpen && (
+        <button
+          onClick={() => setIsPlaygroundOpen(true)}
+          className="fixed bottom-6 right-6 md:right-76 lg:right-80 z-35 flex items-center space-x-2 px-3.5 py-2.5 rounded-full bg-emerald-600 hover:bg-emerald-500 active:bg-emerald-700 text-white font-bold text-xs shadow-2xl shadow-emerald-950/80 transition-all hover:scale-105 active:scale-95 cursor-pointer ring-2 ring-emerald-400/50"
+          title="Open VS Code Playground & Code Runner"
+        >
+          <span className="text-sm">▶</span>
+          <span className="font-semibold tracking-wide">Run Code</span>
+        </button>
       )}
     </div>
   );
