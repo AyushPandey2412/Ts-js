@@ -7,6 +7,9 @@ interface Props {
   params: Promise<{ trackId: string }>;
 }
 
+// Revalidate and cache for 5 hours (18,000 seconds)
+export const revalidate = 18000;
+
 export async function generateStaticParams() {
   return TECHNOLOGY_TRACKS.map((t) => ({
     trackId: t.id,

@@ -76,7 +76,7 @@ export const MODULES: ModuleMeta[] = [
     number: '06',
     title: 'Arrays, TypedArrays, Map & Set',
     subtitle: 'V8 Elements Kinds (PACKED vs HOLEY), Iterators, Map/Set Hash Tables, WeakMap & 27 Algorithms',
-    fileName: '06-ARROWS-AND-COLLECTIONS.md',
+    fileName: '06-ARRAYS-AND-COLLECTIONS.md',
     estimatedSections: 28,
     badge: 'Data Structures & Algorithms'
   },
@@ -92,13 +92,13 @@ export const MODULES: ModuleMeta[] = [
   },
   {
     id: '08',
-    slug: '08-prototypes-and-inheritance',
+    slug: '08-scopes-and-closures',
     number: '08',
-    title: 'Prototypes & Prototypal Inheritance',
-    subtitle: '[[Prototype]] Chain, Object.create(), __proto__ mechanics, Class Desugaring & Polymorphism',
-    fileName: '08-PROTOTYPES-AND-INHERITANCE.md',
-    estimatedSections: 20,
-    badge: 'Memory & OOP'
+    title: 'Scopes, Closures & Lexical Environments',
+    subtitle: 'Lexical Scope, Scope Chains, Closures in Heap Memory, Variable Retention & Encapsulation',
+    fileName: '08-SCOPES-AND-CLOSURES.md',
+    estimatedSections: 18,
+    badge: 'Core Runtime'
   },
   {
     id: '09',
@@ -112,13 +112,13 @@ export const MODULES: ModuleMeta[] = [
   },
   {
     id: '10',
-    slug: '10-closures-and-lexical-scope',
+    slug: '10-prototypes-and-inheritance',
     number: '10',
-    title: 'Closures, Lexical Scope & Encapsulation',
-    subtitle: 'Environment Records, Scope Chains, Garbage Collection Retention & Encapsulation Patterns',
-    fileName: '10-CLOSURES-AND-LEXICAL-SCOPE.md',
-    estimatedSections: 18,
-    badge: 'Core Runtime'
+    title: 'Prototypes & Prototypal Inheritance',
+    subtitle: '[[Prototype]] Chain, Object.create(), __proto__ mechanics, Class Desugaring & Polymorphism',
+    fileName: '10-PROTOTYPES-AND-INHERITANCE.md',
+    estimatedSections: 20,
+    badge: 'Memory & OOP'
   },
   {
     id: '11',

@@ -7,6 +7,9 @@ interface Props {
   params: Promise<{ slug: string }>;
 }
 
+// Revalidate and cache for 5 hours (18,000 seconds)
+export const revalidate = 18000;
+
 export async function generateStaticParams() {
   return MODULES.map((m) => ({
     slug: m.slug,

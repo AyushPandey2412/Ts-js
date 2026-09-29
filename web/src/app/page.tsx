@@ -4,6 +4,9 @@ import { MODULES } from '@/lib/modules';
 import TracksCatalog from '@/components/TracksCatalog';
 import Logo from '@/components/Logo';
 
+// Revalidate and cache for 5 hours (18,000 seconds)
+export const revalidate = 18000;
+
 export default function HomePage() {
   return (
     <div className="max-w-6xl mx-auto px-4 sm:px-6 py-10 w-full space-y-12">
