@@ -352,5 +352,15 @@ export const MODULES: ModuleMeta[] = [
   }
 ];
 
+export const JS_MODULES: ModuleMeta[] = MODULES.filter((m) => !m.id.startsWith('ts-'));
+export const TS_MODULES: ModuleMeta[] = MODULES.filter((m) => m.id.startsWith('ts-'));
+
+export interface ModuleNavigation {
+  prev: ModuleMeta | null;
+  next: ModuleMeta | null;
+  trackTitle: string;
+  trackHref: string;
+}
+
 
 

@@ -1,7 +1,8 @@
 'use client';
 
 import React, { useState, useEffect, useRef } from 'react';
-import type { ModuleMeta, TableOfContentsItem } from '@/lib/modules';
+import Link from 'next/link';
+import type { ModuleMeta, TableOfContentsItem, ModuleNavigation } from '@/lib/modules';
 import TableOfContents from '@/components/TableOfContents';
 
 interface Props {
@@ -9,6 +10,7 @@ interface Props {
   meta: ModuleMeta;
   initialHtml: string;
   toc: TableOfContentsItem[];
+  navigation?: ModuleNavigation;
 }
 
 type StickyColor = 'amber' | 'emerald' | 'blue' | 'purple';
@@ -40,7 +42,7 @@ const colorThemes: Record<StickyColor, { bg: string; border: string; header: str
   }
 };
 
-export default function InteractiveReader({ slug, meta, initialHtml, toc }: Props) {
+export default function InteractiveReader({ slug, meta, initialHtml, toc, navigation }: Props) {
   const contentRef = useRef<HTMLDivElement>(null);
 
   // Storage keys
@@ -425,6 +427,67 @@ export default function InteractiveReader({ slug, meta, initialHtml, toc }: Prop
           }`}
           dangerouslySetInnerHTML={{ __html: htmlContent }}
         />
+
+        {/* Next / Previous Module Track Progression */}
+        {navigation && (
+          <div className="mt-16 pt-8 border-t border-slate-800">
+            <div className="flex items-center justify-between text-xs text-slate-500 mb-4 font-mono">
+              <Link href={navigation.trackHref} className="hover:text-cyan-400 flex items-center space-x-1.5 transition-colors">
+                <span>&larr;</span>
+                <span>Return to {navigation.trackTitle}</span>
+              </Link>
+              <span className="text-[11px] bg-slate-800 text-slate-400 px-2 py-0.5 rounded border border-slate-700">
+                Curriculum Progression
+              </span>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              {navigation.prev ? (
+                <Link
+                  href={`/modules/${navigation.prev.slug}`}
+                  className="group block p-4 rounded-xl bg-slate-900/80 hover:bg-slate-850 border border-slate-800 hover:border-cyan-500/50 transition-all duration-200 active:scale-[0.985] text-left cursor-pointer shadow-sm hover:shadow-lg hover:shadow-cyan-500/5"
+                >
+                  <div className="text-[10px] font-mono font-semibold text-slate-400 group-hover:text-cyan-400 transition-colors uppercase tracking-wider mb-1">
+                    &larr; Previous Module
+                  </div>
+                  <div className="text-xs sm:text-sm font-bold text-slate-200 group-hover:text-white line-clamp-1 transition-colors">
+                    {navigation.prev.number}: {navigation.prev.title}
+                  </div>
+                  <p className="text-[11px] text-slate-400 line-clamp-1 mt-0.5">
+                    {navigation.prev.subtitle}
+                  </p>
+                </Link>
+              ) : (
+                <div className="p-4 rounded-xl border border-slate-800/40 bg-slate-900/30 opacity-40">
+                  <div className="text-[10px] font-mono text-slate-600 uppercase">First Chapter</div>
+                  <div className="text-xs text-slate-500 mt-1">Beginning of {navigation.trackTitle}</div>
+                </div>
+              )}
+
+              {navigation.next ? (
+                <Link
+                  href={`/modules/${navigation.next.slug}`}
+                  className="group block p-4 rounded-xl bg-slate-900/80 hover:bg-slate-850 border border-slate-800 hover:border-cyan-500/50 transition-all duration-200 active:scale-[0.985] text-right cursor-pointer shadow-sm hover:shadow-lg hover:shadow-cyan-500/5"
+                >
+                  <div className="text-[10px] font-mono font-semibold text-slate-400 group-hover:text-cyan-400 transition-colors uppercase tracking-wider mb-1">
+                    Next Module &rarr;
+                  </div>
+                  <div className="text-xs sm:text-sm font-bold text-slate-200 group-hover:text-white line-clamp-1 transition-colors">
+                    {navigation.next.number}: {navigation.next.title}
+                  </div>
+                  <p className="text-[11px] text-slate-400 line-clamp-1 mt-0.5">
+                    {navigation.next.subtitle}
+                  </p>
+                </Link>
+              ) : (
+                <div className="p-4 rounded-xl border border-slate-800/40 bg-slate-900/30 opacity-40 text-right">
+                  <div className="text-[10px] font-mono text-slate-600 uppercase">Track Complete</div>
+                  <div className="text-xs text-slate-500 mt-1">Final module of {navigation.trackTitle}</div>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Permanently Fixed Right Table of Contents with Integrated Action Tools */}

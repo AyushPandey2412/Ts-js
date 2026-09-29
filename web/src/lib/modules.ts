@@ -2,9 +2,9 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { Marked } from 'marked';
 import hljs from 'highlight.js';
-import { MODULES, type ModuleMeta } from './modules-meta';
+import { MODULES, JS_MODULES, TS_MODULES, type ModuleMeta, type ModuleNavigation } from './modules-meta';
 
-export { MODULES, type ModuleMeta } from './modules-meta';
+export { MODULES, JS_MODULES, TS_MODULES, type ModuleMeta, type ModuleNavigation } from './modules-meta';
 
 // Configure marked with highlight.js and heading ids
 const marked = new Marked({
@@ -70,7 +70,29 @@ export interface TableOfContentsItem {
   level: number;
 }
 
-export function getModuleContent(slug: string): { meta: ModuleMeta; html: string; toc: TableOfContentsItem[] } | null {
+export function getModuleNavigation(slug: string): ModuleNavigation {
+  const isTs = slug.startsWith('ts-');
+  const trackList = isTs ? TS_MODULES : JS_MODULES;
+  const currentIndex = trackList.findIndex((m) => m.slug === slug);
+
+  if (currentIndex === -1) {
+    return {
+      prev: null,
+      next: null,
+      trackTitle: isTs ? 'TypeScript Systems Track' : 'JavaScript Core Track',
+      trackHref: isTs ? '/tracks/typescript' : '/tracks/javascript'
+    };
+  }
+
+  return {
+    prev: currentIndex > 0 ? trackList[currentIndex - 1] : null,
+    next: currentIndex < trackList.length - 1 ? trackList[currentIndex + 1] : null,
+    trackTitle: isTs ? 'TypeScript Systems Track' : 'JavaScript Core Track',
+    trackHref: isTs ? '/tracks/typescript' : '/tracks/javascript'
+  };
+}
+
+export function getModuleContent(slug: string): { meta: ModuleMeta; html: string; toc: TableOfContentsItem[]; navigation: ModuleNavigation } | null {
   const meta = getModuleBySlug(slug);
   if (!meta) return null;
 
@@ -100,6 +122,7 @@ export function getModuleContent(slug: string): { meta: ModuleMeta; html: string
   return {
     meta,
     html,
-    toc
+    toc,
+    navigation: getModuleNavigation(slug)
   };
 }

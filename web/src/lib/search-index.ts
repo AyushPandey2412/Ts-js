@@ -57,13 +57,16 @@ export function getSearchIndex(): SearchItem[] {
     }
   }
 
-  // 2. Index All Active JavaScript Curriculum Modules
+  // 2. Index All Active Curriculum Modules (JS & TS)
   for (const m of MODULES) {
+    const isTs = m.id.startsWith('ts-');
+    const prefix = isTs ? 'TS Module' : 'JS Module';
+
     items.push({
       id: m.slug,
-      title: `JS Module ${m.number}: ${m.title}`,
+      title: `${prefix} ${m.number}: ${m.title}`,
       moduleTitle: m.title,
-      moduleNumber: `Module ${m.number}`,
+      moduleNumber: `${prefix} ${m.number}`,
       url: `/modules/${m.slug}`,
       category: 'module',
       description: m.subtitle
@@ -89,7 +92,7 @@ export function getSearchIndex(): SearchItem[] {
               id: `${m.slug}-${id}`,
               title: text,
               moduleTitle: m.title,
-              moduleNumber: `Module ${m.number}`,
+              moduleNumber: `${prefix} ${m.number}`,
               url: `/modules/${m.slug}#${id}`,
               category: 'section'
             });

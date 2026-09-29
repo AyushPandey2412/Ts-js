@@ -33,6 +33,7 @@ export default async function ModulePage({ params }: Props) {
       meta={meta}
       initialHtml={html}
       toc={toc}
+      navigation={data.navigation}
     />
   );
 }

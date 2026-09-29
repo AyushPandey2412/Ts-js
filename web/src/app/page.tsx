@@ -1,6 +1,6 @@
 import React from 'react';
 import Link from 'next/link';
-import { MODULES } from '@/lib/modules';
+import { MODULES, JS_MODULES, TS_MODULES } from '@/lib/modules';
 import TracksCatalog from '@/components/TracksCatalog';
 import Logo from '@/components/Logo';
 
@@ -35,14 +35,20 @@ export default function HomePage() {
         {/* Quick Launch Actions */}
         <div className="flex flex-wrap gap-3">
           <Link
-            href="/tracks/javascript"
+            href="/tracks/typescript"
             className="inline-flex items-center justify-center px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white text-xs font-semibold rounded transition-colors shadow-sm"
           >
-            JavaScript Curriculum Track &rarr;
+            TypeScript Masterclass Track (13 Modules) &rarr;
+          </Link>
+          <Link
+            href="/tracks/javascript"
+            className="inline-flex items-center justify-center px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-semibold rounded border border-slate-700 transition-colors"
+          >
+            JavaScript Runtime Track (21 Modules) &rarr;
           </Link>
           <Link
             href="/practice"
-            className="inline-flex items-center justify-center px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-semibold rounded border border-slate-700 transition-colors"
+            className="inline-flex items-center justify-center px-4 py-2 bg-slate-900 hover:bg-slate-800 text-slate-300 text-xs font-semibold rounded border border-slate-800 transition-colors"
           >
             Algorithm Practice Hub (70 Problems)
           </Link>
@@ -52,31 +58,25 @@ export default function HomePage() {
           >
             Interview Arena (All Stacks) &rarr;
           </Link>
-          <Link
-            href="/tracks/postgres"
-            className="inline-flex items-center justify-center px-4 py-2 bg-slate-900 hover:bg-slate-850 text-slate-300 text-xs font-semibold rounded border border-slate-800 transition-colors"
-          >
-            PostgreSQL Internals Roadmap &rarr;
-          </Link>
         </div>
       </div>
 
       {/* Platform Metrics Bar */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
         <div className="bg-slate-900 border border-slate-800 p-4 rounded-lg">
-          <div className="text-xs text-slate-500 font-medium">Engineering Tracks</div>
-          <div className="text-2xl font-bold text-white mt-1">6 Stacks</div>
-          <div className="text-[11px] text-blue-400 mt-1">JS, TS, React, Nest, Postgres, Redis</div>
+          <div className="text-xs text-slate-500 font-medium">TypeScript Masterclass</div>
+          <div className="text-2xl font-bold text-white mt-1">{TS_MODULES.length} Modules</div>
+          <div className="text-[11px] text-blue-400 mt-1">TS 5.x Mastery Live</div>
         </div>
         <div className="bg-slate-900 border border-slate-800 p-4 rounded-lg">
           <div className="text-xs text-slate-500 font-medium">JavaScript Curriculum</div>
-          <div className="text-2xl font-bold text-white mt-1">{MODULES.length} Modules</div>
+          <div className="text-2xl font-bold text-white mt-1">{JS_MODULES.length} Modules</div>
           <div className="text-[11px] text-emerald-400 mt-1">100% Complete & Live</div>
         </div>
         <div className="bg-slate-900 border border-slate-800 p-4 rounded-lg">
-          <div className="text-xs text-slate-500 font-medium">Textbook Sections</div>
-          <div className="text-2xl font-bold text-white mt-1">500+ Sections</div>
-          <div className="text-[11px] text-slate-400 mt-1">In-depth runtime mechanics</div>
+          <div className="text-xs text-slate-500 font-medium">Masterclass Sections</div>
+          <div className="text-2xl font-bold text-white mt-1">750+ Sections</div>
+          <div className="text-[11px] text-slate-400 mt-1">Type architecture & runtime</div>
         </div>
         <div className="bg-slate-900 border border-slate-800 p-4 rounded-lg">
           <div className="text-xs text-slate-500 font-medium">Practice Algorithms</div>
@@ -101,32 +101,98 @@ export default function HomePage() {
         <TracksCatalog />
       </div>
 
-      {/* Active JavaScript Curriculum Spotlight */}
+      {/* Active TypeScript Masterclass Spotlight */}
       <div className="border-t border-slate-800 pt-10">
-        <div className="flex items-center justify-between mb-6">
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 mb-6">
           <div>
             <div className="flex items-center space-x-2">
-              <span className="font-mono text-xs text-amber-400 font-bold uppercase">
-                ACTIVE TEXTBOOK SERIES
+              <span className="font-mono text-xs text-blue-400 font-bold uppercase tracking-wider">
+                ACTIVE TEXTBOOK SERIES · TS 5.x SYSTEMS
               </span>
-              <span className="text-[10px] bg-emerald-950 text-emerald-400 px-2 py-0.2 rounded border border-emerald-800 font-medium">
-                Complete
+              <span className="text-[10px] bg-blue-950 text-blue-300 px-2 py-0.5 rounded border border-blue-800 font-medium">
+                13 Modules Live
               </span>
             </div>
-            <h2 className="text-lg font-bold text-white tracking-tight mt-1">
-              JavaScript Core & Runtime Internals (All {MODULES.length} Modules)
+            <h2 className="text-xl font-bold text-white tracking-tight mt-1">
+              TypeScript Systems, Type-Level Engineering & Architecture (All {TS_MODULES.length} Modules)
             </h2>
+            <p className="text-xs text-slate-400 mt-1 max-w-3xl leading-relaxed">
+              From set-theoretic type lattice foundations and generics variance to TC39 Stage 3 decorators, custom compiler AST transformers, isolated declarations, and monorepo library packaging.
+            </p>
+          </div>
+          <Link
+            href="/tracks/typescript"
+            className="text-xs text-blue-400 hover:text-blue-300 font-semibold shrink-0"
+          >
+            Explore TypeScript Track &rarr;
+          </Link>
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+          {TS_MODULES.map((m) => (
+            <Link
+              key={m.slug}
+              href={`/modules/${m.slug}`}
+              className="group relative block bg-slate-900/90 hover:bg-slate-800/90 border border-slate-800 hover:border-blue-500/60 p-4 rounded-xl transition-all duration-200 shadow-sm hover:shadow-xl hover:shadow-blue-500/10 hover:-translate-y-1 active:scale-[0.98] active:translate-y-0 cursor-pointer overflow-hidden ring-1 ring-transparent hover:ring-blue-500/30"
+            >
+              {/* Top Accent Gradient Line on Hover & Click */}
+              <div className="absolute top-0 left-0 right-0 h-0.5 bg-gradient-to-r from-blue-500 to-cyan-400 opacity-0 group-hover:opacity-100 group-active:opacity-100 transition-opacity" />
+
+              <div className="flex items-center justify-between mb-2">
+                <span className="font-mono text-xs text-blue-400 font-bold group-hover:text-cyan-300">
+                  {m.number}
+                </span>
+                <span className="text-[10px] bg-slate-800 group-hover:bg-slate-700 text-slate-300 px-2 py-0.5 rounded border border-slate-700 transition-colors">
+                  {m.badge}
+                </span>
+              </div>
+              <h3 className="text-sm font-bold text-white group-hover:text-blue-200 transition-colors mb-1 line-clamp-1">
+                {m.title}
+              </h3>
+              <p className="text-xs text-slate-400 group-hover:text-slate-300 line-clamp-2 leading-relaxed transition-colors">
+                {m.subtitle}
+              </p>
+              <div className="mt-3.5 text-[11px] text-slate-500 flex items-center justify-between border-t border-slate-800/80 pt-2.5 font-mono">
+                <span className="group-hover:text-slate-400 transition-colors">~{m.estimatedSections} sections</span>
+                <span className="text-blue-400 font-sans font-semibold group-hover:translate-x-1.5 transition-transform flex items-center space-x-1">
+                  <span>Open Module</span>
+                  <span className="text-xs font-bold">&rarr;</span>
+                </span>
+              </div>
+            </Link>
+          ))}
+        </div>
+      </div>
+
+      {/* Active JavaScript Curriculum Spotlight */}
+      <div className="border-t border-slate-800 pt-10">
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 mb-6">
+          <div>
+            <div className="flex items-center space-x-2">
+              <span className="font-mono text-xs text-amber-400 font-bold uppercase tracking-wider">
+                ACTIVE TEXTBOOK SERIES · ECMASCRIPT & V8
+              </span>
+              <span className="text-[10px] bg-emerald-950 text-emerald-400 px-2 py-0.5 rounded border border-emerald-800 font-medium">
+                {JS_MODULES.length} Modules Live
+              </span>
+            </div>
+            <h2 className="text-xl font-bold text-white tracking-tight mt-1">
+              JavaScript Core & Runtime Internals (All {JS_MODULES.length} Modules)
+            </h2>
+            <p className="text-xs text-slate-400 mt-1 max-w-3xl leading-relaxed">
+              Master the execution stack, lexical environments, closures in heap memory, V8 hidden classes, prototype chains, and concurrency pipelines.
+            </p>
           </div>
           <Link
             href="/tracks/javascript"
-            className="text-xs text-blue-400 hover:text-blue-300 font-semibold"
+            className="text-xs text-blue-400 hover:text-blue-300 font-semibold shrink-0"
           >
             Explore JavaScript Track &rarr;
           </Link>
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-          {MODULES.map((m) => (
+          {JS_MODULES.map((m) => (
             <Link
               key={m.slug}
               href={`/modules/${m.slug}`}
