@@ -49,7 +49,7 @@ export default function TracksCatalog() {
           return (
             <div
               key={track.id}
-              className="bg-slate-900 border border-slate-800 hover:border-slate-700 rounded-lg p-5 flex flex-col justify-between transition-all group"
+              className="bg-slate-900/90 border border-slate-800 hover:border-cyan-500/50 rounded-xl p-5 flex flex-col justify-between transition-all duration-200 shadow-sm hover:shadow-xl hover:shadow-cyan-500/10 hover:-translate-y-1 group ring-1 ring-transparent hover:ring-cyan-500/20"
             >
               <div>
                 {/* Header Tag & Status */}
@@ -107,13 +107,13 @@ export default function TracksCatalog() {
                 <div className="flex items-center space-x-2">
                   <Link
                     href={`/tracks/${track.id}`}
-                    className="px-2.5 py-1 rounded bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white transition-colors text-[11px] font-medium"
+                    className="px-2.5 py-1 rounded bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white transition-all active:scale-[0.96] text-[11px] font-medium cursor-pointer"
                   >
                     Syllabus
                   </Link>
                   <Link
                     href={`/tracks/${track.id}`}
-                    className={`px-2.5 py-1 rounded transition-colors text-[11px] font-semibold ${
+                    className={`px-3 py-1 rounded transition-all active:scale-[0.96] text-[11px] font-semibold cursor-pointer shadow-sm ${
                       isJavaScript
                         ? 'bg-blue-600 hover:bg-blue-500 text-white'
                         : 'bg-slate-850 hover:bg-slate-800 text-slate-400 hover:text-slate-200 border border-slate-700'

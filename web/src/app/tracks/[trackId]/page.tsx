@@ -172,22 +172,32 @@ export default async function TrackPage({ params }: Props) {
                 <Link
                   key={s.title}
                   href={`/modules/${s.slug}`}
-                  className="group block bg-slate-900/60 hover:bg-slate-850/80 border border-slate-800 hover:border-slate-700 p-4 rounded transition-all"
+                  className="group relative block bg-slate-900/80 hover:bg-slate-800/90 border border-slate-800 hover:border-cyan-500/60 p-4.5 rounded-xl transition-all duration-200 shadow-sm hover:shadow-xl hover:shadow-cyan-500/10 hover:-translate-y-0.5 active:scale-[0.985] active:translate-y-0 cursor-pointer ring-1 ring-transparent hover:ring-cyan-500/30 overflow-hidden"
                 >
-                  <div className="flex items-center justify-between mb-1.5">
-                    <span className="font-mono text-xs text-slate-400 font-bold">
+                  {/* Top accent bar on hover */}
+                  <div className="absolute top-0 left-0 right-0 h-0.5 bg-gradient-to-r from-cyan-500 to-indigo-500 opacity-0 group-hover:opacity-100 group-active:opacity-100 transition-opacity" />
+
+                  <div className="flex items-center justify-between mb-2">
+                    <span className="font-mono text-xs text-cyan-400 font-bold group-hover:text-cyan-300">
                       CHAPTER {String(idx).padStart(2, '0')}
                     </span>
                     <span className={`text-[10px] px-2 py-0.5 rounded border font-medium ${badgeClass}`}>
                       {badgeText}
                     </span>
                   </div>
-                  <h3 className="text-sm font-bold text-slate-200 group-hover:text-blue-400 transition-colors mb-1">
-                    {s.title}
-                  </h3>
-                  <p className="text-xs text-slate-400 leading-relaxed">
-                    {s.description}
-                  </p>
+                  <div className="flex items-start justify-between gap-4">
+                    <div>
+                      <h3 className="text-sm sm:text-base font-bold text-slate-100 group-hover:text-cyan-200 transition-colors mb-1.5">
+                        {s.title}
+                      </h3>
+                      <p className="text-xs text-slate-400 group-hover:text-slate-300 leading-relaxed transition-colors">
+                        {s.description}
+                      </p>
+                    </div>
+                    <div className="shrink-0 flex items-center justify-center w-8 h-8 rounded-full bg-slate-800 group-hover:bg-cyan-600 text-slate-400 group-hover:text-white transition-all group-hover:translate-x-1 shadow-sm mt-1">
+                      <span className="text-sm font-bold">&rarr;</span>
+                    </div>
+                  </div>
                 </Link>
               );
             }

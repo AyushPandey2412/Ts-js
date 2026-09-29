@@ -130,26 +130,30 @@ export default function HomePage() {
             <Link
               key={m.slug}
               href={`/modules/${m.slug}`}
-              className="group block bg-slate-900 hover:bg-slate-850 border border-slate-800 hover:border-slate-700 p-4 rounded-lg transition-all"
+              className="group relative block bg-slate-900/90 hover:bg-slate-800/90 border border-slate-800 hover:border-cyan-500/60 p-4 rounded-xl transition-all duration-200 shadow-sm hover:shadow-xl hover:shadow-cyan-500/10 hover:-translate-y-1 active:scale-[0.98] active:translate-y-0 cursor-pointer overflow-hidden ring-1 ring-transparent hover:ring-cyan-500/30"
             >
+              {/* Top Accent Gradient Line on Hover & Click */}
+              <div className="absolute top-0 left-0 right-0 h-0.5 bg-gradient-to-r from-cyan-500 to-indigo-500 opacity-0 group-hover:opacity-100 group-active:opacity-100 transition-opacity" />
+
               <div className="flex items-center justify-between mb-2">
-                <span className="font-mono text-xs text-blue-400 font-bold">
+                <span className="font-mono text-xs text-cyan-400 font-bold group-hover:text-cyan-300">
                   MODULE {m.number}
                 </span>
-                <span className="text-[10px] bg-slate-800 text-slate-300 px-2 py-0.5 rounded border border-slate-700">
+                <span className="text-[10px] bg-slate-800 group-hover:bg-slate-700 text-slate-300 px-2 py-0.5 rounded border border-slate-700 transition-colors">
                   {m.badge}
                 </span>
               </div>
-              <h3 className="text-sm font-bold text-white group-hover:text-blue-400 transition-colors mb-1">
+              <h3 className="text-sm font-bold text-white group-hover:text-cyan-200 transition-colors mb-1 line-clamp-1">
                 {m.title}
               </h3>
-              <p className="text-xs text-slate-400 line-clamp-2 leading-relaxed">
+              <p className="text-xs text-slate-400 group-hover:text-slate-300 line-clamp-2 leading-relaxed transition-colors">
                 {m.subtitle}
               </p>
-              <div className="mt-3 text-[11px] text-slate-500 flex items-center justify-between border-t border-slate-800/80 pt-2 font-mono">
-                <span>~{m.estimatedSections} sections</span>
-                <span className="group-hover:translate-x-0.5 transition-transform text-slate-400 font-sans">
-                  Read &rarr;
+              <div className="mt-3.5 text-[11px] text-slate-500 flex items-center justify-between border-t border-slate-800/80 pt-2.5 font-mono">
+                <span className="group-hover:text-slate-400 transition-colors">~{m.estimatedSections} sections</span>
+                <span className="text-cyan-400 font-sans font-semibold group-hover:translate-x-1.5 transition-transform flex items-center space-x-1">
+                  <span>Open Module</span>
+                  <span className="text-xs font-bold">&rarr;</span>
                 </span>
               </div>
             </Link>

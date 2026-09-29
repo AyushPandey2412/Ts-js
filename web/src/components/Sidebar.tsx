@@ -199,9 +199,9 @@ export default function Sidebar({ searchIndex = [] }: SidebarProps) {
                     key={t.id}
                     href={`/tracks/${t.id}`}
                     onClick={() => setIsMobileOpen(false)}
-                    className={`flex items-center justify-between px-2.5 py-2 rounded text-xs transition-colors ${
+                    className={`flex items-center justify-between px-2.5 py-2 rounded text-xs transition-all active:scale-[0.97] cursor-pointer ${
                       isActive
-                        ? 'bg-slate-800 text-blue-400 font-semibold border-l-2 border-blue-500'
+                        ? 'bg-slate-800 text-cyan-400 font-semibold border-l-2 border-cyan-500 shadow-sm'
                         : 'text-slate-300 hover:bg-slate-800/60 hover:text-white'
                     }`}
                     title={t.name}
@@ -246,9 +246,9 @@ export default function Sidebar({ searchIndex = [] }: SidebarProps) {
               <Link
                 href="/practice"
                 onClick={() => setIsMobileOpen(false)}
-                className={`flex items-center justify-between px-2.5 py-2 rounded text-xs transition-colors ${
+                className={`flex items-center justify-between px-2.5 py-2 rounded text-xs transition-all active:scale-[0.97] cursor-pointer ${
                   pathname === '/practice'
-                    ? 'bg-blue-600 text-white font-semibold'
+                    ? 'bg-blue-600 text-white font-semibold shadow-sm'
                     : 'text-slate-300 hover:bg-slate-800 hover:text-white'
                 }`}
                 title="All Practice Problems (70)"
@@ -268,7 +268,7 @@ export default function Sidebar({ searchIndex = [] }: SidebarProps) {
               <Link
                 href="/practice?category=strings"
                 onClick={() => setIsMobileOpen(false)}
-                className="flex items-center justify-between px-2.5 py-1.5 rounded text-xs text-slate-400 hover:bg-slate-800/60 hover:text-slate-200 transition-colors"
+                className="flex items-center justify-between px-2.5 py-1.5 rounded text-xs text-slate-400 hover:bg-slate-800/60 hover:text-slate-200 transition-all active:scale-[0.97] cursor-pointer"
                 title="String Algorithms (23 Problems)"
               >
                 {!isCollapsed ? (
@@ -284,7 +284,7 @@ export default function Sidebar({ searchIndex = [] }: SidebarProps) {
               <Link
                 href="/practice?category=arrays"
                 onClick={() => setIsMobileOpen(false)}
-                className="flex items-center justify-between px-2.5 py-1.5 rounded text-xs text-slate-400 hover:bg-slate-800/60 hover:text-slate-200 transition-colors"
+                className="flex items-center justify-between px-2.5 py-1.5 rounded text-xs text-slate-400 hover:bg-slate-800/60 hover:text-slate-200 transition-all active:scale-[0.97] cursor-pointer"
                 title="Array Algorithms (27 Problems)"
               >
                 {!isCollapsed ? (
@@ -300,7 +300,7 @@ export default function Sidebar({ searchIndex = [] }: SidebarProps) {
               <Link
                 href="/practice?category=objects"
                 onClick={() => setIsMobileOpen(false)}
-                className="flex items-center justify-between px-2.5 py-1.5 rounded text-xs text-slate-400 hover:bg-slate-800/60 hover:text-slate-200 transition-colors"
+                className="flex items-center justify-between px-2.5 py-1.5 rounded text-xs text-slate-400 hover:bg-slate-800/60 hover:text-slate-200 transition-all active:scale-[0.97] cursor-pointer"
                 title="Object Exercises (20 Problems)"
               >
                 {!isCollapsed ? (
@@ -330,9 +330,9 @@ export default function Sidebar({ searchIndex = [] }: SidebarProps) {
             <Link
               href="/notes"
               onClick={() => setIsMobileOpen(false)}
-              className={`flex items-center justify-between px-2.5 py-2 rounded text-xs transition-colors ${
+              className={`flex items-center justify-between px-2.5 py-2 rounded text-xs transition-all active:scale-[0.97] cursor-pointer ${
                 pathname === '/notes'
-                  ? 'bg-blue-600 text-white font-semibold'
+                  ? 'bg-blue-600 text-white font-semibold shadow-sm'
                   : 'text-slate-300 hover:bg-slate-800 hover:text-white'
               }`}
               title="Global Notes Studio & Masterclass Converter"
@@ -370,9 +370,9 @@ export default function Sidebar({ searchIndex = [] }: SidebarProps) {
             <Link
               href="/interview"
               onClick={() => setIsMobileOpen(false)}
-              className={`flex items-center justify-between px-2.5 py-2 rounded text-xs transition-colors ${
+              className={`flex items-center justify-between px-2.5 py-2 rounded text-xs transition-all active:scale-[0.97] cursor-pointer ${
                 pathname === '/interview'
-                  ? 'bg-blue-600 text-white font-semibold'
+                  ? 'bg-blue-600 text-white font-semibold shadow-sm'
                   : 'text-slate-300 hover:bg-slate-800 hover:text-white'
               }`}
               title="Senior & Staff Engineering Interview Arena"
