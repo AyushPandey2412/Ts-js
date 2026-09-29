@@ -379,9 +379,15 @@ export default function InteractiveReader({ slug, meta, initialHtml, toc, naviga
 
             <div className="flex items-center space-x-2">
               <button
-                onClick={() => setIsPlaygroundOpen(true)}
+                onClick={() => {
+                  const el = document.getElementById('code-playground');
+                  if (el) {
+                    el.scrollIntoView({ behavior: 'smooth' });
+                    el.querySelector('textarea')?.focus();
+                  }
+                }}
                 className="flex items-center space-x-1.5 px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 active:bg-emerald-700 text-white text-xs font-bold shadow-md shadow-emerald-950/40 transition-all hover:scale-[1.02] active:scale-[0.98] cursor-pointer ring-1 ring-emerald-400/40"
-                title="Open VS Code in-browser code runner"
+                title="Jump to VS Code Playground in this chapter"
               >
                 <span>▶</span>
                 <span>Run Code (VS Code)</span>
@@ -406,6 +412,15 @@ export default function InteractiveReader({ slug, meta, initialHtml, toc, naviga
             {meta.subtitle}
           </p>
         </div>
+
+        {/* Embedded Interactive VS Code Playground & Code Runner */}
+        <section id="code-playground" className="my-6 scroll-mt-20">
+          <CodePlayground
+            slug={slug}
+            moduleTitle={meta.title}
+            embedded={true}
+          />
+        </section>
 
         {/* Edit Mode Notification Banner */}
         {isEditMode && (
@@ -506,8 +521,14 @@ export default function InteractiveReader({ slug, meta, initialHtml, toc, naviga
       {/* Permanently Fixed Right Table of Contents with Integrated Action Tools */}
       <TableOfContents
         toc={toc}
-        onTogglePlayground={() => setIsPlaygroundOpen(!isPlaygroundOpen)}
-        isPlaygroundOpen={isPlaygroundOpen}
+        onTogglePlayground={() => {
+          const el = document.getElementById('code-playground');
+          if (el) {
+            el.scrollIntoView({ behavior: 'smooth' });
+            el.querySelector('textarea')?.focus();
+          }
+        }}
+        isPlaygroundOpen={true}
         onToggleNotes={() => setIsNotesOpen(!isNotesOpen)}
         isNotesOpen={isNotesOpen}
         onToggleSticky={() => setIsStickyOpen(!isStickyOpen)}
@@ -646,25 +667,21 @@ export default function InteractiveReader({ slug, meta, initialHtml, toc, naviga
         </>
       )}
 
-      {/* Embedded VS Code Playground & Code Runner */}
-      <CodePlayground
-        slug={slug}
-        moduleTitle={meta.title}
-        isOpen={isPlaygroundOpen}
-        onClose={() => setIsPlaygroundOpen(false)}
-      />
-
-      {/* Floating Quick Action Button: Run Code */}
-      {!isPlaygroundOpen && (
-        <button
-          onClick={() => setIsPlaygroundOpen(true)}
-          className="fixed bottom-6 right-6 md:right-76 lg:right-80 z-35 flex items-center space-x-2 px-3.5 py-2.5 rounded-full bg-emerald-600 hover:bg-emerald-500 active:bg-emerald-700 text-white font-bold text-xs shadow-2xl shadow-emerald-950/80 transition-all hover:scale-105 active:scale-95 cursor-pointer ring-2 ring-emerald-400/50"
-          title="Open VS Code Playground & Code Runner"
-        >
-          <span className="text-sm">▶</span>
-          <span className="font-semibold tracking-wide">Run Code</span>
-        </button>
-      )}
+      {/* Floating Quick Action Button: Jump to VS Code Runner */}
+      <button
+        onClick={() => {
+          const el = document.getElementById('code-playground');
+          if (el) {
+            el.scrollIntoView({ behavior: 'smooth' });
+            el.querySelector('textarea')?.focus();
+          }
+        }}
+        className="fixed bottom-6 right-6 md:right-76 lg:right-80 z-35 flex items-center space-x-2 px-3.5 py-2.5 rounded-full bg-emerald-600 hover:bg-emerald-500 active:bg-emerald-700 text-white font-bold text-xs shadow-2xl shadow-emerald-950/80 transition-all hover:scale-105 active:scale-95 cursor-pointer ring-2 ring-emerald-400/50"
+        title="Jump to VS Code Playground in this chapter"
+      >
+        <span className="text-sm">▶</span>
+        <span className="font-semibold tracking-wide">Run Code</span>
+      </button>
     </div>
   );
 }
