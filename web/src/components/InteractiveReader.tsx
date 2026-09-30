@@ -4,7 +4,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import Link from 'next/link';
 import type { ModuleMeta, TableOfContentsItem, ModuleNavigation } from '@/lib/modules';
 import TableOfContents from '@/components/TableOfContents';
-import CodePlayground from '@/components/CodePlayground';
+import CodePlayground, { type DockPosition } from '@/components/CodePlayground';
 
 interface Props {
   slug: string;
@@ -62,13 +62,33 @@ export default function InteractiveReader({ slug, meta, initialHtml, toc, naviga
     }
   });
   const [isEditMode, setIsEditMode] = useState(false);
-  const [isPlaygroundOpen, setIsPlaygroundOpen] = useState(false);
+
+  // Desktop Split-screen & Docking state ('right' | 'bottom' | 'embedded' | 'fullscreen')
+  const [dockPosition, setDockPosition] = useState<DockPosition>(() => {
+    if (typeof window === 'undefined') return 'right';
+    try {
+      const saved = localStorage.getItem('devmastery_dock_position');
+      return (saved as DockPosition) || 'right';
+    } catch {
+      return 'right';
+    }
+  });
+
+  const handleDockChange = (newDock: DockPosition) => {
+    setDockPosition(newDock);
+    try {
+      localStorage.setItem('devmastery_dock_position', newDock);
+    } catch {}
+  };
+
+  // Mobile navigation tab: 'textbook' vs 'code'
+  const [mobileActiveTab, setMobileActiveTab] = useState<'textbook' | 'code'>('textbook');
 
   // Derived content
   const htmlContent = customHtml ?? initialHtml;
   const hasCustomEdits = customHtml !== null;
 
-  // Notes drawer state (NO BLUR, side-by-side reading & writing)
+  // Notes drawer state
   const [isNotesOpen, setIsNotesOpen] = useState(false);
   const [moduleNotes, setModuleNotes] = useState<string>(() => {
     if (typeof window === 'undefined') return '';
@@ -117,7 +137,7 @@ export default function InteractiveReader({ slug, meta, initialHtml, toc, naviga
   // Text selection highlight popup state
   const [selectionPopup, setSelectionPopup] = useState<{ x: number; y: number } | null>(null);
 
-  // Handle Dragging Sticky Note (Mouse & Touch)
+  // Handle Dragging Sticky Note
   const handleStickyHeaderMouseDown = (e: React.MouseEvent) => {
     isDraggingRef.current = true;
     dragOffsetRef.current = {
@@ -150,9 +170,7 @@ export default function InteractiveReader({ slug, meta, initialHtml, toc, naviga
       isDraggingRef.current = false;
       try {
         localStorage.setItem(stickyPosKey, JSON.stringify(stickyPos));
-      } catch {
-        // Ignore
-      }
+      } catch {}
     }
   };
 
@@ -164,137 +182,123 @@ export default function InteractiveReader({ slug, meta, initialHtml, toc, naviga
       setStickyPos({ x: newX, y: newY });
     };
 
-    const handleMouseUp = () => {
+    const handleMouseUpGlobal = () => {
       if (isDraggingRef.current) {
         isDraggingRef.current = false;
         try {
           localStorage.setItem(stickyPosKey, JSON.stringify(stickyPos));
-        } catch {
-          // Ignore
-        }
+        } catch {}
       }
     };
 
     window.addEventListener('mousemove', handleMouseMove);
-    window.addEventListener('mouseup', handleMouseUp);
+    window.addEventListener('mouseup', handleMouseUpGlobal);
     return () => {
       window.removeEventListener('mousemove', handleMouseMove);
-      window.removeEventListener('mouseup', handleMouseUp);
+      window.removeEventListener('mouseup', handleMouseUpGlobal);
     };
-  }, [stickyPos, stickyPosKey]);
+  }, [stickyPos]);
 
-  // Save notes
-  const handleNotesChange = (text: string) => {
-    setModuleNotes(text);
-    try {
-      localStorage.setItem(notesStorageKey, text);
-    } catch {
-      // Ignore
-    }
-  };
-
-  // Save sticky text
-  const handleStickyChange = (text: string) => {
-    setStickyText(text);
-    try {
-      localStorage.setItem(stickyStorageKey, text);
-    } catch {
-      // Ignore
-    }
-  };
-
-  // Save edited document HTML
-  const saveDocumentEdits = () => {
-    if (contentRef.current) {
-      const currentHtml = contentRef.current.innerHTML;
-      setCustomHtml(currentHtml);
-      try {
-        localStorage.setItem(editStorageKey, currentHtml);
-      } catch {
-        // Ignore
-      }
-      setIsEditMode(false);
-    }
-  };
-
-  // Reset document to official original
-  const resetDocumentEdits = () => {
-    if (window.confirm('Reset this document to the original textbook? Any custom text edits will be removed.')) {
-      try {
-        localStorage.removeItem(editStorageKey);
-      } catch {
-        // Ignore
-      }
-      setCustomHtml(null);
-      setIsEditMode(false);
-    }
-  };
-
-  const savedRangeRef = useRef<Range | null>(null);
-
-  // Detect text selection for highlight popup
+  // Handle text selection
   const handleMouseUp = () => {
-    const sel = window.getSelection();
-    if (!sel || sel.isCollapsed || sel.toString().trim().length === 0) {
+    if (isEditMode) return;
+    const selection = window.getSelection();
+    if (!selection || selection.isCollapsed || !contentRef.current) {
       setSelectionPopup(null);
-      savedRangeRef.current = null;
+      return;
+    }
+
+    const text = selection.toString().trim();
+    if (!text) {
+      setSelectionPopup(null);
       return;
     }
 
     try {
-      const range = sel.getRangeAt(0);
-      savedRangeRef.current = range.cloneRange();
-      const rect = range.getBoundingClientRect();
-      if (rect.width > 0 && rect.height > 0) {
+      const range = selection.getRangeAt(0);
+      if (contentRef.current.contains(range.commonAncestorContainer)) {
+        const rect = range.getBoundingClientRect();
         setSelectionPopup({
           x: rect.left + rect.width / 2,
-          y: Math.max(10, rect.top - 45)
+          y: rect.top - 45
         });
+      } else {
+        setSelectionPopup(null);
       }
     } catch {
       setSelectionPopup(null);
-      savedRangeRef.current = null;
     }
   };
 
-  // Apply highlight color to current selection
+  const saveDocumentEdits = () => {
+    if (contentRef.current) {
+      const updated = contentRef.current.innerHTML;
+      setCustomHtml(updated);
+      try {
+        localStorage.setItem(editStorageKey, updated);
+      } catch {}
+    }
+    setIsEditMode(false);
+  };
+
+  const resetDocumentEdits = () => {
+    if (window.confirm('Reset this module textbook to its official content? All custom edits and highlights will be removed.')) {
+      setCustomHtml(null);
+      try {
+        localStorage.removeItem(editStorageKey);
+      } catch {}
+      setIsEditMode(false);
+    }
+  };
+
+  const handleNotesChange = (text: string) => {
+    setModuleNotes(text);
+    try {
+      localStorage.setItem(notesStorageKey, text);
+    } catch {}
+  };
+
+  const handleStickyChange = (text: string) => {
+    setStickyText(text);
+    try {
+      localStorage.setItem(stickyStorageKey, text);
+    } catch {}
+  };
+
   const applyHighlight = (color: string) => {
-    const range = savedRangeRef.current ?? (window.getSelection()?.rangeCount ? window.getSelection()!.getRangeAt(0) : null);
-    if (!range) return;
+    const selection = window.getSelection();
+    if (!selection || selection.rangeCount === 0) return;
 
     try {
-      const span = document.createElement('mark');
+      const range = selection.getRangeAt(0);
+      const span = document.createElement('span');
       span.style.backgroundColor = color;
-      span.style.color = '#000000';
-      span.style.padding = '1px 3px';
+      span.style.color = '#000';
       span.style.borderRadius = '3px';
-      span.className = 'custom-highlight';
+      span.style.padding = '0 2px';
+      span.setAttribute('data-user-highlight', 'true');
 
-      const fragment = range.extractContents();
-      span.appendChild(fragment);
+      const extracted = range.extractContents();
+      span.appendChild(extracted);
       range.insertNode(span);
+      selection.removeAllRanges();
 
       if (contentRef.current) {
         const updated = contentRef.current.innerHTML;
         setCustomHtml(updated);
         localStorage.setItem(editStorageKey, updated);
       }
-    } catch {
-      // Fallback
-    }
-
-    window.getSelection()?.removeAllRanges();
-    savedRangeRef.current = null;
+    } catch {}
     setSelectionPopup(null);
   };
 
   const removeHighlight = () => {
-    const sel = window.getSelection();
-    if (!sel || sel.rangeCount === 0) return;
+    const selection = window.getSelection();
+    if (!selection || selection.rangeCount === 0) return;
 
     try {
-      const node = sel.anchorNode?.parentElement;
-      if (node && node.tagName.toLowerCase() === 'mark') {
+      const node = selection.anchorNode?.parentElement;
+      if (node && node.hasAttribute('data-user-highlight')) {
         const parent = node.parentNode;
         while (node.firstChild) {
           parent?.insertBefore(node.firstChild, node);
@@ -307,9 +311,7 @@ export default function InteractiveReader({ slug, meta, initialHtml, toc, naviga
           localStorage.setItem(editStorageKey, updated);
         }
       }
-    } catch {
-      // Ignore
-    }
+    } catch {}
     setSelectionPopup(null);
   };
 
@@ -325,8 +327,188 @@ export default function InteractiveReader({ slug, meta, initialHtml, toc, naviga
 
   const theme = colorThemes[stickyColor];
 
+  // Helper to render the complete textbook content area
+  const renderTextbookContent = () => (
+    <div className="max-w-4xl mx-auto px-4 sm:px-8 py-8 min-w-0">
+      {/* Module Header */}
+      <div className="border-b border-slate-800 pb-5 mb-6">
+        <div className="flex flex-wrap items-center justify-between gap-3 mb-3">
+          <div className="text-xs font-mono text-blue-400 font-bold">
+            Module {meta.number} / {meta.badge}
+          </div>
+
+          <div className="flex items-center space-x-2">
+            {/* Desktop Docking / Split Switcher Pill */}
+            <div className="hidden md:flex items-center bg-slate-900 border border-slate-800 rounded-lg p-0.5 space-x-1 shadow-inner">
+              <span className="text-[10px] font-mono text-slate-500 uppercase px-1.5 font-semibold">
+                Layout:
+              </span>
+              <button
+                onClick={() => handleDockChange('right')}
+                className={`px-2 py-0.5 rounded text-[11px] font-mono font-medium transition-colors ${
+                  dockPosition === 'right'
+                    ? 'bg-blue-600 text-white font-bold shadow-xs'
+                    : 'text-slate-400 hover:text-white'
+                }`}
+                title="Split Right: Read on Left, Code on Right"
+              >
+                ◧ Split Right
+              </button>
+              <button
+                onClick={() => handleDockChange('bottom')}
+                className={`px-2 py-0.5 rounded text-[11px] font-mono font-medium transition-colors ${
+                  dockPosition === 'bottom'
+                    ? 'bg-blue-600 text-white font-bold shadow-xs'
+                    : 'text-slate-400 hover:text-white'
+                }`}
+                title="Dock Bottom: Read on Top, Code on Bottom"
+              >
+                ⬒ Bottom
+              </button>
+              <button
+                onClick={() => handleDockChange('embedded')}
+                className={`px-2 py-0.5 rounded text-[11px] font-mono font-medium transition-colors ${
+                  dockPosition === 'embedded'
+                    ? 'bg-blue-600 text-white font-bold shadow-xs'
+                    : 'text-slate-400 hover:text-white'
+                }`}
+                title="Inline inside textbook"
+              >
+                ⊟ Inline
+              </button>
+            </div>
+
+            {hasCustomEdits && !isEditMode && (
+              <button
+                onClick={resetDocumentEdits}
+                className="px-2 py-1 rounded text-[11px] text-slate-500 hover:text-rose-400 bg-slate-900 border border-slate-800 hover:border-rose-900/50 transition-colors"
+                title="Reset to official textbook original"
+              >
+                Reset to Original
+              </button>
+            )}
+          </div>
+        </div>
+
+        <h1 className="text-2xl sm:text-3xl font-extrabold text-white tracking-tight mb-2">
+          {meta.title}
+        </h1>
+        <p className="text-slate-400 text-xs sm:text-sm leading-relaxed">
+          {meta.subtitle}
+        </p>
+      </div>
+
+      {/* If embedded mode: render CodePlayground right here in the page flow */}
+      {dockPosition === 'embedded' && (
+        <section id="code-playground" className="my-6 scroll-mt-20">
+          <CodePlayground
+            slug={slug}
+            moduleTitle={meta.title}
+            dockPosition="embedded"
+            onDockChange={handleDockChange}
+          />
+        </section>
+      )}
+
+      {/* Edit Mode Notification Banner */}
+      {isEditMode && (
+        <div className="bg-blue-950/80 border border-blue-700 text-blue-200 text-xs px-4 py-2.5 rounded mb-6 flex items-center justify-between sticky top-4 z-20 shadow-lg">
+          <span>
+            <strong>Edit Mode Active:</strong> Click anywhere in the text below to edit or type custom notes directly in the textbook.
+          </span>
+          <div className="flex items-center space-x-2 shrink-0 ml-3">
+            <button
+              onClick={saveDocumentEdits}
+              className="px-3 py-1 bg-emerald-600 hover:bg-emerald-500 text-white rounded font-semibold text-xs"
+            >
+              Save Edits
+            </button>
+            <button
+              onClick={() => setIsEditMode(false)}
+              className="px-2.5 py-1 bg-slate-800 hover:bg-slate-700 text-slate-200 rounded text-xs border border-slate-700"
+            >
+              Cancel
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Rendered & Editable Markdown Body */}
+      <div
+        ref={contentRef}
+        contentEditable={isEditMode}
+        suppressContentEditableWarning={true}
+        className={`markdown-body ${
+          isEditMode ? 'ring-2 ring-blue-500/50 p-4 rounded bg-slate-900/40 outline-none' : ''
+        }`}
+        dangerouslySetInnerHTML={{ __html: htmlContent }}
+      />
+
+      {/* Next / Previous Module Track Progression */}
+      {navigation && (
+        <div className="mt-16 pt-8 border-t border-slate-800">
+          <div className="flex items-center justify-between text-xs text-slate-500 mb-4 font-mono">
+            <Link href={navigation.trackHref} className="hover:text-cyan-400 flex items-center space-x-1.5 transition-colors">
+              <span>&larr;</span>
+              <span>Return to {navigation.trackTitle}</span>
+            </Link>
+            <span className="text-[11px] bg-slate-800 text-slate-400 px-2 py-0.5 rounded border border-slate-700">
+              Curriculum Progression
+            </span>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            {navigation.prev ? (
+              <Link
+                href={`/modules/${navigation.prev.slug}`}
+                className="group block p-4 rounded-xl bg-slate-900/80 hover:bg-slate-850 border border-slate-800 hover:border-cyan-500/50 transition-all duration-200 active:scale-[0.985] text-left cursor-pointer shadow-sm hover:shadow-lg hover:shadow-cyan-500/5"
+              >
+                <div className="text-[10px] font-mono font-semibold text-slate-400 group-hover:text-cyan-400 transition-colors uppercase tracking-wider mb-1">
+                  &larr; Previous Module
+                </div>
+                <div className="text-xs sm:text-sm font-bold text-slate-200 group-hover:text-white line-clamp-1 transition-colors">
+                  {navigation.prev.number}: {navigation.prev.title}
+                </div>
+                <p className="text-[11px] text-slate-400 line-clamp-1 mt-0.5">
+                  {navigation.prev.subtitle}
+                </p>
+              </Link>
+            ) : (
+              <div className="p-4 rounded-xl border border-slate-800/40 bg-slate-900/30 opacity-40">
+                <div className="text-[10px] font-mono text-slate-600 uppercase">First Chapter</div>
+                <div className="text-xs text-slate-500 mt-1">Beginning of {navigation.trackTitle}</div>
+              </div>
+            )}
+
+            {navigation.next ? (
+              <Link
+                href={`/modules/${navigation.next.slug}`}
+                className="group block p-4 rounded-xl bg-slate-900/80 hover:bg-slate-850 border border-slate-800 hover:border-cyan-500/50 transition-all duration-200 active:scale-[0.985] text-right cursor-pointer shadow-sm hover:shadow-lg hover:shadow-cyan-500/5"
+              >
+                <div className="text-[10px] font-mono font-semibold text-slate-400 group-hover:text-cyan-400 transition-colors uppercase tracking-wider mb-1">
+                  Next Module &rarr;
+                </div>
+                <div className="text-xs sm:text-sm font-bold text-slate-200 group-hover:text-white line-clamp-1 transition-colors">
+                  {navigation.next.number}: {navigation.next.title}
+                </div>
+                <p className="text-[11px] text-slate-400 line-clamp-1 mt-0.5">
+                  {navigation.next.subtitle}
+                </p>
+              </Link>
+            ) : (
+              <div className="p-4 rounded-xl border border-slate-800/40 bg-slate-900/30 opacity-40 text-right">
+                <div className="text-[10px] font-mono text-slate-600 uppercase">Track Complete</div>
+                <div className="text-xs text-slate-500 mt-1">Final module of {navigation.trackTitle}</div>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+
   return (
-    <div className="w-full min-h-screen lg:pr-72 relative" onMouseUp={handleMouseUp}>
+    <div className="w-full h-full relative" onMouseUp={handleMouseUp}>
       {/* Floating Highlight Toolbar */}
       {selectionPopup && (
         <div
@@ -368,174 +550,123 @@ export default function InteractiveReader({ slug, meta, initialHtml, toc, naviga
         </div>
       )}
 
-      {/* Main Reading Container */}
-      <div className="max-w-4xl mx-auto px-4 sm:px-8 py-8 min-w-0">
-        {/* Module Header */}
-        <div className="border-b border-slate-800 pb-5 mb-6">
-          <div className="flex flex-wrap items-center justify-between gap-3 mb-3">
-            <div className="text-xs font-mono text-blue-400 font-bold">
-              Module {meta.number} / {meta.badge}
-            </div>
-
-            <div className="flex items-center space-x-2">
-              <button
-                onClick={() => {
-                  const el = document.getElementById('code-playground');
-                  if (el) {
-                    el.scrollIntoView({ behavior: 'smooth' });
-                    el.querySelector('textarea')?.focus();
-                  }
-                }}
-                className="flex items-center space-x-1.5 px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 active:bg-emerald-700 text-white text-xs font-bold shadow-md shadow-emerald-950/40 transition-all hover:scale-[1.02] active:scale-[0.98] cursor-pointer ring-1 ring-emerald-400/40"
-                title="Jump to VS Code Playground in this chapter"
-              >
-                <span>▶</span>
-                <span>Run Code (VS Code)</span>
-              </button>
-
-              {hasCustomEdits && !isEditMode && (
-                <button
-                  onClick={resetDocumentEdits}
-                  className="px-2 py-1 rounded text-[11px] text-slate-500 hover:text-rose-400 bg-slate-900 border border-slate-800 hover:border-rose-900/50 transition-colors"
-                  title="Reset to official textbook original"
-                >
-                  Reset to Original
-                </button>
-              )}
-            </div>
-          </div>
-
-          <h1 className="text-2xl sm:text-3xl font-extrabold text-white tracking-tight mb-2">
-            {meta.title}
-          </h1>
-          <p className="text-slate-400 text-xs sm:text-sm leading-relaxed">
-            {meta.subtitle}
-          </p>
+      {/* Mobile Top Switcher Bar (md:hidden) */}
+      <div className="md:hidden sticky top-0 z-40 bg-slate-900/95 backdrop-blur border-b border-slate-800 p-2.5 flex items-center justify-between">
+        <div className="flex bg-slate-800 p-1 rounded-xl w-full max-w-sm mx-auto shadow-inner">
+          <button
+            onClick={() => setMobileActiveTab('textbook')}
+            className={`flex-1 py-1.5 rounded-lg text-xs font-bold transition-all ${
+              mobileActiveTab === 'textbook'
+                ? 'bg-blue-600 text-white shadow-sm'
+                : 'text-slate-400 hover:text-white'
+            }`}
+          >
+            📖 Read Textbook
+          </button>
+          <button
+            onClick={() => setMobileActiveTab('code')}
+            className={`flex-1 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center justify-center space-x-1.5 ${
+              mobileActiveTab === 'code'
+                ? 'bg-emerald-600 text-white shadow-sm'
+                : 'text-slate-400 hover:text-white'
+            }`}
+          >
+            <span>⚡</span>
+            <span>VS Code Runner</span>
+          </button>
         </div>
+      </div>
 
-        {/* Embedded Interactive VS Code Playground & Code Runner */}
-        <section id="code-playground" className="my-6 scroll-mt-20">
-          <CodePlayground
-            slug={slug}
-            moduleTitle={meta.title}
-            embedded={true}
-          />
-        </section>
-
-        {/* Edit Mode Notification Banner */}
-        {isEditMode && (
-          <div className="bg-blue-950/80 border border-blue-700 text-blue-200 text-xs px-4 py-2.5 rounded mb-6 flex items-center justify-between sticky top-4 z-20 shadow-lg">
-            <span>
-              <strong>Edit Mode Active:</strong> Click anywhere in the text below to edit or type custom notes directly in the textbook.
-            </span>
-            <div className="flex items-center space-x-2 shrink-0 ml-3">
-              <button
-                onClick={saveDocumentEdits}
-                className="px-3 py-1 bg-emerald-600 hover:bg-emerald-500 text-white rounded font-semibold text-xs"
-              >
-                Save Edits
-              </button>
-              <button
-                onClick={() => setIsEditMode(false)}
-                className="px-2.5 py-1 bg-slate-800 hover:bg-slate-700 text-slate-200 rounded text-xs border border-slate-700"
-              >
-                Cancel
-              </button>
-            </div>
+      {/* Mobile View Renderer */}
+      <div className="md:hidden">
+        {mobileActiveTab === 'code' ? (
+          <div className="h-[calc(100vh-60px)] flex flex-col bg-[#1e1e1e]">
+            <CodePlayground
+              slug={slug}
+              moduleTitle={meta.title}
+              isMobile={true}
+              dockPosition="fullscreen"
+            />
           </div>
-        )}
-
-        {/* Rendered & Editable Markdown Body */}
-        <div
-          ref={contentRef}
-          contentEditable={isEditMode}
-          suppressContentEditableWarning={true}
-          className={`markdown-body ${
-            isEditMode ? 'ring-2 ring-blue-500/50 p-4 rounded bg-slate-900/40 outline-none' : ''
-          }`}
-          dangerouslySetInnerHTML={{ __html: htmlContent }}
-        />
-
-        {/* Next / Previous Module Track Progression */}
-        {navigation && (
-          <div className="mt-16 pt-8 border-t border-slate-800">
-            <div className="flex items-center justify-between text-xs text-slate-500 mb-4 font-mono">
-              <Link href={navigation.trackHref} className="hover:text-cyan-400 flex items-center space-x-1.5 transition-colors">
-                <span>&larr;</span>
-                <span>Return to {navigation.trackTitle}</span>
-              </Link>
-              <span className="text-[11px] bg-slate-800 text-slate-400 px-2 py-0.5 rounded border border-slate-700">
-                Curriculum Progression
-              </span>
-            </div>
-
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              {navigation.prev ? (
-                <Link
-                  href={`/modules/${navigation.prev.slug}`}
-                  className="group block p-4 rounded-xl bg-slate-900/80 hover:bg-slate-850 border border-slate-800 hover:border-cyan-500/50 transition-all duration-200 active:scale-[0.985] text-left cursor-pointer shadow-sm hover:shadow-lg hover:shadow-cyan-500/5"
-                >
-                  <div className="text-[10px] font-mono font-semibold text-slate-400 group-hover:text-cyan-400 transition-colors uppercase tracking-wider mb-1">
-                    &larr; Previous Module
-                  </div>
-                  <div className="text-xs sm:text-sm font-bold text-slate-200 group-hover:text-white line-clamp-1 transition-colors">
-                    {navigation.prev.number}: {navigation.prev.title}
-                  </div>
-                  <p className="text-[11px] text-slate-400 line-clamp-1 mt-0.5">
-                    {navigation.prev.subtitle}
-                  </p>
-                </Link>
-              ) : (
-                <div className="p-4 rounded-xl border border-slate-800/40 bg-slate-900/30 opacity-40">
-                  <div className="text-[10px] font-mono text-slate-600 uppercase">First Chapter</div>
-                  <div className="text-xs text-slate-500 mt-1">Beginning of {navigation.trackTitle}</div>
-                </div>
-              )}
-
-              {navigation.next ? (
-                <Link
-                  href={`/modules/${navigation.next.slug}`}
-                  className="group block p-4 rounded-xl bg-slate-900/80 hover:bg-slate-850 border border-slate-800 hover:border-cyan-500/50 transition-all duration-200 active:scale-[0.985] text-right cursor-pointer shadow-sm hover:shadow-lg hover:shadow-cyan-500/5"
-                >
-                  <div className="text-[10px] font-mono font-semibold text-slate-400 group-hover:text-cyan-400 transition-colors uppercase tracking-wider mb-1">
-                    Next Module &rarr;
-                  </div>
-                  <div className="text-xs sm:text-sm font-bold text-slate-200 group-hover:text-white line-clamp-1 transition-colors">
-                    {navigation.next.number}: {navigation.next.title}
-                  </div>
-                  <p className="text-[11px] text-slate-400 line-clamp-1 mt-0.5">
-                    {navigation.next.subtitle}
-                  </p>
-                </Link>
-              ) : (
-                <div className="p-4 rounded-xl border border-slate-800/40 bg-slate-900/30 opacity-40 text-right">
-                  <div className="text-[10px] font-mono text-slate-600 uppercase">Track Complete</div>
-                  <div className="text-xs text-slate-500 mt-1">Final module of {navigation.trackTitle}</div>
-                </div>
-              )}
-            </div>
+        ) : (
+          <div className="min-h-screen">
+            {renderTextbookContent()}
           </div>
         )}
       </div>
 
-      {/* Permanently Fixed Right Table of Contents with Integrated Action Tools */}
-      <TableOfContents
-        toc={toc}
-        onTogglePlayground={() => {
-          const el = document.getElementById('code-playground');
-          if (el) {
-            el.scrollIntoView({ behavior: 'smooth' });
-            el.querySelector('textarea')?.focus();
-          }
-        }}
-        isPlaygroundOpen={true}
-        onToggleNotes={() => setIsNotesOpen(!isNotesOpen)}
-        isNotesOpen={isNotesOpen}
-        onToggleSticky={() => setIsStickyOpen(!isStickyOpen)}
-        isStickyOpen={isStickyOpen}
-        onToggleEdit={() => (isEditMode ? saveDocumentEdits() : setIsEditMode(true))}
-        isEditMode={isEditMode}
-      />
+      {/* Desktop View Renderer (md:block) */}
+      <div className="hidden md:block w-full h-full">
+        {dockPosition === 'right' ? (
+          /* Side-by-Side Split View: Textbook Left (50%), Code Right (50%) */
+          <div className="flex h-screen overflow-hidden">
+            <div id="main-content" className="flex-1 h-full overflow-y-auto min-w-0">
+              {renderTextbookContent()}
+            </div>
+            <div className="w-[48%] xl:w-[50%] h-full shrink-0 flex flex-col bg-[#1e1e1e] border-l border-slate-800 shadow-2xl">
+              <CodePlayground
+                slug={slug}
+                moduleTitle={meta.title}
+                dockPosition="right"
+                onDockChange={handleDockChange}
+              />
+            </div>
+          </div>
+        ) : dockPosition === 'bottom' ? (
+          /* Horizontal Split View: Textbook Top, Code Bottom */
+          <div className="flex flex-col h-screen overflow-hidden">
+            <div id="main-content" className="flex-1 overflow-y-auto min-w-0">
+              {renderTextbookContent()}
+            </div>
+            <div className="h-[46vh] min-h-[300px] shrink-0 border-t-2 border-blue-500/60 bg-[#1e1e1e] shadow-2xl">
+              <CodePlayground
+                slug={slug}
+                moduleTitle={meta.title}
+                dockPosition="bottom"
+                onDockChange={handleDockChange}
+              />
+            </div>
+          </div>
+        ) : dockPosition === 'fullscreen' ? (
+          /* Fullscreen IDE Mode */
+          <CodePlayground
+            slug={slug}
+            moduleTitle={meta.title}
+            dockPosition="fullscreen"
+            onDockChange={handleDockChange}
+          />
+        ) : (
+          /* Embedded In-Page Mode with Fixed TOC */
+          <div className="w-full min-h-screen lg:pr-72 relative">
+            <div id="main-content">
+              {renderTextbookContent()}
+            </div>
+            <TableOfContents
+              toc={toc}
+              onTogglePlayground={() => handleDockChange('right')}
+              isPlaygroundOpen={false}
+              onToggleNotes={() => setIsNotesOpen(!isNotesOpen)}
+              isNotesOpen={isNotesOpen}
+              onToggleSticky={() => setIsStickyOpen(!isStickyOpen)}
+              isStickyOpen={isStickyOpen}
+              onToggleEdit={() => (isEditMode ? saveDocumentEdits() : setIsEditMode(true))}
+              isEditMode={isEditMode}
+            />
+          </div>
+        )}
+      </div>
+
+      {/* Mobile Floating Button (Only when reading on mobile) */}
+      {mobileActiveTab === 'textbook' && (
+        <button
+          onClick={() => setMobileActiveTab('code')}
+          className="md:hidden fixed bottom-6 right-6 z-35 flex items-center space-x-2 px-4 py-3 rounded-full bg-emerald-600 hover:bg-emerald-500 active:bg-emerald-700 text-white font-bold text-xs shadow-2xl shadow-emerald-950/80 transition-all hover:scale-105 active:scale-95 cursor-pointer ring-2 ring-emerald-400/50"
+          title="Open VS Code Runner"
+        >
+          <span className="text-sm">⚡</span>
+          <span className="font-semibold tracking-wide">Run Code</span>
+        </button>
+      )}
 
       {/* Draggable Sticky Note Widget */}
       {isStickyOpen && (
@@ -558,7 +689,6 @@ export default function InteractiveReader({ slug, meta, initialHtml, toc, naviga
               <span className="text-[10px] opacity-60 font-normal">(Drag me)</span>
             </div>
             <div className="flex items-center space-x-1.5">
-              {/* Color switcher pills */}
               <button
                 onClick={() => setStickyColor('amber')}
                 className="w-3 h-3 rounded-full bg-amber-400 border border-white/40"
@@ -579,7 +709,6 @@ export default function InteractiveReader({ slug, meta, initialHtml, toc, naviga
                 className="w-3 h-3 rounded-full bg-purple-400 border border-white/40"
                 title="Purple theme"
               />
-
               <button
                 onClick={() => setIsStickyMinimized(!isStickyMinimized)}
                 className="hover:text-white px-1 font-mono text-xs"
@@ -597,7 +726,6 @@ export default function InteractiveReader({ slug, meta, initialHtml, toc, naviga
             </div>
           </div>
 
-          {/* Sticky Textarea */}
           {!isStickyMinimized && (
             <textarea
               value={stickyText}
@@ -609,10 +737,9 @@ export default function InteractiveReader({ slug, meta, initialHtml, toc, naviga
         </div>
       )}
 
-      {/* Docked Notes Panel (Zero backdrop blur - side-by-side reading!) */}
+      {/* Docked Notes Panel */}
       {isNotesOpen && (
         <>
-          {/* Mobile backdrop for notes drawer */}
           <div
             onClick={() => setIsNotesOpen(false)}
             className="fixed inset-0 bg-black/60 z-35 sm:hidden backdrop-blur-xs"
@@ -666,22 +793,6 @@ export default function InteractiveReader({ slug, meta, initialHtml, toc, naviga
           </div>
         </>
       )}
-
-      {/* Floating Quick Action Button: Jump to VS Code Runner */}
-      <button
-        onClick={() => {
-          const el = document.getElementById('code-playground');
-          if (el) {
-            el.scrollIntoView({ behavior: 'smooth' });
-            el.querySelector('textarea')?.focus();
-          }
-        }}
-        className="fixed bottom-6 right-6 md:right-76 lg:right-80 z-35 flex items-center space-x-2 px-3.5 py-2.5 rounded-full bg-emerald-600 hover:bg-emerald-500 active:bg-emerald-700 text-white font-bold text-xs shadow-2xl shadow-emerald-950/80 transition-all hover:scale-105 active:scale-95 cursor-pointer ring-2 ring-emerald-400/50"
-        title="Jump to VS Code Playground in this chapter"
-      >
-        <span className="text-sm">▶</span>
-        <span className="font-semibold tracking-wide">Run Code</span>
-      </button>
     </div>
   );
 }

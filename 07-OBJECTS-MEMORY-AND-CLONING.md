@@ -3,439 +3,3550 @@
 
 ---
 
-# 00. HOW TO USE THIS MODULE
+# 01. WHAT IS AN OBJECT?
 
-### 🧠 What is an Object in Plain English?
-Imagine a physical **filing cabinet** or a **labeled warehouse locker**. Inside this locker, you can place folders, items, or instructions, and paste a clear sticky note on each one. When you want something, you do not search by a random guess; you look up the label on the sticky note (the **key**) to retrieve whatever sits inside (the **value**).
+### What is it?
+An object is a data structure in JavaScript that groups related data and functions together. It stores this data as a list of key-value pairs, which are called properties. Each property has a name (the key) and a piece of data stored under that name (the value).
 
-In JavaScript, **Objects are the bedrock of the entire language runtime**. Almost everything you interact with—arrays, functions, DOM elements, class instances, regular expressions, and module exports—is an Object or is powered by object mechanics under the hood.
-
-### 🗺️ How Objects Connect to the JavaScript Universe
-```text
-                      ┌────────────────────────────────────────┐
-                      │          OBJECT FOUNDATION             │
-                      │  Key-Value Store, Memory Heap Identity  │
-                      └───────────────────┬────────────────────┘
-                                          │
-        ┌───────────────────┬─────────────┴───────┬───────────────────┐
-        ▼                   ▼                     ▼                   ▼
-┌───────────────┐   ┌───────────────┐     ┌───────────────┐   ┌───────────────┐
-│    ARRAYS     │   │   FUNCTIONS   │     │  PROTOTYPES   │   │    CLASSES    │
-│  Specialized  │   │   Callable    │     │  Inheritance  │   │  Syntactic    │
-│  Object with  │   │  Objects with │     │  Delegation   │   │  Sugar over   │
-│ numeric keys  │   │ [[Call]] slot │     │     Chain     │   │  Prototypes   │
-└───────┬───────┘   └───────┬───────┘     └───────┬───────┘   └───────┬───────┘
-        │                   │                     │                   │
-        └───────────────────┼─────────────────────┴───────────────────┘
-                            ▼
-        ┌─────────────────────────────────────────┐
-        │  'this' CONTEXT & EXECUTION SCOPE       │
-        │  Determined by HOW the object is called │
-        └───────────────────┬─────────────────────┘
-                            ▼
-        ┌─────────────────────────────────────────┐
-        │  COLLECTIONS & DATA SERIALIZATION       │
-        │  Map / Set / WeakMap / JSON DTOs        │
-        └─────────────────────────────────────────┘
-```
-
-* **Arrays**: Special objects where keys are 0-indexed integers and an auto-updating `length` property is maintained.
-* **Functions**: "First-class objects" that can have properties attached to them, but possess an internal callable code slot `[[Call]]`.
-* **Prototypes**: The invisible delegating link (`[[Prototype]]`) allowing objects to inherit methods from ancestor objects.
-* **Classes**: Elegant syntactic sugar sitting directly on top of constructor functions and prototype chains.
-* **`this` Keyword**: A dynamic execution context reference heavily dictated by which object invoked a method at runtime.
-* **Maps & Sets**: Modern keyed collection primitives engineered specifically for high-frequency key additions and non-string keys.
-* **JSON**: JavaScript Object Notation, the universal serialization standard powering Web APIs worldwide.
+Here are the key technical terms used in this topic:
+- A primitive is a single basic value in JavaScript, such as a number (`42`) or a string (`"hello"`).
+- A property is a single entry inside an object that pairs a name with a value.
+- A key is the identifier or name used to look up a property.
+- A value is the data stored under a specific key.
+- A method is a property whose value is a function.
+- Memory is the temporary storage space in your computer where running programs keep data.
 
 ---
 
-# 01. WHAT IS AN OBJECT?
+### Why does it exist?
+A primitive variable can store only one piece of data at a time. For example, if you want to store information about a single user without an object, you have to write separate variables:
 
-### 1. Plain-English Definition
-An **Object** in JavaScript is a standalone collection of related data and functionality stored as **key-value pairs** (often called *properties*). 
+```javascript
+let userName = "Alex";
+let userAge = 25;
+let userIsActive = true;
+```
 
-Unlike a primitive (such as the number `42` or the boolean `true` which represents a single atomic piece of information), an object is a **composite data structure** allocated on the **Memory Heap**. It bundles multiple attributes together into a cohesive entity.
+This causes three problems as code grows:
+1. The variables are completely detached from each other in code, so JavaScript does not know they represent the same user.
+2. Passing user information into a function requires passing three separate arguments instead of a single package.
+3. If you have ten users, you must declare thirty separate variable names.
 
-```js
-const developer = {
-  name: "Ayush",          // key: "name",        value: "Ayush" (String primitive)
-  age: 24,                // key: "age",         value: 24 (Number primitive)
-  isEmployed: true,       // key: "isEmployed",  value: true (Boolean primitive)
-  skills: ["JS", "TS"],   // key: "skills",      value: Array reference
-  code: function() {      // key: "code",        value: Function (method)
-    return "Writing clean JavaScript";
+An object solves this problem. It groups all related variables into a single compound structure under one variable name.
+
+---
+
+### Basic example and explanation
+
+```javascript
+const user = {
+  name: "Alex",
+  age: 25,
+  isActive: true
+};
+
+console.log(user.name);
+console.log(user.age);
+```
+
+Output:
+```text
+Alex
+25
+```
+
+How this code runs, step by step:
+
+First, we declare a variable called `user` using `const`. The opening curly brace `{` marks the start of the object definition.
+
+Next, we define the properties between the curly braces:
+- We write `name: "Alex"`. This creates a property with the key `name` and gives it the string value `"Alex"`. A comma `,` separates this property from the next.
+- We write `age: 25`. This creates a second property with the key `age` and assigns the number `25`.
+- We write `isActive: true`. This creates a third property with the key `isActive` and assigns the boolean `true`.
+
+We close the object definition with the closing curly brace `}` and a semicolon `;`.
+
+Finally, we read values out of the object using dot notation (`.`):
+- Writing `user.name` looks inside `user`, finds the key `name`, and returns `"Alex"`.
+- Writing `user.age` looks inside `user`, finds the key `age`, and returns `25`.
+
+---
+
+### How it works inside JavaScript
+
+When JavaScript evaluates `const user = { name: "Alex", age: 25 };`, it performs the following internal steps:
+
+1. The engine allocates space in the memory heap. The heap is the section of memory used for data that can grow or change dynamically.
+2. The engine generates a unique memory address for this new object (for example, address `#101`).
+3. Inside address `#101`, JavaScript writes the property keys (`"name"` and `"age"`) and their values (`"Alex"` and `25`).
+4. The variable `user` is created on the call stack, but it does not contain the properties directly. Instead, it stores the memory address `#101`.
+5. When you access `user.name`, JavaScript follows the address pointer from the stack to address `#101` in the heap and retrieves the value stored under `"name"`.
+
+```text
+Stack Memory                     Heap Memory (Address #101)
+┌──────────────┐                 ┌───────────────────────────┐
+│ user: #101 ──┼────────────────►│ name: "Alex"              │
+└──────────────┘                 │ age: 25                   │
+                                 └───────────────────────────┘
+```
+
+The variable `user` on the stack stores only the memory address `#101`. The actual properties and their values reside on the heap at that address.
+
+---
+
+### Comparing primitives and objects
+
+JavaScript values fall into two distinct categories: primitives and objects.
+
+| Feature | Primitive (`number`, `string`, `boolean`, `null`, `undefined`, `symbol`, `bigint`) | Object (`{}`, `[]`, `function`) |
+| :--- | :--- | :--- |
+| Stored content | Holds a single raw value directly | Holds a collection of key-value pairs |
+| Mutability | Immutable (the value itself cannot be modified) | Mutable (properties can be added, changed, or removed) |
+| Comparison | Compared by value (`5 === 5` is `true`) | Compared by memory address (`{} === {}` is `false`) |
+| Memory location | Stored directly in stack memory | Stored in the heap; variable holds a reference address |
+
+---
+
+### Think first
+
+What do you think this code prints? Decide first before checking below.
+
+```javascript
+const userA = { id: 1 };
+const userB = { id: 1 };
+
+console.log(userA === userB);
+```
+
+---
+
+Result:
+```text
+false
+```
+
+Why:
+Every time JavaScript runs an object literal `{ ... }`, it allocates a brand new object at a distinct memory address.
+- `userA` holds address `#201`.
+- `userB` holds address `#202`.
+- The strict equality operator `===` compares the memory address of objects, not the properties written inside them.
+- Because address `#201` is not equal to address `#202`, the result is `false`.
+
+---
+
+### More examples: from easy to harder
+
+#### Example 1: Holding different data types
+An object property can hold any valid JavaScript data type: numbers, strings, booleans, arrays, or other objects.
+
+```javascript
+const settings = {
+  theme: "dark",
+  fontSize: 14,
+  autoSave: true,
+  tags: ["editor", "ui"]
+};
+
+console.log(settings.theme);
+console.log(settings.tags[0]);
+```
+
+Output:
+```text
+dark
+editor
+```
+
+Explanation:
+- `settings.theme` returns the string `"dark"`.
+- `settings.tags` returns the entire array `["editor", "ui"]`.
+- To get an element from the array inside the object, we chain standard array indexing right after the property name: `settings.tags[0]` gives `"editor"`.
+
+#### Example 2: Nested objects
+An object can contain another object as one of its property values. This is called nesting.
+
+```javascript
+const config = {
+  version: 1,
+  server: {
+    port: 8080,
+    host: "localhost"
   }
+};
+
+console.log(config.server.port);
+console.log(config.server.host);
+```
+
+Output:
+```text
+8080
+localhost
+```
+
+Explanation:
+- The property `server` holds its own independent object with properties `port` and `host`.
+- To access `port`, JavaScript first resolves `config.server`, which returns the inner object, and then accesses `port` on that inner object using a second dot.
+
+#### Example 3: Adding a method
+When a function is assigned to a property on an object, it is called a method.
+
+```javascript
+const point = {
+  x: 10,
+  y: 20,
+  describe: function() {
+    return "Point at position";
+  }
+};
+
+console.log(point.describe());
+```
+
+Output:
+```text
+Point at position
+```
+
+Explanation:
+- The key `describe` stores a function.
+- We call that function by writing parentheses after the property name: `point.describe()`.
+
+---
+
+### Common mistakes
+
+#### Mistake 1: Comparing two objects directly to see if their values match
+Wrong code:
+```javascript
+const point1 = { x: 5, y: 10 };
+const point2 = { x: 5, y: 10 };
+
+if (point1 === point2) {
+  console.log("Points match");
+} else {
+  console.log("Points do not match");
+}
+```
+
+Output:
+```text
+Points do not match
+```
+
+Why it happens:
+JavaScript never compares the contents inside two objects. It only checks whether both variables point to the exact same location in memory. Since `point1` and `point2` were created separately, they have different memory locations.
+
+Correct code:
+Compare the individual primitive values inside the objects:
+```javascript
+const point1 = { x: 5, y: 10 };
+const point2 = { x: 5, y: 10 };
+
+if (point1.x === point2.x && point1.y === point2.y) {
+  console.log("Points match");
+}
+```
+
+Output:
+```text
+Points match
+```
+
+---
+
+#### Mistake 2: Using semicolons inside an object literal
+Wrong code:
+```javascript
+const user = {
+  name: "Sam";
+  age: 30;
+}
+```
+
+Output:
+```text
+SyntaxError: Unexpected token ';'
+```
+
+Why it happens:
+Inside curly braces `{ ... }` of an object, properties must be separated by commas `,`, never semicolons `;`.
+
+Correct code:
+```javascript
+const user = {
+  name: "Sam",
+  age: 30
 };
 ```
 
-### 2. Anatomy of an Object
-* **Property Key (Name)**: An identifier (string or symbol) used to label and look up a value.
-* **Property Value**: Any valid JavaScript entity: primitives, arrays, other objects, or functions.
-* **Method**: A property whose value is a callable function.
-* **Object Reference**: The address pointer in memory where the object actually lives.
-* **Object Identity**: The unique heap location assigned to the object upon creation. Even if two objects have identical properties, their identities are distinct.
+---
 
-### 3. Primitives vs Objects: The 2 Worlds of JavaScript
-| Feature | Primitives (`string`, `number`, `boolean`, `null`, `undefined`, `symbol`, `bigint`) | Objects (`{}`, `[]`, `function`, `Date`, `Map`, etc.) |
-| :--- | :--- | :--- |
-| **Mutability** | **Immutable**: Values cannot be altered; operations return new values. | **Mutable**: Properties can be added, modified, or removed in place. |
-| **Memory Storage** | Typically stored directly on the execution stack or in-place. | Allocated on the **Memory Heap**; variables store a reference pointer. |
-| **Comparison** | **Compared by Value**: `5 === 5`, `'cat' === 'cat'`. | **Compared by Reference**: `{} === {}` is `false`. |
-| **Methods** | Do not own methods. (Engines temporarily wrap them in Object wrappers). | Own methods directly or inherit them via the Prototype Chain. |
+#### Mistake 3: Reading an undefined property
+```javascript
+const user = {
+  name: "Sam"
+};
+
+console.log(user.age);
+```
+
+Output:
+```text
+undefined
+```
+
+Why it happens:
+When you query a property key that does not exist on an object, JavaScript does not throw an error. It evaluates to `undefined`.
+
+---
+
+### Try it yourself
+Create an object named `person` with three properties:
+1. `firstName` with the value `"Taylor"`
+2. `age` with the value `28`
+3. `isStudent` with the value `false`
+
+Then print the `firstName` and `age` to the console.
+
+---
+
+### Rules to remember
+1. An object stores data as key-value pairs called properties.
+2. Property values can be any valid JavaScript type, including arrays, functions, and other objects.
+3. Variables holding objects store a memory address pointing to the heap, not the object's contents directly.
+4. Two different objects are never equal with `===`, even if they contain identical keys and values.
+5. Reading a property that has not been defined returns `undefined`, without crashing the program.
+
+---
+
+### Exercises
+
+#### Question 1 (Predict the output)
+What will this code print to the console?
+```javascript
+const settings = {
+  theme: "light",
+  volume: 80
+};
+
+console.log(settings.volume);
+console.log(settings.brightness);
+```
+
+#### Question 2 (Find and fix the bug)
+The following code throws a syntax error. Find the mistake and write the corrected version.
+```javascript
+const config = {
+  mode: "production";
+  timeout: 5000;
+}
+```
+
+#### Question 3 (Write code from scratch)
+Write an object named `point3D` that stores:
+- `x` with the value `0`
+- `y` with the value `15`
+- `z` with the value `-5`
+
+Then write a single `console.log` statement that prints the value of `y`.
+
+#### Question 4 (Explain in your own words)
+Explain why the following code prints `false` even though both objects contain the exact same key and value:
+```javascript
+const first = { count: 10 };
+const second = { count: 10 };
+console.log(first === second);
+```
+
+---
+
+### Solutions
+
+#### Solution for Question 1
+- Hint 1: Check what value is explicitly assigned to `volume`.
+- Hint 2: If a property name is not declared in the object, what does JavaScript return?
+
+Answer:
+```text
+80
+undefined
+```
+Explanation: `settings.volume` resolves to `80`. The property `brightness` was never assigned to `settings`, so reading it produces `undefined`.
+
+---
+
+#### Solution for Question 2
+- Hint 1: Look at the punctuation at the end of each property line inside the curly braces.
+- Hint 2: Check the statement ending after the closing curly brace.
+
+Corrected code:
+```javascript
+const config = {
+  mode: "production",
+  timeout: 5000
+};
+```
+Explanation: Inside an object literal, each key-value pair must be followed by a comma `,`, not a semicolon `;`. The entire variable declaration statement ends with a semicolon `;` after the closing brace.
+
+---
+
+#### Solution for Question 3
+- Hint 1: Use `const` to declare the object variable.
+- Hint 2: Separate properties with commas and read `y` using `point3D.y`.
+
+Code:
+```javascript
+const point3D = {
+  x: 0,
+  y: 15,
+  z: -5
+};
+
+console.log(point3D.y);
+```
+Output:
+```text
+15
+```
+
+---
+
+#### Solution for Question 4
+- Hint 1: Think about how objects are stored in memory.
+- Hint 2: Does the variable hold the data values, or does it hold a memory address reference?
+
+Explanation:
+Each time an object literal `{ ... }` runs, JavaScript creates a separate object in heap memory with a unique address. Variable `first` stores the address of the first object (for example, `#101`), and `second` stores the address of the second object (for example, `#102`). The `===` operator compares the reference addresses stored in the variables. Because `#101` and `#102` are different memory addresses, `first === second` evaluates to `false`.
+
+---
+
+### Recall
+1. What is the name of the memory region where JavaScript stores objects?
+2. What value does JavaScript return when you read a property that does not exist on an object?
+3. If two objects have identical keys and values, will `objA === objB` return `true` or `false`?
+
+---
+
+### If you remember only one thing:
+An object groups related data as key-value pairs stored in heap memory, and variables hold a reference to that memory address rather than the values themselves.
 
 ---
 
 # 02. OBJECT LITERALS
 
-The **Object Literal** (written with curly braces `{}`) is the cleanest, fastest, and most idiomatic way to create an object in modern JavaScript.
+### What is it?
+An object literal is a syntax in JavaScript that creates a new object using a pair of curly braces `{}`. Inside the braces, you can write zero, one, or more properties directly. It is the most common way to create an object in JavaScript.
 
-### 1. Basic Object Literals
-```js
-// An empty object literal
-const emptyBox = {};
+Here are the key technical terms used in this topic:
+- An object literal is an expression that directly creates and initializes an object using `{}`.
+- Property shorthand is a syntax feature where you write just the variable name instead of `key: value` if both names match.
+- A method shorthand is a concise syntax for defining a function inside an object without writing the `function` keyword.
+- A computed property name is a property key created from the result of an expression inside square brackets `[]`.
 
-// Object literal with various property types
-const laptop = {
-  brand: "Apple",
-  model: "MacBook Pro",
-  year: 2024,
-  inStock: true
+---
+
+### Why does it exist?
+In early versions of JavaScript, creating an object often required calling a constructor function like `new Object()`, and then assigning each property one line at a time:
+
+```javascript
+const user = new Object();
+user.name = "Alex";
+user.age = 25;
+```
+
+This approach has two problems:
+1. It requires multiple lines of code just to set up initial data.
+2. It makes it harder to read the structure of the data at a single glance.
+
+The object literal syntax solves this. It lets you declare the object and define all its initial data in one clear, readable block.
+
+---
+
+### Basic example and explanation
+
+```javascript
+const settings = {
+  theme: "dark",
+  volume: 75,
+  notifications: true
+};
+
+console.log(settings.theme);
+console.log(settings.volume);
+```
+
+Output:
+```text
+dark
+75
+```
+
+How this code runs, step by step:
+
+First, we declare a constant named `settings`. The opening curly brace `{` tells JavaScript to start creating a new object literal.
+
+Inside the braces, each property is written as a key followed by a colon `:`, then the value, and then a comma `,`:
+- `theme: "dark",` sets the key `theme` to the string `"dark"`.
+- `volume: 75,` sets the key `volume` to the number `75`.
+- `notifications: true` sets the key `notifications` to the boolean `true`.
+
+The closing brace `}` finishes the object creation, and the statement ends with a semicolon `;`.
+
+Finally, we read `settings.theme` and `settings.volume` using dot notation. JavaScript looks up each key and prints `"dark"` followed by `75`.
+
+---
+
+### How it works inside JavaScript
+
+When the JavaScript engine reaches an object literal expression, it performs the following steps:
+
+1. The engine allocates an empty object block in heap memory.
+2. It evaluates each property value expression in order from top to bottom.
+3. For each property, the engine inserts the key and the evaluated value into the newly allocated object.
+4. When all properties are written, the engine returns the memory address of the new object.
+5. The variable receives that memory address.
+
+---
+
+### Think first
+
+What do you think this code prints? Decide first before checking below.
+
+```javascript
+const keyName = "status";
+
+const config = {
+  keyName: "active"
+};
+
+console.log(config.keyName);
+console.log(config.status);
+```
+
+---
+
+Result:
+```text
+active
+undefined
+```
+
+Why:
+Inside an object literal, writing `keyName: "active"` creates a literal property named `"keyName"`. It does not use the value of the variable `keyName`. Therefore, `config.keyName` is `"active"`, and `config.status` does not exist, which returns `undefined`.
+
+---
+
+### More examples: from easy to harder
+
+#### Example 1: Property name shorthand
+When a variable in your code has the same name as the key you want to create, you do not have to write `name: name`. You can write just `name`.
+
+```javascript
+const name = "Taylor";
+const age = 28;
+
+const user = {
+  name,
+  age
+};
+
+console.log(user.name);
+console.log(user.age);
+```
+
+Output:
+```text
+Taylor
+28
+```
+
+Explanation:
+- JavaScript sees `{ name, age }`.
+- Because there is no colon after `name`, JavaScript looks for an existing variable named `name` and sets its value as the value of the `name` property.
+- This produces the exact same result as writing `{ name: name, age: age }`.
+
+#### Example 2: Method definition shorthand
+You can define methods without writing the `: function` keywords.
+
+```javascript
+const counter = {
+  count: 0,
+  increment() {
+    return "Increased";
+  }
+};
+
+console.log(counter.increment());
+```
+
+Output:
+```text
+Increased
+```
+
+Explanation:
+- Writing `increment() { ... }` is the method shorthand introduced in modern JavaScript (ES2015).
+- It behaves the same as writing `increment: function() { ... }`, but is cleaner to read.
+
+#### Example 3: Computed property names
+If you want the name of a key to come from a variable or a calculation, wrap the expression in square brackets `[]` inside the object literal.
+
+```javascript
+const prefix = "item_";
+const index = 4;
+
+const collection = {
+  [prefix + index]: "Widget",
+  [1 + 2]: "Three"
+};
+
+console.log(collection.item_4);
+console.log(collection[3]);
+```
+
+Output:
+```text
+Widget
+Three
+```
+
+Explanation:
+- In `[prefix + index]`, JavaScript evaluates the string concatenation `"item_" + 4` to get `"item_4"`. It then uses `"item_4"` as the key name.
+- In `[1 + 2]`, JavaScript calculates `1 + 2 = 3` and uses `"3"` as the key name.
+
+---
+
+### Common mistakes
+
+#### Mistake 1: Trying to use a variable as a key without square brackets
+Wrong code:
+```javascript
+const propertyName = "role";
+
+const user = {
+  propertyName: "admin"
+};
+
+console.log(user.role);
+```
+
+Output:
+```text
+undefined
+```
+
+Why it happens:
+Without square brackets, JavaScript treats `propertyName` as the literal text of the key. It does not look up what the variable holds.
+
+Correct code:
+Use square brackets to compute the key name from the variable:
+```javascript
+const propertyName = "role";
+
+const user = {
+  [propertyName]: "admin"
+};
+
+console.log(user.role);
+```
+
+Output:
+```text
+admin
+```
+
+---
+
+#### Mistake 2: Missing commas between properties
+Wrong code:
+```javascript
+const point = {
+  x: 10
+  y: 20
 };
 ```
 
-### 2. Shorthand Property Names (ES6)
-When your local variable name matches the object property key you want to set, you can omit the redundant `: value` syntax:
-```js
-const username = "ayush";
-const role = "admin";
-
-// Old ES5 way:
-const userES5 = { username: username, role: role };
-
-// Modern ES6 Shorthand:
-const userModern = { username, role };
-console.log(userModern); // { username: 'ayush', role: 'admin' }
+Output:
+```text
+SyntaxError: Unexpected identifier 'y'
 ```
 
-### 3. Method Definitions & Shorthand Methods
-```js
-const calculator = {
-  // Method Shorthand (ES6) — Clean & concise
-  add(a, b) {
-    return a + b;
-  },
-  
-  // Traditional Key-Value Function Expression
-  subtract: function(a, b) {
-    return a - b;
-  },
-  
-  // Arrow function property (⚠️ BEWARE: Lexical 'this' binding)
-  multiply: (a, b) => a * b
+Why it happens:
+JavaScript requires a comma `,` to separate each property definition inside an object literal.
+
+Correct code:
+```javascript
+const point = {
+  x: 10,
+  y: 20
 };
 ```
 
-### 4. Computed Property Names `[expression]`
-ES6 lets you compute property names dynamically inside the literal declaration using square brackets `[]`:
-```js
-const dynamicKey = "user_status";
-const prefix = "field_";
+---
 
-const record = {
-  [dynamicKey]: "active",
-  [prefix + 1]: "First value",
-  [10 + 20]: "Calculated key 30"
+### Try it yourself
+Create an object named `device` using shorthand syntax for two variables: `type = "tablet"` and `battery = 85`. Also add a method shorthand named `getStatus()` that returns `"Battery at 85%"`.
+
+---
+
+### Rules to remember
+1. An object literal is written with curly braces `{}`.
+2. Properties inside an object literal must be separated by commas `,`.
+3. If a variable name matches the desired property key name, you can write just the variable name as a shorthand.
+4. Method shorthand lets you write `methodName() {}` instead of `methodName: function() {}`.
+5. To use a variable or expression as a key name inside an object literal, wrap it in square brackets `[expression]`.
+
+---
+
+### Exercises
+
+#### Question 1 (Predict the output)
+What will this code print to the console?
+```javascript
+const id = 101;
+const state = "pending";
+
+const task = {
+  id,
+  state,
+  ["task_" + id]: true
 };
 
-console.log(record.user_status); // 'active'
-console.log(record.field_1);     // 'First value'
-console.log(record["30"]);       // 'Calculated key 30'
+console.log(task.id);
+console.log(task.task_101);
 ```
 
-### 5. Trailing Commas & Clean Git Diffs
-Always place a trailing comma after the last property in multi-line objects. It produces cleaner Git version control diffs when adding new properties later:
-```js
-const project = {
-  name: "Apollo",
-  status: "in-progress", // <-- Trailing comma prevents diff clutter on next line!
+#### Question 2 (Find and fix the bug)
+The following code tries to create an object where the key name is the value stored inside `selectedKey`. Fix the code.
+```javascript
+const selectedKey = "volume";
+const options = {
+  selectedKey: 50
 };
+
+console.log(options.volume);
 ```
+
+#### Question 3 (Write code from scratch)
+Declare two variables: `width = 200` and `height = 100`. Then create an object named `dimensions` that uses property shorthand for both, plus a method shorthand `getArea()` that returns `20000`.
+
+#### Question 4 (Explain in your own words)
+What is the difference between writing `{ key: "value" }` and `{ [key]: "value" }` inside an object literal?
+
+---
+
+### Solutions
+
+#### Solution for Question 1
+- Hint 1: `id` and `state` use property shorthand.
+- Hint 2: `["task_" + id]` calculates the property name dynamically.
+
+Answer:
+```text
+101
+true
+```
+Explanation: `task.id` takes the value of the variable `id` (`101`). The computed property evaluates `"task_" + 101`, creating the key `"task_101"` with value `true`.
+
+---
+
+#### Solution for Question 2
+- Hint 1: What syntax tells JavaScript to read the variable value for a key name instead of the literal word?
+- Hint 2: Use square brackets around the key name.
+
+Corrected code:
+```javascript
+const selectedKey = "volume";
+const options = {
+  [selectedKey]: 50
+};
+
+console.log(options.volume);
+```
+Explanation: Wrapping `selectedKey` in square brackets tells JavaScript to evaluate the variable and use `"volume"` as the key name.
+
+---
+
+#### Solution for Question 3
+- Hint 1: Declare `width` and `height` before the object.
+- Hint 2: In the method shorthand, you do not write the word `function`.
+
+Code:
+```javascript
+const width = 200;
+const height = 100;
+
+const dimensions = {
+  width,
+  height,
+  getArea() {
+    return 20000;
+  }
+};
+
+console.log(dimensions.width);
+console.log(dimensions.getArea());
+```
+
+---
+
+#### Solution for Question 4
+- Hint 1: Think about literal strings versus variable lookups.
+- Hint 2: One uses the exact characters written; the other evaluates an expression.
+
+Explanation:
+Writing `{ key: "value" }` creates a property with the literal string name `"key"`. Writing `{ [key]: "value" }` evaluates whatever expression or variable is inside the square brackets and uses the resulting value as the property name.
+
+---
+
+### Recall
+1. What punctuation mark must separate properties inside an object literal?
+2. What syntax allows an object literal to use an expression as a property key?
+3. What is the shorthand syntax for a property whose key matches the variable name?
+
+---
+
+### If you remember only one thing:
+Object literals use curly braces `{}` to define key-value pairs, and wrapping a key in square brackets `[expr]` lets you calculate the key name from any JavaScript expression.
 
 ---
 
 # 03. OBJECT KEYS
 
-### 1. Valid Types of Object Keys
-Under the ECMAScript specification, an ordinary object property key can **ONLY** be one of two types:
-1. **String** (UTF-16 text)
-2. **Symbol** (Unique primitive identifier introduced in ES6)
+### What is it?
+An object key is the identifier used to locate a property inside an object. In JavaScript, an ordinary object property key can only be one of two types: a string or a symbol. If you supply any other data type as a key, JavaScript automatically converts it into a string.
 
-### 2. The Automatic Key Stringification Trap
-If you supply any value other than a Symbol as an object key, the JavaScript runtime **silently coerces it into a string** using the abstract operation `ToString(key)`.
+Here are the key technical terms used in this topic:
+- A key is the name part of a key-value property pair.
+- A symbol is a unique primitive value created with `Symbol()`.
+- Coercion is the automatic conversion of a value from one data type to another by JavaScript.
+- Stringification is the specific process of converting any value into a string.
 
-```js
-const obj = {};
+---
 
-// 1. Numbers become Strings
-obj[1] = "Number one";
-console.log(obj["1"]); // 'Number one' (obj[1] and obj["1"] access the exact same slot!)
+### Why does it exist?
+JavaScript engines need a consistent, predictable way to index and find properties in memory. By limiting keys to strings (and symbols), the engine can look up properties reliably using a single internal hashing mechanism.
 
-// 2. Booleans become Strings
-obj[true] = "Truth";
-console.log(obj["true"]); // 'Truth'
+When developers provide a number or a boolean as a key, JavaScript automatically converts it to a string behind the scenes rather than stopping with an error.
 
-// 3. Objects become "[object Object]" (FATAL BUG WARNING!)
-const userA = { id: 101 };
-const userB = { id: 202 };
+---
 
-obj[userA] = "Data for User A";
-// userA.toString() yields '[object Object]'
-// obj now contains: { '[object Object]': 'Data for User A' }
+### Basic example and explanation
 
-obj[userB] = "Data for User B";
-// userB.toString() ALSO yields '[object Object]'!
-// obj['[object Object]'] is overwritten!
+```javascript
+const scores = {};
 
-console.log(obj[userA]); // 'Data for User B' <-- OVERWRITTEN!
+scores[1] = "First place";
+scores["1"] = "Updated first place";
+
+console.log(scores[1]);
+console.log(scores["1"]);
 ```
-> [!CAUTION]
-> If you need to key your collection by actual object references or retain true types without string coercion, **use `Map` instead of a plain Object**.
+
+Output:
+```text
+Updated first place
+Updated first place
+```
+
+How this code runs, step by step:
+
+First, we create an empty object named `scores`.
+
+Next, we write `scores[1] = "First place"`. The key provided is the number `1`. JavaScript automatically converts the number `1` into the string `"1"`. It stores the property under the key `"1"`.
+
+Then, we write `scores["1"] = "Updated first place"`. Because the key `"1"` already exists from the previous line, JavaScript does not create a second property. Instead, it overwrites the value of the existing `"1"` property with `"Updated first place"`.
+
+Finally, we read `scores[1]` and `scores["1"]`. Both accesses convert the key to `"1"` and point to the exact same property, printing `"Updated first place"` both times.
+
+---
+
+### How it works inside JavaScript
+
+When you assign or read a property using a key that is not a string or symbol:
+
+1. JavaScript runs its internal `ToString()` operation on the key.
+2. If the key is the number `123`, it becomes the string `"123"`.
+3. If the key is `true`, it becomes the string `"true"`.
+4. If the key is an object (for example `{}`), JavaScript calls its `toString()` method, which produces the string `"[object Object]"`.
+5. The engine looks up or stores the property under that string representation in heap memory.
+
+---
+
+### Think first
+
+What do you think this code prints? Decide first before checking below.
+
+```javascript
+const collection = {};
+
+const userA = { id: 1 };
+const userB = { id: 2 };
+
+collection[userA] = "Alex";
+collection[userB] = "Taylor";
+
+console.log(collection[userA]);
+```
+
+---
+
+Result:
+```text
+Taylor
+```
+
+Why:
+When `userA` is used as an object key, JavaScript converts it to a string. Calling `toString()` on a plain object produces `"[object Object]"`.
+So line 6 writes `collection["[object Object]"] = "Alex"`.
+Next, `userB` is also an object. Its string conversion also produces `"[object Object]"`.
+So line 7 overwrites the exact same property: `collection["[object Object]"] = "Taylor"`.
+Reading `collection[userA]` reads `collection["[object Object]"]`, which now holds `"Taylor"`.
+
+---
+
+### More examples: from easy to harder
+
+#### Example 1: Numeric keys
+Numbers used as keys are always strings.
+
+```javascript
+const items = {
+  0: "First",
+  1: "Second"
+};
+
+console.log(items[0]);
+console.log(items["0"]);
+```
+
+Output:
+```text
+First
+First
+```
+
+Explanation:
+- In the object literal, `0` becomes `"0"`.
+- `items[0]` and `items["0"]` access the exact same property.
+
+#### Example 2: Boolean keys
+Booleans used as keys become strings.
+
+```javascript
+const flags = {};
+flags[true] = "Active";
+flags[false] = "Inactive";
+
+console.log(flags["true"]);
+console.log(flags[false]);
+```
+
+Output:
+```text
+Active
+Inactive
+```
+
+Explanation:
+- `flags[true]` stores `"Active"` under key `"true"`.
+- `flags[false]` stores `"Inactive"` under key `"false"`.
+
+#### Example 3: Symbol keys do not convert to strings
+Symbols are the only keys that are not converted to strings. Every symbol is completely unique.
+
+```javascript
+const key1 = Symbol("id");
+const key2 = Symbol("id");
+
+const registry = {
+  [key1]: "Data A",
+  [key2]: "Data B"
+};
+
+console.log(registry[key1]);
+console.log(registry[key2]);
+```
+
+Output:
+```text
+Data A
+Data B
+```
+
+Explanation:
+- Even though both symbols have the description `"id"`, each call to `Symbol()` creates a unique symbol identity.
+- Because symbols are not converted to strings, `key1` and `key2` remain separate properties and do not overwrite each other.
+
+---
+
+### Common mistakes
+
+#### Mistake 1: Using objects as keys in plain objects
+Wrong code:
+```javascript
+const tracker = {};
+const configA = { env: "dev" };
+const configB = { env: "prod" };
+
+tracker[configA] = 1;
+tracker[configB] = 2;
+
+console.log(tracker[configA]);
+```
+
+Output:
+```text
+2
+```
+
+Why it happens:
+Both `configA` and `configB` are converted to the string `"[object Object]"`. The second assignment overwrites the first.
+
+Correct code:
+If you need objects as keys, use a `Map` instead of a plain object:
+```javascript
+const tracker = new Map();
+const configA = { env: "dev" };
+const configB = { env: "prod" };
+
+tracker.set(configA, 1);
+tracker.set(configB, 2);
+
+console.log(tracker.get(configA));
+```
+
+Output:
+```text
+1
+```
+
+---
+
+### Try it yourself
+Create an empty object named `cache`. Store the string `"Success"` using the boolean `true` as the key. Then read it back using the string `"true"` and print it.
+
+---
+
+### Rules to remember
+1. Object keys can only be strings or symbols.
+2. Any non-symbol key passed into an object is automatically converted into a string.
+3. Numeric keys like `1` and string keys like `"1"` point to the exact same property.
+4. Using plain objects as keys converts all of them to `"[object Object]"`, overwriting each other.
+5. If you need objects as keys, use `Map` instead of a plain object.
+
+---
+
+### Exercises
+
+#### Question 1 (Predict the output)
+What will this code print to the console?
+```javascript
+const data = {};
+data[10] = "Ten";
+data["10"] = "Also Ten";
+
+console.log(data[10]);
+console.log(Object.keys(data).length);
+```
+
+#### Question 2 (Find and fix the bug)
+The author expected `map` to store two different settings for two different users. Find the bug and explain how to fix it using `Map`.
+```javascript
+const map = {};
+const user1 = { name: "A" };
+const user2 = { name: "B" };
+
+map[user1] = 100;
+map[user2] = 200;
+
+console.log(map[user1]);
+```
+
+#### Question 3 (Write code from scratch)
+Create an object named `statusCodes` that maps the number `200` to `"OK"` and `404` to `"Not Found"`. Then write a `console.log` reading both properties using string keys `"200"` and `"404"`.
+
+#### Question 4 (Explain in your own words)
+Why does `obj[1]` return the same value as `obj["1"]` in JavaScript?
+
+---
+
+### Solutions
+
+#### Solution for Question 1
+- Hint 1: What happens to the number `10` when used as a key?
+- Hint 2: Does `data["10"]` create a new property or update an existing one?
+
+Answer:
+```text
+Also Ten
+1
+```
+Explanation: `10` is converted to the string `"10"`. The second assignment overwrites the same property. The object contains only 1 property.
+
+---
+
+#### Solution for Question 2
+- Hint 1: What does `user1.toString()` produce?
+- Hint 2: Use JavaScript's built-in `Map` data structure.
+
+Corrected code:
+```javascript
+const map = new Map();
+const user1 = { name: "A" };
+const user2 = { name: "B" };
+
+map.set(user1, 100);
+map.set(user2, 200);
+
+console.log(map.get(user1));
+```
+Explanation: Plain objects convert object keys to strings, causing both to become `"[object Object]"`. `Map` preserves object references as distinct keys.
+
+---
+
+#### Solution for Question 3
+- Hint 1: You can define numeric keys directly inside an object literal `{ 200: "OK", ... }`.
+- Hint 2: Access with `statusCodes["200"]`.
+
+Code:
+```javascript
+const statusCodes = {
+  200: "OK",
+  404: "Not Found"
+};
+
+console.log(statusCodes["200"]);
+console.log(statusCodes["404"]);
+```
+Output:
+```text
+OK
+Not Found
+```
+
+---
+
+#### Solution for Question 4
+- Hint 1: What data types can keys be in an ordinary object?
+- Hint 2: What internal conversion takes place when accessing with `1`?
+
+Explanation:
+In JavaScript objects, property keys can only be strings or symbols. When you access `obj[1]`, JavaScript automatically converts the number `1` into the string `"1"`. Therefore, `obj[1]` and `obj["1"]` look up the exact same property.
+
+---
+
+### Recall
+1. What two data types can be used as keys in an ordinary JavaScript object?
+2. What string does a plain object turn into when used as a key in an object?
+3. If you assign a value to `obj[5]`, can you read it back with `obj["5"]`?
+
+---
+
+### If you remember only one thing:
+Ordinary object keys are always strings or symbols; any other value is automatically converted to a string before the property is stored or retrieved.
 
 ---
 
 # 04. ACCESSING OBJECT PROPERTIES
 
-JavaScript offers two fundamental notations for retrieving property values:
+### What is it?
+Accessing an object property means reading the value stored under a specific key inside that object. JavaScript gives you two ways to access properties: dot notation (`obj.key`) and bracket notation (`obj[keyExpression]`).
 
-```text
-                 ┌──────────────────────────────────────┐
-                 │          PROPERTY ACCESS             │
-                 └──────────────┬───────────────────────┘
-                                │
-          ┌─────────────────────┴─────────────────────┐
-          ▼                                           ▼
-┌──────────────────┐                        ┌──────────────────┐
-│   DOT NOTATION   │                        │ BRACKET NOTATION │
-│    user.name     │                        │   user["name"]   │
-└─────────┬────────┘                        └─────────┬────────┘
-          │                                           │
-  Fast, clean, concise                      Dynamic, flexible, handles
-  Requires valid identifier                 spaces, hyphens, & variables
-```
+Here are the key technical terms used in this topic:
+- Dot notation is the syntax `obj.property`, where the property name is written directly after a period.
+- Bracket notation is the syntax `obj[expression]`, where the key is written as an expression inside square brackets.
+- An identifier is a valid name in JavaScript that begins with a letter, underscore, or dollar sign, and contains no spaces or dashes.
 
-### 1. Dot Notation (`obj.property`)
-* **When to use**: When the property name is known ahead of time, is a valid JavaScript identifier (no spaces, hyphens, or starting with digits), and is not stored in a variable.
-```js
-const user = { firstName: "Ayush", age: 24 };
-console.log(user.firstName); // 'Ayush'
-```
+---
 
-### 2. Bracket Notation (`obj[expression]`)
-* **When to use**: Mandatory when:
-  1. The key is stored in a dynamic variable: `obj[keyVar]`.
-  2. The key contains spaces, dashes, or special characters: `obj["first-name"]`.
-  3. The key is numeric or starts with a digit: `obj["2fa-token"]`.
-  4. The key is a Symbol: `obj[mySymbol]`.
-```js
-const car = {
-  "model-name": "Model 3",
-  123: "Order ID",
-  brand: "Tesla"
+### Why does it exist?
+Dot notation is clean, compact, and easy to read. Most of the time, developers know the exact property name when writing the code.
+
+However, dot notation cannot handle every situation. For example, if a property name contains a space (like `"first name"`), begins with a number (like `"2fa"`), or is stored inside a variable, dot notation causes a syntax error. Bracket notation exists to handle these dynamic and non-standard property names.
+
+---
+
+### Basic example and explanation
+
+```javascript
+const user = {
+  firstName: "Taylor",
+  "account type": "admin"
 };
 
-const query = "brand";
-console.log(car["model-name"]); // 'Model 3' (Dot notation car.model-name would evaluate to subtraction!)
-console.log(car[123]);           // 'Order ID'
-console.log(car[query]);         // 'Tesla' (Evaluates variable 'query')
+console.log(user.firstName);
+console.log(user["account type"]);
 ```
+
+Output:
+```text
+Taylor
+admin
+```
+
+How this code runs, step by step:
+
+First, we create an object named `user` with two properties: `firstName` and `"account type"`.
+
+Next, we read `user.firstName` using dot notation. The property name `firstName` is a valid identifier without spaces, so JavaScript finds the key and prints `"Taylor"`.
+
+Then, we read `user["account type"]` using bracket notation. Because `"account type"` contains a space, dot notation like `user.account type` is invalid syntax. Putting the string `"account type"` inside square brackets allows JavaScript to read the key and print `"admin"`.
+
+---
+
+### How it works inside JavaScript
+
+1. For dot notation (`user.name`): The engine parses `name` during code compilation as a fixed identifier. It directly checks if the object contains a property named `"name"`.
+2. For bracket notation (`user[expression]`): The engine first evaluates the expression inside the brackets at runtime.
+3. If the expression evaluates to a string or symbol, the engine uses that value directly. If it evaluates to any other type, JavaScript converts it to a string.
+4. The engine searches the object for that key string and returns the associated value.
+
+---
+
+### Comparing property access notations
+
+| Feature | Dot Notation (`obj.key`) | Bracket Notation (`obj[expr]`) |
+| :--- | :--- | :--- |
+| Syntax | `object.propertyName` | `object[expression]` |
+| When to use | When the key is a known, valid identifier | When the key is dynamic, has spaces, hyphens, or numbers |
+| Uses variables? | No (treats the word literally) | Yes (evaluates whatever is inside brackets) |
+| Handles hyphens/spaces? | No (causes syntax error) | Yes (with quotes: `obj["user-name"]`) |
+
+---
+
+### Think first
+
+What do you think this code prints? Decide first before checking below.
+
+```javascript
+const prop = "theme";
+
+const settings = {
+  theme: "dark",
+  prop: "light"
+};
+
+console.log(settings.prop);
+console.log(settings[prop]);
+```
+
+---
+
+Result:
+```text
+light
+dark
+```
+
+Why:
+- `settings.prop` uses dot notation. Dot notation does not look up variables. It looks literally for a property named `"prop"`, which holds `"light"`.
+- `settings[prop]` uses bracket notation with the variable `prop`. JavaScript evaluates `prop` to get `"theme"`, and then looks up `settings["theme"]`, which holds `"dark"`.
+
+---
+
+### More examples: from easy to harder
+
+#### Example 1: Reading properties stored in variables
+When the property name you need is chosen at runtime, bracket notation is required.
+
+```javascript
+const user = {
+  name: "Morgan",
+  role: "editor"
+};
+
+function getField(fieldName) {
+  return user[fieldName];
+}
+
+console.log(getField("name"));
+console.log(getField("role"));
+```
+
+Output:
+```text
+Morgan
+editor
+```
+
+Explanation:
+- Inside `getField`, `user[fieldName]` evaluates the argument `fieldName`.
+- When called with `"name"`, it reads `user["name"]`.
+- When called with `"role"`, it reads `user["role"]`.
+
+#### Example 2: Property keys with hyphens or numbers
+Property names that come from external systems like HTTP headers or database columns often contain dashes.
+
+```javascript
+const headers = {
+  "content-type": "application/json",
+  "x-request-id": "abc-123"
+};
+
+console.log(headers["content-type"]);
+console.log(headers["x-request-id"]);
+```
+
+Output:
+```text
+application/json
+abc-123
+```
+
+Explanation:
+- Writing `headers.content-type` would be parsed as `headers.content` minus `type` (subtraction).
+- Bracket notation with quotes safely passes the exact string key to look up.
+
+#### Example 3: Dynamic calculations inside bracket notation
+The expression inside the brackets can be any valid JavaScript calculation.
+
+```javascript
+const scores = {
+  level_1: 100,
+  level_2: 250,
+  level_3: 400
+};
+
+const currentLevel = 2;
+console.log(scores["level_" + currentLevel]);
+```
+
+Output:
+```text
+250
+```
+
+Explanation:
+- JavaScript evaluates `"level_" + 2`, which produces `"level_2"`.
+- It then reads `scores["level_2"]`, returning `250`.
+
+---
+
+### Common mistakes
+
+#### Mistake 1: Forgetting quotes inside bracket notation
+Wrong code:
+```javascript
+const user = {
+  name: "Alex"
+};
+
+console.log(user[name]);
+```
+
+Output:
+```text
+ReferenceError: name is not defined
+```
+
+Why it happens:
+Without quotes, JavaScript thinks `name` is a variable name. Since no variable named `name` exists in scope, it throws a `ReferenceError`.
+
+Correct code:
+Use quotes for a literal string key:
+```javascript
+const user = {
+  name: "Alex"
+};
+
+console.log(user["name"]);
+```
+
+Output:
+```text
+Alex
+```
+
+---
+
+#### Mistake 2: Using dot notation with variables
+Wrong code:
+```javascript
+const key = "age";
+const user = { age: 30 };
+
+console.log(user.key);
+```
+
+Output:
+```text
+undefined
+```
+
+Why it happens:
+Dot notation does not evaluate the variable `key`. It looks for a property literally named `"key"`.
+
+Correct code:
+Use bracket notation when using a variable:
+```javascript
+const key = "age";
+const user = { age: 30 };
+
+console.log(user[key]);
+```
+
+Output:
+```text
+30
+```
+
+---
+
+### Try it yourself
+Create an object named `point` with properties `"pos-x": 10` and `"pos-y": 20`. Access both properties using bracket notation and print their sum.
+
+---
+
+### Rules to remember
+1. Use dot notation (`obj.key`) for simple, fixed property names that are valid identifiers.
+2. Use bracket notation (`obj[expr]`) when the key is stored in a variable, has spaces, or has hyphens.
+3. Writing `obj.varName` looks for a literal key named `"varName"`, not the value stored in the variable.
+4. Bracket notation evaluates the expression inside brackets before accessing the property.
+5. If you write `obj[key]` without quotes, `key` must be an existing variable.
+
+---
+
+### Exercises
+
+#### Question 1 (Predict the output)
+What will this code print to the console?
+```javascript
+const fruit = "apple";
+const inventory = {
+  apple: 15,
+  fruit: 5
+};
+
+console.log(inventory[fruit]);
+console.log(inventory.fruit);
+```
+
+#### Question 2 (Find and fix the bug)
+The following code throws an error. Find the mistake and fix it so it prints `"standard"`.
+```javascript
+const config = {
+  "user-tier": "standard"
+};
+
+console.log(config.user-tier);
+```
+
+#### Question 3 (Write code from scratch)
+Write a function named `getProperty(obj, keyName)` that accepts an object and a property name as a string, and returns the value of that property from the object.
+
+#### Question 4 (Explain in your own words)
+Why does `user["name"]` work when `user[name]` throws a `ReferenceError`?
+
+---
+
+### Solutions
+
+#### Solution for Question 1
+- Hint 1: What does `inventory[fruit]` evaluate to when `fruit` holds `"apple"`?
+- Hint 2: What does `inventory.fruit` look for?
+
+Answer:
+```text
+15
+5
+```
+Explanation: `inventory[fruit]` looks up `inventory["apple"]`, which is `15`. `inventory.fruit` literally looks up property `"fruit"`, which is `5`.
+
+---
+
+#### Solution for Question 2
+- Hint 1: Can dot notation be used with keys containing dashes?
+- Hint 2: Use bracket notation with a string inside.
+
+Corrected code:
+```javascript
+const config = {
+  "user-tier": "standard"
+};
+
+console.log(config["user-tier"]);
+```
+Explanation: In JavaScript, `config.user-tier` is parsed as `config.user` minus `tier`. Bracket notation `config["user-tier"]` correctly accesses the property.
+
+---
+
+#### Solution for Question 3
+- Hint 1: `keyName` is passed as a variable into the function.
+- Hint 2: Use bracket notation with `keyName`.
+
+Code:
+```javascript
+function getProperty(obj, keyName) {
+  return obj[keyName];
+}
+
+const testObj = { count: 42 };
+console.log(getProperty(testObj, "count"));
+```
+Output:
+```text
+42
+```
+
+---
+
+#### Solution for Question 4
+- Hint 1: What does JavaScript do when it sees an unquoted word inside square brackets?
+- Hint 2: What does it do when the word is enclosed in quotes?
+
+Explanation:
+When you write `user["name"]`, JavaScript treats `"name"` as a string literal and looks up the key `"name"`. When you write `user[name]`, JavaScript searches for a variable named `name` in memory. If no such variable exists, it throws a `ReferenceError`.
+
+---
+
+### Recall
+1. Which notation must you use when a property key contains a hyphen `-`?
+2. Does `obj.key` look up a variable named `key`?
+3. What error occurs if you write `obj[key]` and no variable named `key` exists?
+
+---
+
+### If you remember only one thing:
+Use dot notation `obj.prop` for fixed, clean property names, and bracket notation `obj[variable]` whenever the key is dynamic, stored in a variable, or contains special characters.
 
 ---
 
 # 05. ADDING, UPDATING AND DELETING PROPERTIES
 
-Objects are fully mutable dynamic records by default:
+### What is it?
+Adding a property means introducing a new key-value pair to an existing object. Updating a property means assigning a new value to an existing key. Deleting a property means permanently removing a key-value pair from an object using the `delete` operator.
 
-```js
-const profile = { name: "Ayush" };
+Here are the key technical terms used in this topic:
+- Mutation is the act of changing an object's contents without creating a brand new object.
+- The `delete` operator is a JavaScript operator that removes a property from an object.
+- Reassignment is giving an existing property key a new value.
+
+---
+
+### Why does it exist?
+In real applications, data is rarely static. A user's profile may change its email address, a shopping cart may gain or lose items, and a settings object may update when the user changes a preference.
+
+Because JavaScript objects are mutable by default, you can add, change, or remove properties at any time without having to rebuild the entire object from scratch.
+
+---
+
+### Basic example and explanation
+
+```javascript
+const profile = {
+  name: "Taylor"
+};
 
 // 1. Adding a new property
-profile.age = 24;
-profile["country"] = "India";
+profile.age = 26;
 
-// 2. Updating an existing property (Overwriting)
-profile.age = 25;
+// 2. Updating an existing property
+profile.name = "Morgan";
 
-// 3. Deleting a property using the 'delete' operator
-delete profile.country;
-console.log(profile); // { name: 'Ayush', age: 25 }
+// 3. Deleting a property
+delete profile.age;
+
+console.log(profile);
 ```
 
-### ⚠️ The 'delete' Operator Deep-Dive & Performance Trap
-1. **Return Value**: `delete obj.prop` returns `true` if the property was deleted or if the property never existed in the first place. It returns `false` only if the property is non-configurable (e.g. frozen or configured with `configurable: false`).
-2. **V8 Shape De-optimization**: In high-performance loops, deleting properties transitions the object from V8's fast "Hidden Class / Shape" mode into a slow "Dictionary / Hash Table" mode.
-```js
-// Fast alternative to delete in high-throughput engines:
-profile.temporaryData = undefined; // Retains V8 Shape
+Output:
+```text
+{ name: 'Morgan' }
 ```
+
+How this code runs, step by step:
+
+First, we create an object named `profile` containing one property: `name: "Taylor"`.
+
+Next, we write `profile.age = 26`. JavaScript checks whether the key `age` exists on `profile`. It does not, so JavaScript creates a new property named `age` with the value `26`.
+
+Then, we write `profile.name = "Morgan"`. JavaScript checks whether `name` exists on `profile`. It already exists, so JavaScript updates its value from `"Taylor"` to `"Morgan"`.
+
+After that, we write `delete profile.age`. The `delete` operator removes both the key `age` and its value `26` completely from the object.
+
+Finally, we log `profile`. The object now contains only `{ name: 'Morgan' }`.
+
+---
+
+### How it works inside JavaScript
+
+When you modify an object:
+
+1. When adding a property (`profile.age = 26`): JavaScript allocates a new slot in the object's heap memory record and stores the key `"age"` and value `26`.
+2. When updating a property (`profile.name = "Morgan"`): JavaScript locates the existing key `"name"` in the heap record and replaces its stored value pointer with the new value.
+3. When using `delete profile.age`: JavaScript removes the property key from the object's property list. Any future attempt to access `profile.age` will return `undefined`.
+4. Return value of `delete`: The expression `delete obj.prop` evaluates to `true` if the property was successfully removed or if the property did not exist in the first place.
+
+---
+
+### Think first
+
+What do you think this code prints? Decide first before checking below.
+
+```javascript
+const user = { name: "Sam" };
+
+const result = delete user.missingProperty;
+
+console.log(result);
+console.log(user);
+```
+
+---
+
+Result:
+```text
+true
+{ name: 'Sam' }
+```
+
+Why:
+The `delete` operator returns `true` as long as the property does not exist on the object when it finishes. Since `missingProperty` was not there to begin with, the operation is considered successful, and `result` is `true`. The `user` object remains unchanged.
+
+---
+
+### More examples: from easy to harder
+
+#### Example 1: Setting to `undefined` vs `delete`
+Setting a property to `undefined` is not the same as deleting it.
+
+```javascript
+const configA = { volume: 50 };
+const configB = { volume: 50 };
+
+configA.volume = undefined;
+delete configB.volume;
+
+console.log("volume" in configA);
+console.log("volume" in configB);
+```
+
+Output:
+```text
+true
+false
+```
+
+Explanation:
+- `configA.volume = undefined` keeps the key `"volume"` on the object, but sets its value to `undefined`. The key still exists.
+- `delete configB.volume` removes the key `"volume"` entirely from the object.
+
+#### Example 2: Adding and updating with bracket notation
+Bracket notation works for adding and updating just like dot notation, and allows dynamic property keys.
+
+```javascript
+const stats = {};
+const keyName = "score";
+
+stats[keyName] = 10;
+stats[keyName] = stats[keyName] + 5;
+
+console.log(stats.score);
+```
+
+Output:
+```text
+15
+```
+
+Explanation:
+- Line 4 creates the property `score` with value `10`.
+- Line 5 reads the current value `10`, adds `5`, and updates `score` to `15`.
+
+#### Example 3: Modifying properties of an object declared with `const`
+A common question is: why can we change properties if the object is declared with `const`?
+
+```javascript
+const user = { status: "offline" };
+
+// This is ALLOWED: mutating object contents
+user.status = "online";
+console.log(user.status);
+
+// This is NOT ALLOWED: reassigning the variable itself
+// user = { status: "away" }; // TypeError: Assignment to constant variable.
+```
+
+Output:
+```text
+online
+```
+
+Explanation:
+- `const` prevents you from changing what memory address the variable points to.
+- `const` does NOT freeze the object sitting at that address. The properties inside the object remain fully mutable.
+
+---
+
+### Common mistakes
+
+#### Mistake 1: Trying to `delete` a plain variable
+Wrong code:
+```javascript
+let count = 10;
+delete count;
+
+console.log(count);
+```
+
+Output:
+```text
+10
+```
+
+Why it happens:
+The `delete` operator is designed strictly to remove properties from objects. It cannot delete variables declared with `let`, `const`, or `var`. In strict mode (`"use strict"`), this line throws a `SyntaxError`.
+
+---
+
+#### Mistake 2: Thinking `delete` returns `false` when a property is missing
+Wrong code:
+```javascript
+const user = { id: 1 };
+
+if (delete user.email) {
+  console.log("Email was deleted");
+}
+```
+
+Output:
+```text
+Email was deleted
+```
+
+Why it happens:
+`delete user.email` returns `true` even though `user.email` never existed. Do not use the return value of `delete` to test whether a property was present before deletion.
+
+Correct code:
+Check if the property exists first, or just delete it without assuming it was there:
+```javascript
+const user = { id: 1 };
+
+if ("email" in user) {
+  delete user.email;
+  console.log("Email was deleted");
+} else {
+  console.log("No email to delete");
+}
+```
+
+Output:
+```text
+No email to delete
+```
+
+---
+
+### Try it yourself
+Create an object named `cart` with `itemsCount: 2`. Update `itemsCount` to `3`. Add a new property `total: 45`. Then delete `itemsCount` and log the final object.
+
+---
+
+### Rules to remember
+1. Assigning to `obj.newKey` creates a new property if it did not exist before.
+2. Assigning to an existing `obj.existingKey` overwrites its previous value.
+3. The `delete obj.key` operator permanently removes both the key and the value from the object.
+4. Setting `obj.key = undefined` leaves the key inside the object; only `delete` removes the key.
+5. Declaring an object with `const` protects the variable reference, but the object's properties can still be added, changed, or deleted.
+
+---
+
+### Exercises
+
+#### Question 1 (Predict the output)
+What will this code print to the console?
+```javascript
+const record = { a: 1, b: 2 };
+record.c = 3;
+record.a = 10;
+delete record.b;
+
+console.log(record.a);
+console.log(record.b);
+console.log(record.c);
+```
+
+#### Question 2 (Find and fix the bug)
+The developer wanted to delete the property `apiKey` from the object `config`. Fix the code.
+```javascript
+const config = { apiKey: "secret_123" };
+config.apiKey = null;
+
+console.log("apiKey" in config); // Prints true, but wanted false!
+```
+
+#### Question 3 (Write code from scratch)
+Write a function named `cleanObject(obj, keyToDelete)` that removes `keyToDelete` from `obj` using the `delete` operator and returns the modified object.
+
+#### Question 4 (Explain in your own words)
+Explain the difference between writing `obj.status = undefined` and writing `delete obj.status`.
+
+---
+
+### Solutions
+
+#### Solution for Question 1
+- Hint 1: Trace each modification line by line.
+- Hint 2: What is returned when reading a deleted property?
+
+Answer:
+```text
+10
+undefined
+```
+Explanation: `record.a` is updated to `10`. `record.b` is deleted, so reading it returns `undefined`. `record.c` was added with value `3`.
+
+---
+
+#### Solution for Question 2
+- Hint 1: Setting a property to `null` or `undefined` does not remove the key from the object.
+- Hint 2: Use the `delete` operator.
+
+Corrected code:
+```javascript
+const config = { apiKey: "secret_123" };
+delete config.apiKey;
+
+console.log("apiKey" in config);
+```
+Output:
+```text
+false
+```
+Explanation: Setting a property to `null` keeps the key in the object with a value of `null`. The `delete` operator removes the key entirely.
+
+---
+
+#### Solution for Question 3
+- Hint 1: The key name is stored in the parameter `keyToDelete`.
+- Hint 2: Use bracket notation with `delete`.
+
+Code:
+```javascript
+function cleanObject(obj, keyToDelete) {
+  delete obj[keyToDelete];
+  return obj;
+}
+
+const user = { name: "Alex", temp: true };
+console.log(cleanObject(user, "temp"));
+```
+Output:
+```text
+{ name: 'Alex' }
+```
+
+---
+
+#### Solution for Question 4
+- Hint 1: Does the key still exist in memory in both cases?
+- Hint 2: How does the `"in"` operator react to both?
+
+Explanation:
+Writing `obj.status = undefined` retains the key `"status"` inside the object's list of properties, but sets its value to `undefined`. Checking `"status" in obj` will return `true`. Writing `delete obj.status` completely removes the key `"status"` and its value from the object. Checking `"status" in obj` will return `false`.
+
+---
+
+### Recall
+1. What operator is used to completely remove a property from an object?
+2. If you declare an object with `const`, can you still add a new property to it?
+3. Does `delete obj.missingKey` return `true` or `false`?
+
+---
+
+### If you remember only one thing:
+Objects are mutable: you can add new keys by assignment, update existing keys by reassignment, and completely remove keys with the `delete` operator, even if the variable was declared with `const`.
+
+---
+
+### Checkpoint Challenge: Topics 1 to 5
+
+This challenge tests the concepts covered across the first 5 topics: object creation, computed keys, property access, adding, updating, and deleting properties.
+
+#### Challenge Task
+Write a function named `manageUserRecord(initialData, keyToUpdate, newValue, keyToRemove)` that does the following in order:
+1. Takes an existing object `initialData`.
+2. Updates or adds the property named by `keyToUpdate` with `newValue`.
+3. Adds a computed property named `"lastModified"` with the current year as a number (`2026`).
+4. Permanently removes the property named by `keyToRemove` from the object.
+5. Returns the updated object.
+
+---
+
+#### Solutions for Checkpoint Challenge
+
+- Hint 1: Use bracket notation `obj[keyToUpdate] = newValue` because `keyToUpdate` is a parameter variable.
+- Hint 2: Use `delete obj[keyToRemove]` to permanently remove the requested key.
+
+Code:
+```javascript
+function manageUserRecord(initialData, keyToUpdate, newValue, keyToRemove) {
+  // 1. Update or add the specified property
+  initialData[keyToUpdate] = newValue;
+
+  // 2. Add lastModified property
+  initialData.lastModified = 2026;
+
+  // 3. Permanently remove the requested key
+  delete initialData[keyToRemove];
+
+  // 4. Return the modified object
+  return initialData;
+}
+
+// Verification:
+const original = { name: "Sam", role: "guest", temporaryId: 999 };
+const updated = manageUserRecord(original, "role", "admin", "temporaryId");
+
+console.log(updated);
+```
+
+Output:
+```text
+{ name: 'Sam', role: 'admin', lastModified: 2026 }
+```
+
+Explanation:
+- `initialData[keyToUpdate] = newValue` uses bracket notation to update the property stored in `keyToUpdate` (`"role"` becomes `"admin"`).
+- `initialData.lastModified = 2026` adds a new property using dot notation.
+- `delete initialData[keyToRemove]` removes `"temporaryId"` completely from the object.
+- The returned object contains only the surviving keys with their updated values.
 
 ---
 
 # 06. OBJECT PROPERTY EXISTENCE
 
-There are 3 standard ways to verify if an object contains a property. Choosing the right one avoids serious security and correctness bugs.
+### What is it?
+Checking property existence means testing whether an object contains a specific key. JavaScript provides three primary ways to check if a property exists: `Object.hasOwn(obj, key)`, the `in` operator, and `obj.hasOwnProperty(key)`.
 
+Here are the key technical terms used in this topic:
+- An own property is a property that was defined directly on the object itself, not inherited from a prototype.
+- An inherited property is a property that belongs to an ancestor object on the prototype chain.
+- The prototype chain is the series of linked objects that JavaScript searches when a property is not found directly on an object.
+
+---
+
+### Why does it exist?
+In JavaScript, reading a missing property does not throw an error; it simply returns `undefined`.
+
+However, testing `obj.key !== undefined` causes a bug if a property explicitly exists with the value `undefined`. Additionally, some checks return `true` for inherited built-in methods (like `"toString"`), which you might not want. Dedicated existence-checking tools exist so you can distinguish between own properties, inherited properties, and non-existent properties accurately.
+
+---
+
+### Basic example and explanation
+
+```javascript
+const user = {
+  name: "Alex",
+  nickname: undefined
+};
+
+console.log(Object.hasOwn(user, "name"));
+console.log(Object.hasOwn(user, "nickname"));
+console.log(Object.hasOwn(user, "age"));
+console.log("toString" in user);
+```
+
+Output:
 ```text
-┌─────────────────────────────┬───────────────────┬──────────────────────┬──────────────────────┐
-│ Method                      │ Checks Own Props? │ Checks Prototypes?   │ Null-Prototype Safe? │
-├─────────────────────────────┼───────────────────┼──────────────────────┼──────────────────────┤
-│ 'prop' in obj               │ ✅ Yes            │ ✅ Yes               │ ✅ Yes               │
-│ Object.hasOwn(obj, 'prop')  │ ✅ Yes            │ ❌ No (Own only)     │ ✅ Yes (ES2022 Best) │
-│ obj.hasOwnProperty('prop')  │ ✅ Yes            │ ❌ No (Own only)     │ ❌ Throws TypeError  │
-└─────────────────────────────┴───────────────────┴──────────────────────┴──────────────────────┘
+true
+true
+false
+true
 ```
 
-### 1. Modern Best Practice: `Object.hasOwn(obj, key)` (ES2022)
-`Object.hasOwn` is a static method that works reliably on ANY object, even null-prototype dictionaries:
-```js
-const user = { name: "Ayush" };
-console.log(Object.hasOwn(user, "name"));     // true
-console.log(Object.hasOwn(user, "toString")); // false (inherited from Object.prototype)
+How this code runs, step by step:
+
+First, we create an object named `user` with two own properties: `name` with value `"Alex"` and `nickname` with value `undefined`.
+
+Next, we run `Object.hasOwn(user, "name")`. JavaScript checks whether `"name"` is directly attached to `user`. It is, so this returns `true`.
+
+Then, we run `Object.hasOwn(user, "nickname")`. Even though the value is `undefined`, the key `"nickname"` does exist on the object. Therefore, `Object.hasOwn` correctly returns `true`.
+
+Next, we run `Object.hasOwn(user, "age")`. The key `"age"` was never defined on `user`, so it returns `false`.
+
+Finally, we run `"toString" in user`. The `in` operator checks both the object itself and its prototype chain. Because all standard objects inherit the `toString` method from `Object.prototype`, this returns `true`.
+
+---
+
+### How it works inside JavaScript
+
+1. `Object.hasOwn(obj, key)`: The engine queries the internal property table of `obj`. If the key exists directly in that table, it returns `true`. It stops immediately and never checks the prototype chain.
+2. `'key' in obj`: The engine first checks `obj`'s internal table. If found, it returns `true`. If not found, it follows the internal `[[Prototype]]` link to the next object and checks there. It repeats this until it finds the key or reaches `null`.
+3. `obj.hasOwnProperty(key)`: This is an older method inherited from `Object.prototype`. It behaves like `Object.hasOwn`, but can fail if the object was created with `Object.create(null)` or if the property name `"hasOwnProperty"` was overwritten on `obj`.
+
+---
+
+### Comparing existence check methods
+
+| Method | Checks own properties? | Checks prototype chain? | Works on `Object.create(null)`? |
+| :--- | :--- | :--- | :--- |
+| `Object.hasOwn(obj, key)` | Yes | No | Yes (Modern standard, ES2022) |
+| `'key' in obj` | Yes | Yes | Yes |
+| `obj.hasOwnProperty(key)` | Yes | No | No (Throws `TypeError`) |
+| `obj.key !== undefined` | Fails if value is `undefined` | Fails if value is `undefined` | Yes |
+
+---
+
+### Think first
+
+What do you think this code prints? Decide first before checking below.
+
+```javascript
+const response = {
+  data: undefined
+};
+
+console.log(response.data !== undefined);
+console.log(Object.hasOwn(response, "data"));
 ```
 
-### 2. The Prototype Trap: The `in` Operator
-The `in` operator returns `true` if the property exists on the object **OR anywhere in its prototype chain**:
-```js
-console.log("name" in user);     // true
-console.log("toString" in user); // true! (Inherited method exists!)
+---
+
+Result:
+```text
+false
+true
 ```
 
-### 3. The `undefined` Value Trap
-Checking `obj.key !== undefined` is dangerous because a property can explicitly exist with a value of `undefined`:
-```js
-const response = { data: undefined };
+Why:
+- `response.data` evaluates to `undefined`. Comparing `undefined !== undefined` is `false`. The property check incorrectly says the property does not exist.
+- `Object.hasOwn(response, "data")` inspects whether the key `"data"` is registered in the object's properties. Because the key is present, it returns `true`.
 
-// Buggy check:
-if (response.data !== undefined) {
-  // Never runs, even though property 'data' exists!
+---
+
+### More examples: from easy to harder
+
+#### Example 1: Differentiating own properties from inherited properties
+Standard objects inherit properties like `toString`, `valueOf`, and `constructor`.
+
+```javascript
+const config = {
+  timeout: 3000
+};
+
+console.log("timeout" in config);
+console.log("toString" in config);
+
+console.log(Object.hasOwn(config, "timeout"));
+console.log(Object.hasOwn(config, "toString"));
+```
+
+Output:
+```text
+true
+true
+true
+false
+```
+
+Explanation:
+- Both `"timeout"` and `"toString"` exist in the object's lookup hierarchy, so `in` returns `true` for both.
+- Only `"timeout"` is an own property of `config`. `"toString"` is inherited from `Object.prototype`, so `Object.hasOwn` returns `false` for `"toString"`.
+
+#### Example 2: Safe checks on null-prototype objects
+When an object is created with `Object.create(null)`, it has no prototype.
+
+```javascript
+const dictionary = Object.create(null);
+dictionary.word = "syntax";
+
+// dictionary.hasOwnProperty("word"); // Throws TypeError: dictionary.hasOwnProperty is not a function
+
+console.log(Object.hasOwn(dictionary, "word"));
+console.log("word" in dictionary);
+```
+
+Output:
+```text
+true
+true
+```
+
+Explanation:
+- Because `dictionary` has no prototype, calling `dictionary.hasOwnProperty` crashes because the method does not exist.
+- `Object.hasOwn` is a static method on the global `Object` constructor, so it works safely on any object.
+
+---
+
+### Common mistakes
+
+#### Mistake 1: Using truthiness or undefined checks for existence
+Wrong code:
+```javascript
+const settings = {
+  volume: 0,
+  debug: false
+};
+
+if (settings.volume) {
+  console.log("Volume is set");
+} else {
+  console.log("Volume is NOT set");
+}
+```
+
+Output:
+```text
+Volume is NOT set
+```
+
+Why it happens:
+The number `0` is falsy in JavaScript. The `if` statement evaluates `0` as `false`, even though the property `volume` exists and has a valid value.
+
+Correct code:
+Use `Object.hasOwn` to test whether the property was defined:
+```javascript
+const settings = {
+  volume: 0,
+  debug: false
+};
+
+if (Object.hasOwn(settings, "volume")) {
+  console.log("Volume is set");
+}
+```
+
+Output:
+```text
+Volume is set
+```
+
+---
+
+### Try it yourself
+Create an object named `metrics` with `count: 0`. Check if `count` exists using both `Boolean(metrics.count)` and `Object.hasOwn(metrics, "count")`. Print both results.
+
+---
+
+### Rules to remember
+1. Use `Object.hasOwn(obj, key)` as the primary way to check if an object directly owns a property.
+2. Use the `in` operator if you also want to check for properties on the prototype chain.
+3. Never use `if (obj.key)` or `obj.key !== undefined` to check existence, because values like `0`, `""`, `false`, and `undefined` will produce false negatives.
+4. Avoid `obj.hasOwnProperty(key)` in modern code because it can crash on objects that have no prototype.
+
+---
+
+### Exercises
+
+#### Question 1 (Predict the output)
+What will this code print to the console?
+```javascript
+const record = {
+  active: false,
+  tag: undefined
+};
+
+console.log("active" in record);
+console.log(record.tag !== undefined);
+console.log(Object.hasOwn(record, "tag"));
+console.log(Object.hasOwn(record, "valueOf"));
+```
+
+#### Question 2 (Find and fix the bug)
+The function below should return `true` if `prop` exists on `data`, but it fails when `data[prop]` is `0` or `false`. Fix the bug.
+```javascript
+function propertyExists(data, prop) {
+  return data[prop] ? true : false;
+}
+```
+
+#### Question 3 (Write code from scratch)
+Write a function named `hasOwnAndTruthy(obj, key)` that returns `true` only if `key` is an own property of `obj` AND its value is truthy.
+
+#### Question 4 (Explain in your own words)
+Why does `Object.hasOwn(obj, "toString")` return `false` on a plain object `{}` when `"toString" in {}` returns `true`?
+
+---
+
+### Solutions
+
+#### Solution for Question 1
+- Hint 1: Does `in` check keys regardless of whether their value is `false`?
+- Hint 2: Does `Object.hasOwn` check inherited prototype methods?
+
+Answer:
+```text
+true
+false
+true
+false
+```
+Explanation: `"active" in record` is `true`. `record.tag !== undefined` fails because `tag` is `undefined`. `Object.hasOwn(record, "tag")` is `true` because the key exists. `"valueOf"` is inherited from `Object.prototype`, so it is not an own property.
+
+---
+
+#### Solution for Question 2
+- Hint 1: Avoid truthy checks on values.
+- Hint 2: Use `Object.hasOwn`.
+
+Corrected code:
+```javascript
+function propertyExists(data, prop) {
+  return Object.hasOwn(data, prop);
+}
+```
+
+---
+
+#### Solution for Question 3
+- Hint 1: Check existence first using `Object.hasOwn(obj, key)`.
+- Hint 2: Combine with `Boolean(obj[key])` using `&&`.
+
+Code:
+```javascript
+function hasOwnAndTruthy(obj, key) {
+  return Object.hasOwn(obj, key) && Boolean(obj[key]);
 }
 
-// Correct check:
-if (Object.hasOwn(response, "data")) {
-  console.log("Property 'data' is present!"); // Runs!
-}
+console.log(hasOwnAndTruthy({ count: 10 }, "count")); // true
+console.log(hasOwnAndTruthy({ count: 0 }, "count"));  // false
 ```
+
+---
+
+#### Solution for Question 4
+- Hint 1: Where does `toString` come from?
+- Hint 2: What is the difference between an own property and an inherited property?
+
+Explanation:
+`Object.hasOwn` checks only the properties that belong directly to the specified object. Plain objects do not own a property named `"toString"`. Instead, `"toString"` is inherited from `Object.prototype`. The `in` operator checks both own properties and inherited properties along the entire prototype chain, which is why `"toString" in {}` returns `true`.
+
+---
+
+### Recall
+1. What static method should you use in modern JavaScript to check if an object owns a key?
+2. Which operator checks both own properties and inherited prototype properties?
+3. If an object has `{ count: undefined }`, will `Object.hasOwn(obj, "count")` return `true` or `false`?
+
+---
+
+### If you remember only one thing:
+Always use `Object.hasOwn(obj, key)` to test if an object directly contains a property; do not rely on `obj[key] !== undefined` or truthiness checks.
 
 ---
 
 # 07. OBJECT REFERENCES
 
-In JavaScript, **variables do NOT hold objects directly**. Instead, variables hold a **Memory Reference** (a 64-bit pointer) indicating where the object is stored on the **Memory Heap**.
+### What is it?
+An object reference is a memory address that tells JavaScript where an object lives in heap memory. When you assign an object to a variable or pass it into a function, JavaScript does not copy the object. It copies the reference address pointing to that object.
+
+Here are the key technical terms used in this topic:
+- A reference is a memory address pointing to a location where data is stored.
+- The call stack is the fast memory region where variables and function execution frames are kept.
+- The memory heap is the large, dynamic memory region where objects, arrays, and functions are allocated.
+- A pointer is another term for a reference that points to a memory address.
+
+---
+
+### Why does it exist?
+Objects can be large data structures containing thousands of properties, arrays, or nested objects.
+
+If JavaScript copied every property and every nested value every time an object was assigned to a variable or passed to a function, programs would run slowly and consume huge amounts of memory. By copying only a small memory address (the reference), variable assignments and function calls remain fast and efficient.
+
+---
+
+### Basic example and explanation
+
+```javascript
+const firstUser = { name: "Taylor" };
+const secondUser = firstUser;
+
+secondUser.name = "Jordan";
+
+console.log(firstUser.name);
+console.log(secondUser.name);
+```
+
+Output:
+```text
+Jordan
+Jordan
+```
+
+How this code runs, step by step:
+
+First, JavaScript creates an object `{ name: "Taylor" }` at a specific address in heap memory (for example, address `#301`).
+
+Next, the variable `firstUser` receives address `#301`.
+
+Then, we write `const secondUser = firstUser`. This does NOT create a second object. Instead, it copies the memory address `#301` from `firstUser` into `secondUser`. Both variables now hold the exact same memory address.
+
+Next, we write `secondUser.name = "Jordan"`. JavaScript follows the address `#301` to the heap and changes the `name` property to `"Jordan"`.
+
+Finally, we read `firstUser.name`. JavaScript follows `firstUser`'s pointer (address `#301`) to the heap and reads `"Jordan"`. Because both variables point to the same object in memory, changing the object through one variable changes what the other variable sees.
+
+---
+
+### How it works inside JavaScript
+
+1. Line 1: JavaScript allocates memory block `#301` in the heap and stores `{ name: "Taylor" }`. Variable `firstUser` on the stack stores `#301`.
+2. Line 2: A new variable `secondUser` is allocated on the stack. The value `#301` is copied into `secondUser`.
+3. Stack state: `firstUser -> #301`, `secondUser -> #301`.
+4. Line 4: The property assignment mutates the data at address `#301`. No new memory address is created.
+5. When any variable pointing to `#301` reads `name`, it accesses the updated value.
 
 ```text
-STACK MEMORY                             HEAP MEMORY (Shared Pool)
-┌──────────────┐                         ┌─────────────────────────────┐
-│ Variable 'a' │ ─── Address 0x8821 ───► │ { value: 10 }               │
-└──────────────┘                         └──────────────▲──────────────┘
-                                                        │
-┌──────────────┐                                        │
-│ Variable 'b' │ ─── Address 0x8821 ────────────────────┘
-└──────────────┘
+Stack Memory                             Heap Memory (Address #301)
+┌──────────────────────┐                 ┌───────────────────────────┐
+│ firstUser:  #301 ────┼────────────────►│ name: "Jordan"            │
+├──────────────────────┤                 └───────────────────────────┘
+│ secondUser: #301 ────┼──────────────────────────────▲
+└──────────────────────┘                              │
 ```
 
-### Real-World Code Demonstration
-```js
-const a = { x: 1 };
-const b = a; // 'b' does not get a copy of the object; it copies the POINTER!
+---
 
-b.x = 99; // Modifying through pointer 'b'
+### Think first
 
-console.log(a.x); // 99! Variable 'a' sees the mutation because they share the heap record!
+What do you think this code prints? Decide first before checking below.
+
+```javascript
+function resetScore(record) {
+  record.score = 0;
+}
+
+const player = { score: 100 };
+resetScore(player);
+
+console.log(player.score);
 ```
 
-> [!NOTE]
-> **The Deed Analogy**: Think of an object as a physical house. The variable `a` is not the house itself; it is the *Deed of Ownership* containing the house's street address. When you write `const b = a`, you photocopy the deed. Both deeds point to the exact same house. If someone paints the living room blue using deed `b`, anyone visiting the house via deed `a` sees blue walls.
+---
+
+Result:
+```text
+0
+```
+
+Why:
+When `player` is passed as an argument to `resetScore`, JavaScript copies the memory address from `player` into the parameter variable `record`. Inside the function, `record.score = 0` modifies the object at that shared address. When the function finishes, `player` sees the change because it points to the exact same heap record.
+
+---
+
+### More examples: from easy to harder
+
+#### Example 1: Reassigning a parameter does not affect the caller
+If you change what a parameter variable points to, the original object outside is not modified.
+
+```javascript
+function replaceObject(item) {
+  item = { score: 0 }; // Reassigns the local parameter variable to a new address
+}
+
+const player = { score: 100 };
+replaceObject(player);
+
+console.log(player.score);
+```
+
+Output:
+```text
+100
+```
+
+Explanation:
+- Inside `replaceObject`, writing `item = { score: 0 }` assigns a brand new object address (such as `#402`) to the local variable `item`.
+- It does not modify the object at the original address `#401`. The variable `player` outside still points to `#401`.
+
+#### Example 2: Multiple references to an array inside an object
+When an object property holds an array or another object, that property itself stores a reference address.
+
+```javascript
+const team = {
+  members: ["Sam", "Alex"]
+};
+
+const roster = team.members;
+roster.push("Taylor");
+
+console.log(team.members);
+```
+
+Output:
+```text
+[ 'Sam', 'Alex', 'Taylor' ]
+```
+
+Explanation:
+- `team.members` holds a reference to the array in heap memory.
+- `roster` receives a copy of that reference.
+- Calling `roster.push("Taylor")` mutates the shared array directly.
+
+---
+
+### Common mistakes
+
+#### Mistake 1: Believing assignment creates an independent copy
+Wrong code:
+```javascript
+const defaultSettings = { theme: "light" };
+const userSettings = defaultSettings;
+
+userSettings.theme = "dark";
+
+console.log(defaultSettings.theme); // Prints "dark", but expected "light"!
+```
+
+Why it happens:
+`userSettings = defaultSettings` does not copy the properties. It copies the reference address. Mutating `userSettings` modifies `defaultSettings`.
+
+Correct code:
+Create a new object using the spread operator `{ ...obj }` for a shallow copy:
+```javascript
+const defaultSettings = { theme: "light" };
+const userSettings = { ...defaultSettings };
+
+userSettings.theme = "dark";
+
+console.log(defaultSettings.theme);
+console.log(userSettings.theme);
+```
+
+Output:
+```text
+light
+dark
+```
+
+---
+
+### Try it yourself
+Create an object `point = { x: 5, y: 10 }`. Assign `point` to a new variable `alias`. Change `alias.x = 20`. Print `point.x`.
+
+---
+
+### Rules to remember
+1. Variables do not store objects directly; they store a reference address pointing to heap memory.
+2. Assigning an object to a new variable copies the reference address, not the object.
+3. Mutating an object through one reference modifies the data seen by all other references pointing to that object.
+4. Passing an object into a function passes its reference; modifying properties inside the function mutates the caller's object.
+5. Reassigning a variable (`obj = { ... }`) points that variable to a new address, breaking the link without changing the original object.
+
+---
+
+### Exercises
+
+#### Question 1 (Predict the output)
+What will this code print to the console?
+```javascript
+const configA = { port: 8080 };
+const configB = configA;
+const configC = configB;
+
+configC.port = 3000;
+
+console.log(configA.port);
+console.log(configB.port);
+console.log(configC.port);
+```
+
+#### Question 2 (Find and fix the bug)
+The function `updateConfig` should return a new object with updated timeout without mutating the input object. Fix the bug.
+```javascript
+function updateConfig(original, newTimeout) {
+  const duplicate = original;
+  duplicate.timeout = newTimeout;
+  return duplicate;
+}
+
+const base = { timeout: 1000 };
+const modified = updateConfig(base, 5000);
+console.log(base.timeout); // Prints 5000, but should be 1000!
+```
+
+#### Question 3 (Write code from scratch)
+Write a function `clearUserData(user)` that sets `user.isLoggedIn = false` and `user.token = null` on the provided user object reference, and test it on an object.
+
+#### Question 4 (Explain in your own words)
+Why does `second = first; second.val = 5;` change `first.val`, but `second = first; second = { val: 5 };` does not change `first.val`?
+
+---
+
+### Solutions
+
+#### Solution for Question 1
+- Hint 1: Do `configA`, `configB`, and `configC` point to the same memory address?
+- Hint 2: Changing `configC.port` changes the object at that shared address.
+
+Answer:
+```text
+3000
+3000
+3000
+```
+Explanation: All three variables store the exact same reference address in heap memory. Mutating the property through `configC` mutates the shared object.
+
+---
+
+#### Solution for Question 2
+- Hint 1: `const duplicate = original` copies the reference, not the object.
+- Hint 2: Create a new object literal with `{ ...original }`.
+
+Corrected code:
+```javascript
+function updateConfig(original, newTimeout) {
+  const duplicate = { ...original };
+  duplicate.timeout = newTimeout;
+  return duplicate;
+}
+
+const base = { timeout: 1000 };
+const modified = updateConfig(base, 5000);
+console.log(base.timeout);
+console.log(modified.timeout);
+```
+Output:
+```text
+1000
+5000
+```
+
+---
+
+#### Solution for Question 3
+- Hint 1: Modify the properties directly on `user`.
+- Hint 2: No return statement is required if you want to mutate in place.
+
+Code:
+```javascript
+function clearUserData(user) {
+  user.isLoggedIn = false;
+  user.token = null;
+}
+
+const session = { isLoggedIn: true, token: "xyz_987" };
+clearUserData(session);
+console.log(session);
+```
+Output:
+```text
+{ isLoggedIn: false, token: null }
+```
+
+---
+
+#### Solution for Question 4
+- Hint 1: What is the difference between property mutation and variable reassignment?
+- Hint 2: Does `{ val: 5 }` create a new memory address?
+
+Explanation:
+In the first case, `second.val = 5` modifies the property inside the object located at the shared memory address. In the second case, `second = { val: 5 }` reassigns the variable `second` to a completely new memory address. It does not touch or modify the object at the original address, so `first.val` remains untouched.
+
+---
+
+### Recall
+1. What does a variable holding an object actually store?
+2. If `b = a`, how many objects exist in heap memory?
+3. What happens to the caller's object when a function mutates a property on an object argument?
+
+---
+
+### If you remember only one thing:
+Assigning an object to another variable copies only its reference address, meaning both variables point to and mutate the exact same object in heap memory.
 
 ---
 
 # 08. OBJECT IDENTITY
 
-Object equality in JavaScript (`===` and `==`) tests **Reference Identity**, NOT structural content.
+### What is it?
+Object identity means that an object is unique based on its specific location in memory, not based on the properties and values it contains. In JavaScript, two objects are considered equal only if they share the exact same memory address.
 
-```js
-const houseA = { rooms: 3 };
-const houseB = { rooms: 3 };
+Here are the key technical terms used in this topic:
+- Reference equality is comparing two variables to see if they hold the exact same memory address.
+- Structural equality is comparing two objects to see if they have the same property keys and values, regardless of memory address.
+- Strict equality is the `===` operator in JavaScript.
 
-console.log(houseA === houseB); // false! (Two distinct houses built at different addresses)
+---
 
-const houseC = houseA;
-console.log(houseA === houseC); // true! (Both point to address 0x8821)
+### Why does it exist?
+JavaScript does not perform deep structural comparisons with `===` because doing so would require traversing every key and value in both objects, including nested objects and arrays. On large objects, that would cause severe performance issues.
+
+Instead, JavaScript tests reference equality: it checks in a single CPU cycle whether the two 64-bit pointers point to the exact same address in memory.
+
+---
+
+### Basic example and explanation
+
+```javascript
+const pointA = { x: 10, y: 20 };
+const pointB = { x: 10, y: 20 };
+const pointC = pointA;
+
+console.log(pointA === pointB);
+console.log(pointA === pointC);
 ```
 
-### The Visual Identity Breakdown
+Output:
 ```text
-houseA ──► Heap Address 0x1001: { rooms: 3 }
-houseB ──► Heap Address 0x2002: { rooms: 3 }
-
-houseA === houseB ──► Does 0x1001 equal 0x2002? ──► FALSE!
+false
+true
 ```
+
+How this code runs, step by step:
+
+First, JavaScript evaluates `{ x: 10, y: 20 }` on line 1, allocates it in heap memory at address `#501`, and assigns `#501` to `pointA`.
+
+Next, JavaScript evaluates `{ x: 10, y: 20 }` on line 2. This is a separate object literal, so JavaScript allocates a brand new object at address `#502` and assigns `#502` to `pointB`.
+
+Then, line 3 assigns `pointA` to `pointC`. `pointC` receives the address `#501`.
+
+Next, we run `pointA === pointB`. JavaScript compares address `#501` with address `#502`. Because `#501` is not equal to `#502`, the comparison evaluates to `false`, even though both objects have identical keys and values.
+
+Finally, we run `pointA === pointC`. JavaScript compares address `#501` with address `#501`. Because both variables hold the exact same address, the comparison evaluates to `true`.
+
+---
+
+### How it works inside JavaScript
+
+When JavaScript runs `objA === objB`:
+
+1. The engine checks the data type of both operands. Both are objects.
+2. The engine reads the memory pointer stored in `objA`.
+3. The engine reads the memory pointer stored in `objB`.
+4. It compares the two memory addresses directly:
+   - If address A equals address B, it returns `true`.
+   - If address A does not equal address B, it returns `false`.
+5. The engine never inspects the keys, values, or size of the objects.
+
+```text
+Variable pointA ──► Heap Address #501: { x: 10, y: 20 }
+Variable pointB ──► Heap Address #502: { x: 10, y: 20 }
+
+Is #501 === #502? ──► FALSE (Different memory addresses)
+```
+
+---
+
+### Think first
+
+What do you think this code prints? Decide first before checking below.
+
+```javascript
+const items = [{ id: 1 }];
+
+console.log(items.includes({ id: 1 }));
+```
+
+---
+
+Result:
+```text
+false
+```
+
+Why:
+The `Array.prototype.includes` method uses strict equality (`===`) to search for elements in the array.
+Inside the call, `{ id: 1 }` creates a brand new object literal at a new memory address (such as `#602`).
+The array contains an object at address `#601`.
+Because `#601 !== #602`, `includes` does not find a match and returns `false`.
+
+---
+
+### More examples: from easy to harder
+
+#### Example 1: Checking structural equality manually
+If you want to know whether two objects have identical values, you must compare their properties yourself.
+
+```javascript
+const userA = { id: 1, role: "admin" };
+const userB = { id: 1, role: "admin" };
+
+function areUsersEqual(a, b) {
+  return a.id === b.id && a.role === b.role;
+}
+
+console.log(userA === userB);
+console.log(areUsersEqual(userA, userB));
+```
+
+Output:
+```text
+false
+true
+```
+
+Explanation:
+- `userA === userB` compares reference addresses and yields `false`.
+- `areUsersEqual` compares primitive values (`1 === 1` and `"admin" === "admin"`), yielding `true`.
+
+#### Example 2: Finding an object in an array by property
+Because `items.includes({ id: 1 })` fails due to reference identity, use `find` or `some` to compare properties.
+
+```javascript
+const users = [
+  { id: 1, name: "Taylor" },
+  { id: 2, name: "Morgan" }
+];
+
+const found = users.find(u => u.id === 2);
+console.log(found.name);
+```
+
+Output:
+```text
+Morgan
+```
+
+Explanation:
+- `find` runs a predicate function on each element.
+- Comparing primitive numbers (`u.id === 2`) works reliably regardless of object reference identity.
+
+---
+
+### Common mistakes
+
+#### Mistake 1: Testing empty objects for equality
+Wrong code:
+```javascript
+if ({} === {}) {
+  console.log("Empty objects match");
+} else {
+  console.log("Empty objects do NOT match");
+}
+```
+
+Output:
+```text
+Empty objects do NOT match
+```
+
+Why it happens:
+Each `{}` literal creates a distinct object in memory. They never share a reference address.
+
+---
+
+### Try it yourself
+Create two separate objects `a = { val: 1 }` and `b = { val: 1 }`. Create a third variable `c = a`. Print the results of `a === b` and `a === c`.
+
+---
+
+### Rules to remember
+1. In JavaScript, `===` tests whether two objects share the exact same memory address.
+2. Two separate object literals `{}` are never equal, even if they have identical properties and values.
+3. Methods like `array.indexOf()` and `array.includes()` use reference equality, so searching for a new object literal `{ ... }` always fails.
+4. To compare the actual contents of two objects, compare their individual primitive properties.
+
+---
+
+### Exercises
+
+#### Question 1 (Predict the output)
+What will this code print to the console?
+```javascript
+const user1 = { name: "Sam" };
+const user2 = { name: "Sam" };
+const list = [user1];
+
+console.log(user1 === user2);
+console.log(list.includes(user1));
+console.log(list.includes(user2));
+```
+
+#### Question 2 (Find and fix the bug)
+The code below wants to check if a user with `id: 5` is in the list, but it always prints `"Not found"`. Fix it.
+```javascript
+const sessions = [{ id: 5, active: true }];
+
+if (sessions.includes({ id: 5, active: true })) {
+  console.log("Found");
+} else {
+  console.log("Not found");
+}
+```
+
+#### Question 3 (Write code from scratch)
+Write a function `isSamePoint(p1, p2)` that takes two point objects and returns `true` if both have matching `x` and `y` properties.
+
+#### Question 4 (Explain in your own words)
+Why does JavaScript compare objects by reference identity instead of automatically checking all their properties and values?
+
+---
+
+### Solutions
+
+#### Solution for Question 1
+- Hint 1: Does `user1` share a memory address with `user2`?
+- Hint 2: Which variable was placed in `list`?
+
+Answer:
+```text
+false
+true
+false
+```
+Explanation: `user1` and `user2` have different memory addresses (`false`). `list` contains `user1`, so `list.includes(user1)` is `true`. `list` does not contain the reference `user2`, so `list.includes(user2)` is `false`.
+
+---
+
+#### Solution for Question 2
+- Hint 1: Avoid `includes` with a newly created object literal.
+- Hint 2: Use `some` to test property values.
+
+Corrected code:
+```javascript
+const sessions = [{ id: 5, active: true }];
+
+const exists = sessions.some(s => s.id === 5);
+if (exists) {
+  console.log("Found");
+} else {
+  console.log("Not found");
+}
+```
+Output:
+```text
+Found
+```
+
+---
+
+#### Solution for Question 3
+- Hint 1: Compare `p1.x === p2.x` and `p1.y === p2.y`.
+- Hint 2: Return a boolean with `&&`.
+
+Code:
+```javascript
+function isSamePoint(p1, p2) {
+  return p1.x === p2.x && p1.y === p2.y;
+}
+
+console.log(isSamePoint({ x: 2, y: 3 }, { x: 2, y: 3 })); // true
+console.log(isSamePoint({ x: 2, y: 3 }, { x: 4, y: 5 })); // false
+```
+
+---
+
+#### Solution for Question 4
+- Hint 1: Think about how large objects can get.
+- Hint 2: How fast is comparing two numbers (addresses) versus inspecting many properties?
+
+Explanation:
+Comparing two memory addresses takes a single fast CPU comparison. If JavaScript compared objects by their contents, it would have to loop through every property of both objects on every comparison. If objects had nested arrays, nested objects, or circular references, comparisons would be slow and could crash with infinite recursion.
+
+---
+
+### Recall
+1. Does `===` compare object properties or object memory addresses?
+2. If two objects have identical properties, will `objA === objB` return `true`?
+3. Why does `[ { id: 1 } ].includes({ id: 1 })` return `false`?
+
+---
+
+### If you remember only one thing:
+JavaScript object equality `===` strictly checks whether two variables share the same memory address; it never compares the contents inside the objects.
 
 ---
 
 # 09. OBJECT MUTATION
 
-**Mutation** means altering the internal state (properties, values) of an object in-place without creating a new heap record.
+### What is it?
+Object mutation is the process of altering the internal properties or values of an existing object without creating a new object in memory.
 
-### 1. Mutating Properties & Nested Objects
-```js
+Here are the key technical terms used in this topic:
+- Mutation is changing data in place inside an existing memory record.
+- Immutability is the design principle where data is never modified after it is created; updates produce a new copy instead.
+- A side effect is an unexpected change made by a function to state outside of its own local scope.
+- A pure function is a function that produces no side effects and always returns the same output for the same input.
+
+---
+
+### Why does it exist?
+Mutation allows applications to update state efficiently. When you update a property on an existing object, the engine modifies memory in place without having to allocate and garbage-collect a whole new object.
+
+However, unchecked mutation can cause severe bugs. If multiple parts of a program hold references to the same object, modifying it in one place can silently break code in another place. Learning when to mutate and when to keep objects immutable is essential for writing reliable JavaScript.
+
+---
+
+### Basic example and explanation
+
+```javascript
 const order = {
-  id: "ORD-991",
-  customer: { name: "Ayush" },
-  items: ["Keyboard", "Mouse"]
+  id: 101,
+  status: "pending"
 };
 
-// Direct Mutation
-order.status = "Shipped";
-order.customer.name = "Ayush S.";
-order.items.push("Monitor");
+// In-place mutation
+order.status = "completed";
+order.paidAt = 1700000000;
+
+console.log(order);
 ```
 
-### 2. Accidental Mutation via Function Side-Effects
-When you pass an object into a function, the function receives the pointer. Any mutations inside the function leak out and affect the caller:
-```js
-function markActive(user) {
-  user.isActive = true; // ⚠️ UNINTENDED SIDE-EFFECT: Mutates caller's original object!
+Output:
+```text
+{ id: 101, status: 'completed', paidAt: 1700000000 }
+```
+
+How this code runs, step by step:
+
+First, we create an object named `order` with two properties: `id` and `status`.
+
+Next, we write `order.status = "completed"`. This mutates the existing `status` property in place at that object's memory address.
+
+Then, we write `order.paidAt = 1700000000`. This adds a new property to the same object in place.
+
+Finally, we log `order`. The single object in memory now contains the updated `status` and the new `paidAt` property.
+
+---
+
+### How it works inside JavaScript
+
+1. The engine looks up the memory address of `order` in heap memory.
+2. For an update (`order.status = "completed"`): The engine overwrites the value stored in the slot for `"status"`. The object's memory address does not change.
+3. For an addition (`order.paidAt = ...`): The engine allocates a new property entry in the existing object record.
+4. Any other variable in the program holding the memory address of `order` immediately sees these new values.
+
+---
+
+### Think first
+
+What do you think this code prints? Decide first before checking below.
+
+```javascript
+function setAdmin(user) {
+  user.role = "admin";
+  return user;
 }
 
-const originalUser = { name: "Dev", isActive: false };
-markActive(originalUser);
-console.log(originalUser.isActive); // true (Original mutated!)
+const current = { name: "Taylor", role: "guest" };
+const updated = setAdmin(current);
+
+console.log(current.role);
+console.log(current === updated);
 ```
 
-### 3. Functional Immutability Pattern
-Instead of mutating the incoming object, return a new object with the desired updates:
-```js
-function makeActivePure(user) {
+---
+
+Result:
+```text
+admin
+true
+```
+
+Why:
+The function `setAdmin` mutates the object passed to it directly via `user.role = "admin"`. It returns the exact same object reference (`user`). Therefore, `current.role` was changed to `"admin"`, and `current === updated` is `true` because both point to the same memory record.
+
+---
+
+### More examples: from easy to harder
+
+#### Example 1: Avoiding mutation with the immutability pattern
+Instead of mutating an incoming object, return a new object with the desired property updates.
+
+```javascript
+function setAdminPure(user) {
   return {
     ...user,
-    isActive: true
+    role: "admin"
+  };
+}
+
+const current = { name: "Taylor", role: "guest" };
+const updated = setAdminPure(current);
+
+console.log(current.role);
+console.log(updated.role);
+console.log(current === updated);
+```
+
+Output:
+```text
+guest
+admin
+false
+```
+
+Explanation:
+- `setAdminPure` creates a brand new object literal `{ ...user, role: "admin" }`.
+- `current` is not modified; its `role` remains `"guest"`.
+- `updated` is a distinct object with `role: "admin"`.
+- `current === updated` is `false`.
+
+#### Example 2: Mutating nested objects inside a shallow copy
+Creating a shallow copy does not protect nested objects from mutation.
+
+```javascript
+const user = {
+  name: "Sam",
+  settings: { theme: "light" }
+};
+
+const copy = { ...user };
+copy.settings.theme = "dark";
+
+console.log(user.settings.theme);
+```
+
+Output:
+```text
+dark
+```
+
+Explanation:
+- `{ ...user }` copies top-level properties.
+- For `settings`, it copies the reference address of the inner object.
+- `copy.settings` and `user.settings` point to the exact same inner object. Mutating `copy.settings.theme` changes `user.settings.theme`.
+
+---
+
+### Common mistakes
+
+#### Mistake 1: Accidental mutation in utility functions
+Wrong code:
+```javascript
+function addTimestamp(data) {
+  data.timestamp = Date.now();
+  return data;
+}
+
+const report = { title: "Monthly Report" };
+addTimestamp(report); // Mutates caller's report object unexpectedly!
+```
+
+Why it happens:
+The function mutates the caller's object directly, creating an unintended side effect.
+
+Correct code:
+Return a new object containing the new property without changing the original:
+```javascript
+function addTimestamp(data) {
+  return {
+    ...data,
+    timestamp: Date.now()
   };
 }
 ```
 
 ---
 
+### Try it yourself
+Create an object `counter = { count: 0 }`. Write a function `incrementPure(obj)` that returns a new object with `count` incremented by `1`, without mutating the original `counter`.
+
+---
+
+### Rules to remember
+1. Mutation changes an object's properties in place without creating a new memory record.
+2. Modifying an object passed into a function creates side effects that affect the caller.
+3. The immutability pattern returns a new object `{ ...original, key: newValue }` instead of modifying the original.
+4. Shallow copying with spread (`{ ...obj }`) does NOT protect nested objects from mutation.
+
+---
+
+### Exercises
+
+#### Question 1 (Predict the output)
+What will this code print to the console?
+```javascript
+const state = { count: 1 };
+
+function change(s) {
+  s.count = s.count + 1;
+}
+
+change(state);
+console.log(state.count);
+```
+
+#### Question 2 (Find and fix the bug)
+The function `setOffline` is supposed to return an updated object without modifying `user`. Fix the function to make it pure.
+```javascript
+function setOffline(user) {
+  user.online = false;
+  return user;
+}
+
+const activeUser = { name: "Alex", online: true };
+const offlineUser = setOffline(activeUser);
+console.log(activeUser.online); // Should remain true!
+```
+
+#### Question 3 (Write code from scratch)
+Write a pure function `updateEmail(user, newEmail)` that returns a new user object with the updated `email`, leaving the input object unmodified.
+
+#### Question 4 (Explain in your own words)
+What is a function side effect in JavaScript, and why can mutating object arguments cause bugs?
+
+---
+
+### Solutions
+
+#### Solution for Question 1
+- Hint 1: Does `change` mutate `s` directly?
+- Hint 2: Does `s` share the memory address of `state`?
+
+Answer:
+```text
+2
+```
+Explanation: `change` mutates `state.count` in place through the shared reference.
+
+---
+
+#### Solution for Question 2
+- Hint 1: Do not assign to `user.online`.
+- Hint 2: Use the object spread operator `{ ...user, online: false }`.
+
+Corrected code:
+```javascript
+function setOffline(user) {
+  return {
+    ...user,
+    online: false
+  };
+}
+
+const activeUser = { name: "Alex", online: true };
+const offlineUser = setOffline(activeUser);
+console.log(activeUser.online);
+console.log(offlineUser.online);
+```
+Output:
+```text
+true
+false
+```
+
+---
+
+#### Solution for Question 3
+- Hint 1: Return an object literal with `{ ...user, email: newEmail }`.
+
+Code:
+```javascript
+function updateEmail(user, newEmail) {
+  return {
+    ...user,
+    email: newEmail
+  };
+}
+
+const original = { name: "Alex", email: "old@example.com" };
+const updated = updateEmail(original, "new@example.com");
+
+console.log(original.email); // old@example.com
+console.log(updated.email);  // new@example.com
+```
+
+---
+
+#### Solution for Question 4
+- Hint 1: What happens when two different functions share a single object?
+- Hint 2: Can one function predict changes made by another?
+
+Explanation:
+A side effect occurs when a function changes state outside of its own local variables. When a function mutates an object argument, any other part of the program holding a reference to that object sees the change. This leads to hard-to-find bugs because state changes without the other parts of the program knowing when or where it happened.
+
+---
+
+### Recall
+1. What does mutating an object mean?
+2. How do you update an object property using the immutability pattern?
+3. If you pass an object into a function and change a property inside, is the caller's object changed?
+
+---
+
+### If you remember only one thing:
+Mutating an object modifies its data in place across all variables sharing that memory address; prefer returning new objects with `{ ...original, key: value }` to prevent accidental side effects.
+
+---
+
 # 10. OBJECT COPYING
 
-When duplicating objects, JavaScript provides several distinct strategies with varying performance, shallow vs deep guarantees, and memory behaviors:
+### What is it?
+Object copying means creating a new object that duplicates the data of an existing object. JavaScript supports two levels of copying: shallow copying (which duplicates only the top-level properties) and deep copying (which recursively duplicates all nested objects and arrays).
 
-```text
-METHOD                 COPY TYPE      PRESERVES PROTOTYPE?  HANDLES NESTED?  CIRCULAR REFS?
-Assignment (=)         No Copy (Ref)  N/A                   N/A              N/A
-Spread ({...obj})      Shallow        ❌ No (Becomes Object) ❌ By Reference  ❌ N/A
-Object.assign({}, obj) Shallow        ❌ No (Becomes Object) ❌ By Reference  ❌ N/A
-structuredClone(obj)   Deep           ❌ No (Plain clone)   ✅ Full Clone    ✅ Supported!
-JSON stringify/parse   Deep (Lossy)   ❌ No                 ✅ Full Clone    ❌ Crashes!
+Here are the key technical terms used in this topic:
+- A shallow copy duplicates top-level properties; any nested objects remain shared by reference.
+- A deep copy creates a completely independent clone of an object and all of its nested objects and arrays.
+- `structuredClone()` is the modern built-in JavaScript function for creating deep copies.
+- Lossy serialization is converting data into a format (like JSON) where certain data types (like functions or `undefined`) are lost or altered.
+
+---
+
+### Why does it exist?
+Because variables hold references rather than independent copies of objects, writing `const b = a` creates another pointer to the same object, not a duplicate.
+
+To work with an object without modifying the original, you must explicitly create a copy. Shallow copying is fast and suitable for flat objects, while deep copying is necessary when dealing with nested structures.
+
+---
+
+### Basic example and explanation
+
+```javascript
+const original = {
+  name: "Settings",
+  options: { volume: 80 }
+};
+
+// 1. Shallow copy
+const shallow = { ...original };
+
+// 2. Deep copy
+const deep = structuredClone(original);
+
+// Modifying the nested object
+shallow.options.volume = 90;
+console.log(original.options.volume);
+console.log(deep.options.volume);
 ```
+
+Output:
+```text
+90
+80
+```
+
+How this code runs, step by step:
+
+First, we create an object named `original` containing a nested object under `options`.
+
+Next, we create `shallow` using `{ ...original }`. This copies the top-level property `name`. For `options`, it copies the reference address pointing to the inner object. Both `original.options` and `shallow.options` point to the same memory address.
+
+Then, we create `deep` using `structuredClone(original)`. This recursively allocates brand new memory for both the outer object and the inner `options` object.
+
+Next, we write `shallow.options.volume = 90`. Because `shallow.options` shares its memory address with `original.options`, `original.options.volume` becomes `90`.
+
+Finally, we inspect `deep.options.volume`. Because `deep` has its own isolated copy of `options` in memory, its `volume` remains unchanged at `80`.
+
+---
+
+### How it works inside JavaScript
+
+1. Assignment (`const b = a`): Copies only the 64-bit reference address. Zero new objects are allocated.
+2. Shallow copy (`{ ...a }` or `Object.assign({}, a)`): Allocates one new object on the heap and copies each top-level key-value pair. Primitive values are copied by value; object values are copied by reference.
+3. Deep copy (`structuredClone(a)`): Traverses the entire tree of properties. For every object and array found, it allocates a new heap record and copies the primitive values inside. It also handles circular references safely.
+
+---
+
+### Comparing object copying methods
+
+| Method | Copy Depth | Preserves Nested Objects? | Handles Circular References? | Built-in Support |
+| :--- | :--- | :--- | :--- | :--- |
+| Assignment (`=`) | None (Reference copy) | Shared | N/A | All versions |
+| Spread `{ ...obj }` | Shallow | Shared | N/A | ES2018+ |
+| `Object.assign({}, obj)` | Shallow | Shared | N/A | ES2015+ |
+| `structuredClone(obj)` | Deep | Fully Cloned | Yes | Modern browsers & Node.js 17+ |
+| `JSON.parse(JSON.stringify(obj))` | Deep (Lossy) | Fully Cloned | No (Throws error) | ES5+ (Drops functions/undefined) |
+
+---
+
+### Think first
+
+What do you think this code prints? Decide first before checking below.
+
+```javascript
+const user = {
+  name: "Morgan",
+  scores: [10, 20]
+};
+
+const clone = { ...user };
+clone.name = "Sam";
+clone.scores.push(30);
+
+console.log(user.name);
+console.log(user.scores);
+```
+
+---
+
+Result:
+```text
+Morgan
+[ 10, 20, 30 ]
+```
+
+Why:
+- `name` is a top-level primitive string. The spread operator copies it independently. Mutating `clone.name` does not affect `user.name`.
+- `scores` is an array (an object). The spread operator copies only its reference address. Calling `push` mutates the shared array in memory, so `user.scores` sees the new element `30`.
+
+---
+
+### More examples: from easy to harder
+
+#### Example 1: Shallow copying with `Object.assign`
+`Object.assign` is the pre-ES2018 way to create a shallow copy.
+
+```javascript
+const config = { host: "localhost", port: 3000 };
+const copy = Object.assign({}, config);
+
+copy.port = 4000;
+console.log(config.port);
+console.log(copy.port);
+```
+
+Output:
+```text
+3000
+4000
+```
+
+Explanation:
+- `Object.assign({}, config)` copies properties from `config` into the empty target object `{}`.
+- Because `port` is a primitive number, `config.port` remains `3000`.
+
+#### Example 2: The limitations of JSON deep cloning
+Before `structuredClone`, developers used `JSON.parse(JSON.stringify(obj))`. It has major limitations:
+
+```javascript
+const record = {
+  title: "Draft",
+  date: new Date(),
+  missing: undefined,
+  action: () => "save"
+};
+
+const jsonClone = JSON.parse(JSON.stringify(record));
+console.log(typeof jsonClone.date);
+console.log(jsonClone.missing);
+console.log(jsonClone.action);
+```
+
+Output:
+```text
+string
+undefined
+undefined
+```
+
+Explanation:
+- `Date` objects are converted to ISO strings (`typeof date` becomes `"string"`, losing the `Date` methods).
+- Properties with `undefined` or functions are completely removed during JSON serialization.
+- Prefer `structuredClone()` for reliable deep copying.
+
+---
+
+### Common mistakes
+
+#### Mistake 1: Assuming spread creates a deep copy
+Wrong code:
+```javascript
+const profile = {
+  details: { age: 25 }
+};
+
+const profileCopy = { ...profile };
+profileCopy.details.age = 30;
+
+console.log(profile.details.age); // Prints 30!
+```
+
+Why it happens:
+Spread `{ ...profile }` is shallow. The `details` object is shared.
+
+Correct code:
+Use `structuredClone` for nested data:
+```javascript
+const profile = {
+  details: { age: 25 }
+};
+
+const profileCopy = structuredClone(profile);
+profileCopy.details.age = 30;
+
+console.log(profile.details.age);
+console.log(profileCopy.details.age);
+```
+
+Output:
+```text
+25
+30
+```
+
+---
+
+### Try it yourself
+Create an object `book = { title: "JS Guide", metadata: { pages: 300 } }`. Create a deep copy using `structuredClone`. Modify `pages` in the copy to `350`. Confirm that the original still has `300`.
+
+---
+
+### Rules to remember
+1. Assignment (`=`) never copies an object; it copies only the memory reference.
+2. The spread operator `{ ...obj }` and `Object.assign({}, obj)` create shallow copies.
+3. In a shallow copy, nested objects and arrays are shared by reference between original and copy.
+4. Use `structuredClone(obj)` for a true, independent deep copy of nested structures.
+5. Avoid `JSON.parse(JSON.stringify(obj))` for deep copies because it strips functions and `undefined`, and turns `Date` objects into strings.
+
+---
+
+### Exercises
+
+#### Question 1 (Predict the output)
+What will this code print to the console?
+```javascript
+const original = {
+  tags: ["code"],
+  level: 1
+};
+
+const shallow = { ...original };
+const deep = structuredClone(original);
+
+shallow.tags.push("web");
+shallow.level = 2;
+
+console.log(original.tags.length);
+console.log(original.level);
+console.log(deep.tags.length);
+```
+
+#### Question 2 (Find and fix the bug)
+The function below attempts to clone a user object, but changes to `user.preferences` in the clone mutate the original. Fix it.
+```javascript
+function cloneUser(user) {
+  return { ...user };
+}
+```
+
+#### Question 3 (Write code from scratch)
+Write a function `safeCloneSettings(settings)` that creates a completely isolated deep copy of `settings` using `structuredClone`, updates `copy.isModified = true`, and returns the copy.
+
+#### Question 4 (Explain in your own words)
+Explain the difference between a shallow copy and a deep copy in terms of memory addresses.
+
+---
+
+### Solutions
+
+#### Solution for Question 1
+- Hint 1: What happened to `original.tags` when `shallow.tags.push` was called?
+- Hint 2: Did `deep.tags` share the memory address with `original.tags`?
+
+Answer:
+```text
+2
+1
+1
+```
+Explanation: `shallow.tags` shares the array reference with `original.tags`, so adding `"web"` increases `original.tags.length` to `2`. `shallow.level` is a primitive, so `original.level` remains `1`. `deep.tags` is completely independent, so its length is `1`.
+
+---
+
+#### Solution for Question 2
+- Hint 1: `user` contains nested data.
+- Hint 2: Use `structuredClone`.
+
+Corrected code:
+```javascript
+function cloneUser(user) {
+  return structuredClone(user);
+}
+```
+
+---
+
+#### Solution for Question 3
+- Hint 1: Call `structuredClone(settings)` first.
+- Hint 2: Add `isModified = true` to the cloned object and return it.
+
+Code:
+```javascript
+function safeCloneSettings(settings) {
+  const copy = structuredClone(settings);
+  copy.isModified = true;
+  return copy;
+}
+
+const original = { theme: "dark", audio: { volume: 50 } };
+const updated = safeCloneSettings(original);
+
+console.log(original.isModified); // undefined
+console.log(updated.isModified);  // true
+```
+
+---
+
+#### Solution for Question 4
+- Hint 1: How many memory allocations occur in a shallow copy versus a deep copy?
+- Hint 2: What happens to nested memory addresses?
+
+Explanation:
+A shallow copy allocates a new memory address only for the outermost object. All nested objects and arrays retain their original memory addresses, meaning both the original and the copy point to the same nested records in memory. A deep copy allocates new memory addresses for the outer object AND every nested object and array inside it, ensuring that no memory addresses are shared between the two structures.
+
+---
+
+### Recall
+1. Does `{ ...obj }` create a shallow copy or a deep copy?
+2. What modern JavaScript function creates a deep copy of an object?
+3. What happens to a property containing `undefined` when using `JSON.stringify`?
+
+---
+
+### If you remember only one thing:
+Shallow copies (`{ ...obj }`) duplicate only the outer object while sharing nested objects by reference; use `structuredClone(obj)` whenever you need a completely independent copy of nested data.
+
+---
+
+### Checkpoint Challenge: Topics 6 to 10
+
+This checkpoint challenge tests existence checking, reference sharing, object identity, mutation side-effects, and deep copying.
+
+#### Challenge Task
+Write a function named `cloneAndVerifyUser(originalUser, updateKey, updateValue)` that performs the following steps:
+1. Verifies if `updateKey` exists on `originalUser` using `Object.hasOwn`. If it does NOT exist, throw an `Error("Invalid key")`.
+2. Creates a completely isolated deep copy of `originalUser` using `structuredClone`.
+3. Mutates the property specified by `updateKey` on the deep copy to `updateValue`.
+4. Adds a property `isDeepClone: true` to the deep copy.
+5. Verifies that `originalUser !== copy` and that modifying the copy did NOT alter `originalUser`.
+6. Returns an object `{ original: originalUser, copy: copy }`.
+
+---
+
+#### Solutions for Checkpoint Challenge
+
+- Hint 1: Use `if (!Object.hasOwn(originalUser, updateKey)) throw new Error("Invalid key");`.
+- Hint 2: Use `structuredClone(originalUser)` to ensure nested properties are not shared.
+
+Code:
+```javascript
+function cloneAndVerifyUser(originalUser, updateKey, updateValue) {
+  // 1. Verify existence
+  if (!Object.hasOwn(originalUser, updateKey)) {
+    throw new Error("Invalid key");
+  }
+
+  // 2. Create deep copy
+  const copy = structuredClone(originalUser);
+
+  // 3. Mutate copy
+  copy[updateKey] = updateValue;
+
+  // 4. Add isDeepClone flag
+  copy.isDeepClone = true;
+
+  // 5. Return both
+  return {
+    original: originalUser,
+    copy
+  };
+}
+
+// Verification:
+const original = { id: 1, profile: { theme: "light" } };
+const result = cloneAndVerifyUser(original, "profile", { theme: "dark" });
+
+console.log(result.original.profile.theme); // "light" (Unchanged!)
+console.log(result.copy.profile.theme);     // "dark" (Updated!)
+console.log(result.original === result.copy); // false (Distinct identities!)
+```
+
+Output:
+```text
+light
+dark
+false
+```
+
+Explanation:
+- `Object.hasOwn` safely confirms that `updateKey` is an own property of `originalUser`.
+- `structuredClone` creates fully isolated heap records for both outer and nested objects.
+- Updating `copy[updateKey]` does not leak changes into `originalUser`.
+- Comparing `result.original === result.copy` evaluates to `false`, confirming distinct memory identities.
 
 ---
 

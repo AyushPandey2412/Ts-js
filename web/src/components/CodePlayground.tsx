@@ -3,12 +3,16 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { getDefaultSnippet } from '@/lib/code-snippets';
 
+export type DockPosition = 'right' | 'bottom' | 'embedded' | 'fullscreen';
+
 interface CodePlaygroundProps {
   slug: string;
   moduleTitle: string;
+  dockPosition?: DockPosition;
+  onDockChange?: (position: DockPosition) => void;
   isOpen?: boolean;
   onClose?: () => void;
-  embedded?: boolean;
+  isMobile?: boolean;
 }
 
 interface ConsoleOutputItem {
@@ -21,9 +25,11 @@ interface ConsoleOutputItem {
 export default function CodePlayground({
   slug,
   moduleTitle,
+  dockPosition = 'right',
+  onDockChange,
   isOpen = true,
   onClose,
-  embedded = false,
+  isMobile = false,
 }: CodePlaygroundProps) {
   const isTs = slug.startsWith('ts-');
   const defaultSnippet = getDefaultSnippet(slug, moduleTitle);
@@ -42,10 +48,11 @@ export default function CodePlayground({
 
   const [isDirty, setIsDirty] = useState(false);
   const [isRunning, setIsRunning] = useState(false);
-  const [isCollapsed, setIsCollapsed] = useState(false);
   const [output, setOutput] = useState<ConsoleOutputItem[]>([]);
   const [executionTime, setExecutionTime] = useState<number | null>(null);
-  const [viewMode, setViewMode] = useState<'docked' | 'fullscreen'>('docked');
+
+  // Mobile sub-tab: 'editor' vs 'terminal'
+  const [mobileTab, setMobileTab] = useState<'editor' | 'terminal'>('editor');
 
   const editorRef = useRef<HTMLTextAreaElement>(null);
   const terminalEndRef = useRef<HTMLDivElement>(null);
@@ -143,8 +150,6 @@ export default function CodePlayground({
 
   // Code Execution Engine
   const executeCode = useCallback(async () => {
-    // If collapsed, expand to show running code
-    setIsCollapsed(false);
     setIsRunning(true);
     const newLogs: ConsoleOutputItem[] = [];
     const startTime = performance.now();
@@ -171,10 +176,7 @@ export default function CodePlayground({
     };
 
     try {
-      // 1. Transpile TS if applicable
       const runnableJs = isTs ? transpileTypeScriptToJavaScript(code) : code;
-
-      // 2. Wrap in async context to support top-level await & return values
       const wrappedCode = `
         return (async (console) => {
           "use strict";
@@ -182,7 +184,6 @@ export default function CodePlayground({
         })(customConsole);
       `;
 
-      // 3. Execute
       const runnerFn = new Function('customConsole', wrappedCode);
       const evalResult = await runnerFn(customConsole);
 
@@ -192,15 +193,23 @@ export default function CodePlayground({
 
       const duration = Number((performance.now() - startTime).toFixed(1));
       setExecutionTime(duration);
+
+      // On mobile, automatically show the terminal tab on run so user sees results
+      if (isMobile) {
+        setMobileTab('terminal');
+      }
     } catch (err: any) {
       pushItem('error', `Execution Error: ${err.message || String(err)}`);
       if (err.stack) {
         pushItem('error', err.stack);
       }
+      if (isMobile) {
+        setMobileTab('terminal');
+      }
     } finally {
       setIsRunning(false);
     }
-  }, [code, isTs]);
+  }, [code, isTs, isMobile]);
 
   // Handle keyboard shortcut: Ctrl+Enter or Cmd+Enter to run
   useEffect(() => {
@@ -215,12 +224,11 @@ export default function CodePlayground({
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [executeCode]);
 
-  // Code editor keyboard enhancements (Tab key & auto-indent)
+  // Code editor keyboard enhancements
   const handleEditorKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     const textarea = e.currentTarget;
     const { selectionStart, selectionEnd, value } = textarea;
 
-    // Tab key: insert 2 spaces
     if (e.key === 'Tab') {
       e.preventDefault();
       const updated = value.substring(0, selectionStart) + '  ' + value.substring(selectionEnd);
@@ -231,13 +239,10 @@ export default function CodePlayground({
       return;
     }
 
-    // Auto-indent on Enter
     if (e.key === 'Enter') {
       const lineBefore = value.substring(0, selectionStart).split('\n').pop() || '';
       const match = lineBefore.match(/^(\s+)/);
       const indent = match ? match[1] : '';
-
-      // Extra indent if line ends with { or ( or [
       const extraIndent = /[{(\[]\s*$/.test(lineBefore) ? '  ' : '';
 
       if (indent || extraIndent) {
@@ -252,28 +257,37 @@ export default function CodePlayground({
     }
   };
 
-  // Generate line numbers
   const lineCount = Math.max(1, code.split('\n').length);
   const lineNumbers = Array.from({ length: lineCount }, (_, i) => i + 1);
 
-  if (!embedded && !isOpen) return null;
+  if (!isOpen) return null;
 
-  const isFullscreen = viewMode === 'fullscreen';
+  const isFullscreen = dockPosition === 'fullscreen';
 
-  const containerClasses = isFullscreen
-    ? 'fixed inset-0 z-50 w-screen h-screen flex flex-col bg-[#1e1e1e] text-slate-200'
-    : embedded
-    ? `w-full rounded-xl border border-slate-700 bg-[#1e1e1e] text-slate-200 shadow-2xl overflow-hidden my-6 transition-all duration-200 flex flex-col ${
-        isCollapsed ? 'h-auto' : 'h-[520px] md:h-[560px]'
-      }`
-    : 'fixed z-50 bottom-0 left-0 right-0 md:left-72 h-[68vh] md:h-[62vh] rounded-t-xl transition-all duration-200 shadow-2xl flex flex-col border border-slate-700 bg-[#1e1e1e] text-slate-200';
+  // Dynamic container styling based on dock position
+  let containerClasses = 'flex flex-col bg-[#1e1e1e] text-slate-200 overflow-hidden';
+  if (isFullscreen) {
+    containerClasses += ' fixed inset-0 z-50 w-screen h-screen';
+  } else if (dockPosition === 'embedded') {
+    containerClasses += ' w-full rounded-xl border border-slate-700 shadow-2xl h-[520px] md:h-[560px] my-6';
+  } else if (dockPosition === 'bottom') {
+    containerClasses += ' w-full h-full border-t-2 border-blue-500/60 shadow-2xl';
+  } else {
+    // Default 'right' split
+    containerClasses += ' w-full h-full border-l border-slate-700 shadow-2xl';
+  }
+
+  // Determine split direction:
+  // If docked right and screen is narrow or split, stack Editor top / Terminal bottom for readability.
+  // If docked bottom, embedded, or fullscreen, split Editor left / Terminal right.
+  const isStackedSplit = dockPosition === 'right';
 
   return (
     <div className={containerClasses}>
       {/* VS Code Titlebar & Window Controls */}
-      <div className="bg-[#252526] px-3 py-2 border-b border-[#333333] flex items-center justify-between select-none shrink-0">
+      <div className="bg-[#252526] px-3 py-2 border-b border-[#333333] flex items-center justify-between select-none shrink-0 gap-2">
         <div className="flex items-center space-x-2 truncate">
-          {/* File Tab pill */}
+          {/* File Tab Pill */}
           <div className="flex items-center space-x-2 bg-[#1e1e1e] border-t-2 border-blue-500 px-3 py-1 rounded-t text-xs font-mono text-white shadow-xs">
             <span
               className={`text-[10px] font-bold px-1 rounded ${
@@ -286,13 +300,40 @@ export default function CodePlayground({
             {isDirty && <span className="w-1.5 h-1.5 rounded-full bg-blue-400" title="Unsaved changes" />}
           </div>
 
-          <span className="text-[11px] text-slate-400 hidden sm:inline truncate">
-            — <strong className="text-white">Interactive VS Code Sandbox:</strong> {moduleTitle}
+          <span className="text-[11px] text-slate-400 hidden xl:inline truncate">
+            — <strong className="text-white">VS Code Sandbox</strong>
           </span>
         </div>
 
-        {/* Action Controls */}
-        <div className="flex items-center space-x-1.5">
+        {/* Center Mobile Tabs (Only on small screens) */}
+        <div className="flex md:hidden items-center bg-[#181818] p-0.5 rounded border border-[#333333]">
+          <button
+            onClick={() => setMobileTab('editor')}
+            className={`px-2 py-0.5 rounded text-[11px] font-mono transition-colors ${
+              mobileTab === 'editor'
+                ? 'bg-blue-600 text-white font-bold'
+                : 'text-slate-400 hover:text-white'
+            }`}
+          >
+            Code
+          </button>
+          <button
+            onClick={() => setMobileTab('terminal')}
+            className={`px-2 py-0.5 rounded text-[11px] font-mono transition-colors flex items-center space-x-1 ${
+              mobileTab === 'terminal'
+                ? 'bg-blue-600 text-white font-bold'
+                : 'text-slate-400 hover:text-white'
+            }`}
+          >
+            <span>Console</span>
+            {output.length > 0 && (
+              <span className="text-[9px] bg-slate-700 px-1 rounded">{output.length}</span>
+            )}
+          </button>
+        </div>
+
+        {/* Action Controls & Dock Switcher */}
+        <div className="flex items-center space-x-1.5 shrink-0">
           {/* Run Code Button */}
           <button
             onClick={executeCode}
@@ -301,8 +342,8 @@ export default function CodePlayground({
             title="Execute code (Ctrl + Enter)"
           >
             <span>{isRunning ? '⏳' : '▶'}</span>
-            <span>Run Code</span>
-            <kbd className="hidden md:inline text-[9px] bg-emerald-800/80 px-1 py-0.2 rounded font-mono text-emerald-200">
+            <span className="hidden sm:inline">Run</span>
+            <kbd className="hidden lg:inline text-[9px] bg-emerald-800/80 px-1 py-0.2 rounded font-mono text-emerald-200">
               Ctrl+↵
             </kbd>
           </button>
@@ -311,7 +352,7 @@ export default function CodePlayground({
           <button
             onClick={handleReset}
             className="px-2 py-1 bg-[#2d2d2d] hover:bg-[#3d3d3d] text-slate-300 hover:text-white rounded text-xs transition-colors border border-slate-700"
-            title="Reset to module code template"
+            title="Reset code template"
           >
             Reset
           </button>
@@ -322,35 +363,65 @@ export default function CodePlayground({
             className="px-2 py-1 bg-[#2d2d2d] hover:bg-[#3d3d3d] text-slate-300 hover:text-white rounded text-xs transition-colors border border-slate-700 hidden sm:inline-block"
             title="Clear console output"
           >
-            Clear Log
+            Clear
           </button>
 
-          {/* Collapse / Expand Toggle for Embedded Mode */}
-          {embedded && !isFullscreen && (
-            <button
-              onClick={() => setIsCollapsed(!isCollapsed)}
-              className="px-2 py-1 rounded bg-[#2d2d2d] hover:bg-[#3d3d3d] text-slate-300 hover:text-white text-xs border border-slate-700 transition-colors flex items-center space-x-1"
-              title={isCollapsed ? 'Expand code editor' : 'Collapse code editor'}
-            >
-              <span>{isCollapsed ? '▼ Expand' : '▲ Collapse'}</span>
-            </button>
+          {/* Desktop Dock Position Switcher (Chrome DevTools / VS Code style) */}
+          {onDockChange && (
+            <div className="hidden md:flex items-center bg-[#181818] p-0.5 rounded border border-[#333333] space-x-0.5">
+              <button
+                onClick={() => onDockChange('right')}
+                className={`px-1.5 py-0.5 rounded text-[10.5px] font-mono transition-colors ${
+                  dockPosition === 'right'
+                    ? 'bg-blue-600 text-white font-bold'
+                    : 'text-slate-400 hover:text-white hover:bg-[#2d2d2d]'
+                }`}
+                title="Split Right: Read on Left, Code on Right"
+              >
+                ◧ Right
+              </button>
+              <button
+                onClick={() => onDockChange('bottom')}
+                className={`px-1.5 py-0.5 rounded text-[10.5px] font-mono transition-colors ${
+                  dockPosition === 'bottom'
+                    ? 'bg-blue-600 text-white font-bold'
+                    : 'text-slate-400 hover:text-white hover:bg-[#2d2d2d]'
+                }`}
+                title="Dock Bottom: Read on Top, Code on Bottom"
+              >
+                ⬒ Bottom
+              </button>
+              <button
+                onClick={() => onDockChange('embedded')}
+                className={`px-1.5 py-0.5 rounded text-[10.5px] font-mono transition-colors ${
+                  dockPosition === 'embedded'
+                    ? 'bg-blue-600 text-white font-bold'
+                    : 'text-slate-400 hover:text-white hover:bg-[#2d2d2d]'
+                }`}
+                title="Inline in Textbook"
+              >
+                ⊟ Inline
+              </button>
+              <button
+                onClick={() => onDockChange(isFullscreen ? 'right' : 'fullscreen')}
+                className={`px-1.5 py-0.5 rounded text-[10.5px] font-mono transition-colors ${
+                  isFullscreen
+                    ? 'bg-blue-600 text-white font-bold'
+                    : 'text-slate-400 hover:text-white hover:bg-[#2d2d2d]'
+                }`}
+                title="Toggle Fullscreen IDE"
+              >
+                {isFullscreen ? '⤡ Exit' : '⤢ Full'}
+              </button>
+            </div>
           )}
 
-          {/* View Mode Toggle (Fullscreen IDE) */}
-          <button
-            onClick={() => setViewMode(isFullscreen ? 'docked' : 'fullscreen')}
-            className="p-1 px-2 rounded bg-[#2d2d2d] hover:bg-[#3d3d3d] text-slate-300 hover:text-white text-xs border border-slate-700 transition-colors flex items-center space-x-1"
-            title={isFullscreen ? 'Exit Fullscreen' : 'Expand to Fullscreen IDE'}
-          >
-            <span>{isFullscreen ? '⤡ Exit' : '⤢ Fullscreen'}</span>
-          </button>
-
-          {/* Close Button (Modal mode only) */}
-          {!embedded && onClose && (
+          {/* Close button if provided */}
+          {onClose && (
             <button
               onClick={onClose}
               className="p-1 px-2 rounded bg-[#2d2d2d] hover:bg-rose-900/80 text-slate-400 hover:text-white text-xs font-bold border border-slate-700 transition-colors"
-              title="Close playground"
+              title="Close code runner"
             >
               ✕
             </button>
@@ -358,140 +429,144 @@ export default function CodePlayground({
         </div>
       </div>
 
-      {/* When Collapsed in Embedded Mode */}
-      {embedded && isCollapsed && !isFullscreen ? (
-        <div className="p-3 bg-[#1e1e1e] flex items-center justify-between text-xs text-slate-400 select-none">
-          <div className="flex items-center space-x-2">
-            <span className="w-2 h-2 rounded-full bg-emerald-400"></span>
-            <span>VS Code Sandbox minimized. Click <strong>Expand</strong> or <strong>Run Code</strong> to evaluate code.</span>
+      {/* Editor & Console Split Workspace */}
+      <div
+        className={`flex-1 flex overflow-hidden min-h-0 ${
+          isStackedSplit ? 'flex-col' : 'flex-col md:flex-row'
+        }`}
+      >
+        {/* Editor Area */}
+        <div
+          className={`flex flex-col bg-[#1e1e1e] overflow-hidden min-h-0 ${
+            // On mobile: toggle between editor and terminal
+            mobileTab !== 'editor' ? 'hidden md:flex' : 'flex'
+          } ${
+            isStackedSplit
+              ? 'flex-1 border-b border-[#333333]'
+              : 'flex-1 border-b md:border-b-0 md:border-r border-[#333333]'
+          }`}
+        >
+          <div className="flex-1 flex overflow-hidden min-h-0">
+            {/* Line Numbers Gutter */}
+            <div className="w-10 sm:w-12 bg-[#1e1e1e] text-[#858585] text-right pr-2 sm:pr-3 select-none font-mono text-xs pt-3 leading-6 border-r border-[#2d2d2d]/60 shrink-0 overflow-hidden">
+              {lineNumbers.map((num) => (
+                <div key={num}>{num}</div>
+              ))}
+            </div>
+
+            {/* Code Textarea with VS Code Font & Indentation */}
+            <textarea
+              ref={editorRef}
+              value={code}
+              onChange={(e) => handleCodeChange(e.target.value)}
+              onKeyDown={handleEditorKeyDown}
+              spellCheck={false}
+              autoCapitalize="none"
+              autoComplete="off"
+              className="flex-1 h-full p-3 bg-transparent text-[#d4d4d4] font-mono text-xs sm:text-sm leading-6 resize-none focus:outline-none placeholder-slate-600 whitespace-pre overflow-y-auto selection:bg-[#264f78]"
+              placeholder="Type your code here..."
+            />
           </div>
-          <button
-            onClick={() => setIsCollapsed(false)}
-            className="px-2.5 py-1 bg-slate-800 hover:bg-slate-700 text-slate-200 rounded font-semibold text-xs border border-slate-700 transition-colors"
-          >
-            Expand Sandbox &rarr;
-          </button>
         </div>
-      ) : (
-        <>
-          {/* Editor & Console Split Workspace */}
-          <div className="flex-1 flex flex-col md:flex-row overflow-hidden min-h-0">
-            {/* Left Side: VS Code Editor */}
-            <div className="flex-1 flex flex-col border-b md:border-b-0 md:border-r border-[#333333] overflow-hidden bg-[#1e1e1e]">
-              <div className="flex-1 flex overflow-hidden min-h-0">
-                {/* Line Numbers Gutter */}
-                <div className="w-12 bg-[#1e1e1e] text-[#858585] text-right pr-3 select-none font-mono text-xs pt-3 leading-6 border-r border-[#2d2d2d]/60 shrink-0 overflow-hidden">
-                  {lineNumbers.map((num) => (
-                    <div key={num}>{num}</div>
-                  ))}
-                </div>
 
-                {/* Code Textarea with VS Code Font & Indentation */}
-                <textarea
-                  ref={editorRef}
-                  value={code}
-                  onChange={(e) => handleCodeChange(e.target.value)}
-                  onKeyDown={handleEditorKeyDown}
-                  spellCheck={false}
-                  autoCapitalize="none"
-                  autoComplete="off"
-                  className="flex-1 h-full p-3 bg-transparent text-[#d4d4d4] font-mono text-xs sm:text-sm leading-6 resize-none focus:outline-none placeholder-slate-600 whitespace-pre overflow-y-auto selection:bg-[#264f78]"
-                  placeholder="Type your code here..."
-                />
-              </div>
-            </div>
-
-            {/* Right Side / Bottom: Integrated VS Code Debug Console */}
-            <div className="w-full md:w-[45%] flex flex-col bg-[#181818] overflow-hidden min-h-0">
-              {/* Console Header Bar */}
-              <div className="bg-[#202020] px-3 py-1.5 border-b border-[#2d2d2d] flex items-center justify-between text-xs font-mono text-slate-400 select-none shrink-0">
-                <div className="flex items-center space-x-2">
-                  <span className="text-[11px] font-bold text-white uppercase tracking-wider">
-                    TERMINAL / OUTPUT
-                  </span>
-                  <span className="text-[10px] bg-slate-800 px-1.5 py-0.2 rounded text-slate-300">
-                    {output.length} logs
-                  </span>
-                </div>
-
-                <div className="flex items-center space-x-2 text-[10px]">
-                  {executionTime !== null && (
-                    <span className="text-emerald-400">
-                      ⚡ {executionTime}ms
-                    </span>
-                  )}
-                  {isRunning && (
-                    <span className="text-amber-400 animate-pulse">
-                      ● Running...
-                    </span>
-                  )}
-                </div>
-              </div>
-
-              {/* Console Output Body */}
-              <div className="flex-1 overflow-y-auto p-3 font-mono text-xs space-y-1.5 leading-relaxed selection:bg-[#264f78] min-h-0">
-                {output.length === 0 ? (
-                  <div className="text-slate-500 text-xs italic py-6 text-center">
-                    Press <kbd className="px-1.5 py-0.5 rounded bg-slate-800 text-slate-300 border border-slate-700 font-sans">Run Code</kbd> or <kbd className="px-1.5 py-0.5 rounded bg-slate-800 text-slate-300 border border-slate-700 font-sans">Ctrl + Enter</kbd> to evaluate code.
-                  </div>
-                ) : (
-                  output.map((item) => {
-                    let badgeColor = 'text-slate-400';
-                    let contentClass = 'text-slate-200';
-
-                    if (item.type === 'error') {
-                      badgeColor = 'text-rose-400';
-                      contentClass = 'text-rose-300 bg-rose-950/20 p-1.5 rounded border border-rose-900/40';
-                    } else if (item.type === 'warn') {
-                      badgeColor = 'text-amber-400';
-                      contentClass = 'text-amber-200';
-                    } else if (item.type === 'return') {
-                      badgeColor = 'text-cyan-400';
-                      contentClass = 'text-cyan-300 font-semibold';
-                    } else if (item.type === 'table') {
-                      badgeColor = 'text-purple-400';
-                      contentClass = 'text-purple-200';
-                    }
-
-                    return (
-                      <div key={item.id} className="flex items-start space-x-2">
-                        <span className="text-[10px] text-slate-600 select-none shrink-0 pt-0.5">
-                          {item.timestamp}
-                        </span>
-                        <span className={`text-[10px] uppercase font-bold shrink-0 pt-0.5 ${badgeColor}`}>
-                          [{item.type}]
-                        </span>
-                        <div className={`flex-1 whitespace-pre-wrap break-all ${contentClass}`}>
-                          {item.messages.join(' ')}
-                        </div>
-                      </div>
-                    );
-                  })
-                )}
-                <div ref={terminalEndRef} />
-              </div>
-            </div>
-          </div>
-
-          {/* VS Code Bottom Status Bar */}
-          <div className="bg-[#007acc] px-3 py-1 flex items-center justify-between text-[11px] text-white font-mono select-none shrink-0">
-            <div className="flex items-center space-x-3">
-              <span className="font-bold flex items-center space-x-1">
-                <span>⚡</span>
-                <span>DevMastery V8 Sandbox</span>
+        {/* Integrated VS Code Debug Console / Terminal */}
+        <div
+          className={`flex flex-col bg-[#181818] overflow-hidden min-h-0 ${
+            // On mobile: toggle between editor and terminal
+            mobileTab !== 'terminal' ? 'hidden md:flex' : 'flex'
+          } ${
+            isStackedSplit
+              ? 'h-48 md:h-56'
+              : 'w-full md:w-[45%]'
+          }`}
+        >
+          {/* Console Header Bar */}
+          <div className="bg-[#202020] px-3 py-1.5 border-b border-[#2d2d2d] flex items-center justify-between text-xs font-mono text-slate-400 select-none shrink-0">
+            <div className="flex items-center space-x-2">
+              <span className="text-[11px] font-bold text-white uppercase tracking-wider">
+                TERMINAL / OUTPUT
               </span>
-              <span className="opacity-80 hidden sm:inline">UTF-8</span>
-              <span className="opacity-80">{isTs ? 'TypeScript 5.x' : 'ECMAScript 2024'}</span>
+              <span className="text-[10px] bg-slate-800 px-1.5 py-0.2 rounded text-slate-300">
+                {output.length} logs
+              </span>
             </div>
 
-            <div className="flex items-center space-x-3">
-              <span>Lines: {lineCount}</span>
-              <span className="opacity-80 hidden sm:inline">Spaces: 2</span>
-              <span>{isDirty ? '● Unsaved' : '✓ Saved'}</span>
+            <div className="flex items-center space-x-2 text-[10px]">
+              {executionTime !== null && (
+                <span className="text-emerald-400 font-semibold">
+                  ⚡ {executionTime}ms
+                </span>
+              )}
+              {isRunning && (
+                <span className="text-amber-400 animate-pulse font-semibold">
+                  ● Running...
+                </span>
+              )}
             </div>
           </div>
-        </>
-      )}
+
+          {/* Console Output Body */}
+          <div className="flex-1 overflow-y-auto p-3 font-mono text-xs space-y-1.5 leading-relaxed selection:bg-[#264f78] min-h-0">
+            {output.length === 0 ? (
+              <div className="text-slate-500 text-xs italic py-6 text-center">
+                Press <kbd className="px-1.5 py-0.5 rounded bg-slate-800 text-slate-300 border border-slate-700 font-sans">Run</kbd> or <kbd className="px-1.5 py-0.5 rounded bg-slate-800 text-slate-300 border border-slate-700 font-sans">Ctrl + Enter</kbd> to evaluate code.
+              </div>
+            ) : (
+              output.map((item) => {
+                let badgeColor = 'text-slate-400';
+                let contentClass = 'text-slate-200';
+
+                if (item.type === 'error') {
+                  badgeColor = 'text-rose-400';
+                  contentClass = 'text-rose-300 bg-rose-950/20 p-1.5 rounded border border-rose-900/40';
+                } else if (item.type === 'warn') {
+                  badgeColor = 'text-amber-400';
+                  contentClass = 'text-amber-200';
+                } else if (item.type === 'return') {
+                  badgeColor = 'text-cyan-400';
+                  contentClass = 'text-cyan-300 font-semibold';
+                } else if (item.type === 'table') {
+                  badgeColor = 'text-purple-400';
+                  contentClass = 'text-purple-200';
+                }
+
+                return (
+                  <div key={item.id} className="flex items-start space-x-2">
+                    <span className="text-[10px] text-slate-600 select-none shrink-0 pt-0.5">
+                      {item.timestamp}
+                    </span>
+                    <span className={`text-[10px] uppercase font-bold shrink-0 pt-0.5 ${badgeColor}`}>
+                      [{item.type}]
+                    </span>
+                    <div className={`flex-1 whitespace-pre-wrap break-all ${contentClass}`}>
+                      {item.messages.join(' ')}
+                    </div>
+                  </div>
+                );
+              })
+            )}
+            <div ref={terminalEndRef} />
+          </div>
+        </div>
+      </div>
+
+      {/* VS Code Bottom Status Bar */}
+      <div className="bg-[#007acc] px-3 py-1 flex items-center justify-between text-[11px] text-white font-mono select-none shrink-0">
+        <div className="flex items-center space-x-3">
+          <span className="font-bold flex items-center space-x-1">
+            <span>⚡</span>
+            <span>DevMastery V8 Sandbox</span>
+          </span>
+          <span className="opacity-80 hidden sm:inline">UTF-8</span>
+          <span className="opacity-80">{isTs ? 'TypeScript 5.x' : 'ECMAScript 2024'}</span>
+        </div>
+
+        <div className="flex items-center space-x-3">
+          <span>Lines: {lineCount}</span>
+          <span className="opacity-80 hidden sm:inline">Spaces: 2</span>
+          <span>{isDirty ? '● Unsaved' : '✓ Saved'}</span>
+        </div>
+      </div>
     </div>
   );
 }
