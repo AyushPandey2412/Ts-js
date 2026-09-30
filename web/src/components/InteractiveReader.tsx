@@ -4,7 +4,6 @@ import React, { useState, useEffect, useRef } from 'react';
 import Link from 'next/link';
 import type { ModuleMeta, TableOfContentsItem, ModuleNavigation } from '@/lib/modules';
 import TableOfContents from '@/components/TableOfContents';
-import CodePlayground, { type DockPosition } from '@/components/CodePlayground';
 
 interface Props {
   slug: string;
@@ -62,27 +61,6 @@ export default function InteractiveReader({ slug, meta, initialHtml, toc, naviga
     }
   });
   const [isEditMode, setIsEditMode] = useState(false);
-
-  // Desktop Split-screen & Docking state ('right' | 'bottom' | 'embedded' | 'fullscreen')
-  const [dockPosition, setDockPosition] = useState<DockPosition>(() => {
-    if (typeof window === 'undefined') return 'right';
-    try {
-      const saved = localStorage.getItem('devmastery_dock_position');
-      return (saved as DockPosition) || 'right';
-    } catch {
-      return 'right';
-    }
-  });
-
-  const handleDockChange = (newDock: DockPosition) => {
-    setDockPosition(newDock);
-    try {
-      localStorage.setItem('devmastery_dock_position', newDock);
-    } catch {}
-  };
-
-  // Mobile navigation tab: 'textbook' vs 'code'
-  const [mobileActiveTab, setMobileActiveTab] = useState<'textbook' | 'code'>('textbook');
 
   // Derived content
   const htmlContent = customHtml ?? initialHtml;
@@ -338,46 +316,6 @@ export default function InteractiveReader({ slug, meta, initialHtml, toc, naviga
           </div>
 
           <div className="flex items-center space-x-2">
-            {/* Desktop Docking / Split Switcher Pill */}
-            <div className="hidden md:flex items-center bg-slate-900 border border-slate-800 rounded-lg p-0.5 space-x-1 shadow-inner">
-              <span className="text-[10px] font-mono text-slate-500 uppercase px-1.5 font-semibold">
-                Layout:
-              </span>
-              <button
-                onClick={() => handleDockChange('right')}
-                className={`px-2 py-0.5 rounded text-[11px] font-mono font-medium transition-colors ${
-                  dockPosition === 'right'
-                    ? 'bg-blue-600 text-white font-bold shadow-xs'
-                    : 'text-slate-400 hover:text-white'
-                }`}
-                title="Split Right: Read on Left, Code on Right"
-              >
-                ◧ Split Right
-              </button>
-              <button
-                onClick={() => handleDockChange('bottom')}
-                className={`px-2 py-0.5 rounded text-[11px] font-mono font-medium transition-colors ${
-                  dockPosition === 'bottom'
-                    ? 'bg-blue-600 text-white font-bold shadow-xs'
-                    : 'text-slate-400 hover:text-white'
-                }`}
-                title="Dock Bottom: Read on Top, Code on Bottom"
-              >
-                ⬒ Bottom
-              </button>
-              <button
-                onClick={() => handleDockChange('embedded')}
-                className={`px-2 py-0.5 rounded text-[11px] font-mono font-medium transition-colors ${
-                  dockPosition === 'embedded'
-                    ? 'bg-blue-600 text-white font-bold shadow-xs'
-                    : 'text-slate-400 hover:text-white'
-                }`}
-                title="Inline inside textbook"
-              >
-                ⊟ Inline
-              </button>
-            </div>
-
             {hasCustomEdits && !isEditMode && (
               <button
                 onClick={resetDocumentEdits}
@@ -397,18 +335,6 @@ export default function InteractiveReader({ slug, meta, initialHtml, toc, naviga
           {meta.subtitle}
         </p>
       </div>
-
-      {/* If embedded mode: render CodePlayground right here in the page flow */}
-      {dockPosition === 'embedded' && (
-        <section id="code-playground" className="my-6 scroll-mt-20">
-          <CodePlayground
-            slug={slug}
-            moduleTitle={meta.title}
-            dockPosition="embedded"
-            onDockChange={handleDockChange}
-          />
-        </section>
-      )}
 
       {/* Edit Mode Notification Banner */}
       {isEditMode && (
@@ -550,123 +476,21 @@ export default function InteractiveReader({ slug, meta, initialHtml, toc, naviga
         </div>
       )}
 
-      {/* Mobile Top Switcher Bar (md:hidden) */}
-      <div className="md:hidden sticky top-0 z-40 bg-slate-900/95 backdrop-blur border-b border-slate-800 p-2.5 flex items-center justify-between">
-        <div className="flex bg-slate-800 p-1 rounded-xl w-full max-w-sm mx-auto shadow-inner">
-          <button
-            onClick={() => setMobileActiveTab('textbook')}
-            className={`flex-1 py-1.5 rounded-lg text-xs font-bold transition-all ${
-              mobileActiveTab === 'textbook'
-                ? 'bg-blue-600 text-white shadow-sm'
-                : 'text-slate-400 hover:text-white'
-            }`}
-          >
-            📖 Read Textbook
-          </button>
-          <button
-            onClick={() => setMobileActiveTab('code')}
-            className={`flex-1 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center justify-center space-x-1.5 ${
-              mobileActiveTab === 'code'
-                ? 'bg-emerald-600 text-white shadow-sm'
-                : 'text-slate-400 hover:text-white'
-            }`}
-          >
-            <span>⚡</span>
-            <span>VS Code Runner</span>
-          </button>
+      {/* Main Textbook Document with Fixed Right TOC */}
+      <div className="w-full min-h-screen lg:pr-72 relative">
+        <div id="main-content">
+          {renderTextbookContent()}
         </div>
+        <TableOfContents
+          toc={toc}
+          onToggleNotes={() => setIsNotesOpen(!isNotesOpen)}
+          isNotesOpen={isNotesOpen}
+          onToggleSticky={() => setIsStickyOpen(!isStickyOpen)}
+          isStickyOpen={isStickyOpen}
+          onToggleEdit={() => (isEditMode ? saveDocumentEdits() : setIsEditMode(true))}
+          isEditMode={isEditMode}
+        />
       </div>
-
-      {/* Mobile View Renderer */}
-      <div className="md:hidden">
-        {mobileActiveTab === 'code' ? (
-          <div className="h-[calc(100vh-60px)] flex flex-col bg-[#1e1e1e]">
-            <CodePlayground
-              slug={slug}
-              moduleTitle={meta.title}
-              isMobile={true}
-              dockPosition="fullscreen"
-            />
-          </div>
-        ) : (
-          <div className="min-h-screen">
-            {renderTextbookContent()}
-          </div>
-        )}
-      </div>
-
-      {/* Desktop View Renderer (md:block) */}
-      <div className="hidden md:block w-full h-full">
-        {dockPosition === 'right' ? (
-          /* Side-by-Side Split View: Textbook Left (50%), Code Right (50%) */
-          <div className="flex h-screen overflow-hidden">
-            <div id="main-content" className="flex-1 h-full overflow-y-auto min-w-0">
-              {renderTextbookContent()}
-            </div>
-            <div className="w-[48%] xl:w-[50%] h-full shrink-0 flex flex-col bg-[#1e1e1e] border-l border-slate-800 shadow-2xl">
-              <CodePlayground
-                slug={slug}
-                moduleTitle={meta.title}
-                dockPosition="right"
-                onDockChange={handleDockChange}
-              />
-            </div>
-          </div>
-        ) : dockPosition === 'bottom' ? (
-          /* Horizontal Split View: Textbook Top, Code Bottom */
-          <div className="flex flex-col h-screen overflow-hidden">
-            <div id="main-content" className="flex-1 overflow-y-auto min-w-0">
-              {renderTextbookContent()}
-            </div>
-            <div className="h-[46vh] min-h-[300px] shrink-0 border-t-2 border-blue-500/60 bg-[#1e1e1e] shadow-2xl">
-              <CodePlayground
-                slug={slug}
-                moduleTitle={meta.title}
-                dockPosition="bottom"
-                onDockChange={handleDockChange}
-              />
-            </div>
-          </div>
-        ) : dockPosition === 'fullscreen' ? (
-          /* Fullscreen IDE Mode */
-          <CodePlayground
-            slug={slug}
-            moduleTitle={meta.title}
-            dockPosition="fullscreen"
-            onDockChange={handleDockChange}
-          />
-        ) : (
-          /* Embedded In-Page Mode with Fixed TOC */
-          <div className="w-full min-h-screen lg:pr-72 relative">
-            <div id="main-content">
-              {renderTextbookContent()}
-            </div>
-            <TableOfContents
-              toc={toc}
-              onTogglePlayground={() => handleDockChange('right')}
-              isPlaygroundOpen={false}
-              onToggleNotes={() => setIsNotesOpen(!isNotesOpen)}
-              isNotesOpen={isNotesOpen}
-              onToggleSticky={() => setIsStickyOpen(!isStickyOpen)}
-              isStickyOpen={isStickyOpen}
-              onToggleEdit={() => (isEditMode ? saveDocumentEdits() : setIsEditMode(true))}
-              isEditMode={isEditMode}
-            />
-          </div>
-        )}
-      </div>
-
-      {/* Mobile Floating Button (Only when reading on mobile) */}
-      {mobileActiveTab === 'textbook' && (
-        <button
-          onClick={() => setMobileActiveTab('code')}
-          className="md:hidden fixed bottom-6 right-6 z-35 flex items-center space-x-2 px-4 py-3 rounded-full bg-emerald-600 hover:bg-emerald-500 active:bg-emerald-700 text-white font-bold text-xs shadow-2xl shadow-emerald-950/80 transition-all hover:scale-105 active:scale-95 cursor-pointer ring-2 ring-emerald-400/50"
-          title="Open VS Code Runner"
-        >
-          <span className="text-sm">⚡</span>
-          <span className="font-semibold tracking-wide">Run Code</span>
-        </button>
-      )}
 
       {/* Draggable Sticky Note Widget */}
       {isStickyOpen && (

@@ -12,8 +12,6 @@ interface Props {
   isStickyOpen?: boolean;
   onToggleEdit?: () => void;
   isEditMode?: boolean;
-  onTogglePlayground?: () => void;
-  isPlaygroundOpen?: boolean;
 }
 
 export default function TableOfContents({
@@ -24,8 +22,6 @@ export default function TableOfContents({
   isStickyOpen = false,
   onToggleEdit,
   isEditMode = false,
-  onTogglePlayground,
-  isPlaygroundOpen = false,
 }: Props) {
   const [filter, setFilter] = useState('');
   const [activeId, setActiveId] = useState<string>('');
@@ -202,21 +198,8 @@ export default function TableOfContents({
         {/* Fixed Header of TOC */}
         <div className="p-3 border-b border-slate-800 shrink-0 bg-slate-900">
           {/* Quick Study Action Tools Pinned at Top of Right Sidebar */}
-          {(onToggleNotes || onToggleSticky || onToggleEdit || onTogglePlayground) && (
-            <div className="grid grid-cols-5 gap-1 mb-3">
-              {onTogglePlayground && (
-                <button
-                  onClick={onTogglePlayground}
-                  className={`px-1 py-1 rounded text-[10px] font-medium border text-center transition-colors flex items-center justify-center space-x-0.5 ${
-                    isPlaygroundOpen
-                      ? 'bg-emerald-600 border-emerald-500 text-white font-semibold shadow-xs'
-                      : 'bg-emerald-950/60 border-emerald-800/80 text-emerald-400 hover:text-white hover:bg-emerald-900/60'
-                  }`}
-                  title="Open VS Code Playground & Code Runner"
-                >
-                  <span>▶ Run</span>
-                </button>
-              )}
+          {(onToggleNotes || onToggleSticky || onToggleEdit) && (
+            <div className="grid grid-cols-4 gap-1 mb-3">
               {onToggleNotes && (
                 <button
                   onClick={onToggleNotes}
