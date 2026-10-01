@@ -7,7 +7,7 @@ import SearchModal from './SearchModal';
 import Logo from './Logo';
 import type { SearchItem } from '@/lib/search-index';
 import { TECHNOLOGY_TRACKS } from '@/lib/tracks';
-import { JS_MODULES, TS_MODULES } from '@/lib/modules-meta';
+import { JS_MODULES, TS_MODULES, REACT_MODULES } from '@/lib/modules-meta';
 
 interface SidebarProps {
   searchIndex?: SearchItem[];
@@ -16,19 +16,22 @@ interface SidebarProps {
 export default function Sidebar({ searchIndex = [] }: SidebarProps) {
   const pathname = usePathname();
 
+  const isReactRoute = pathname.startsWith('/modules/react-') || pathname === '/tracks/react';
   const isTsRoute = pathname.startsWith('/modules/ts-') || pathname === '/tracks/typescript';
-  const isJsRoute = (pathname.startsWith('/modules/') && !pathname.startsWith('/modules/ts-')) || pathname === '/tracks/javascript';
+  const isJsRoute = (pathname.startsWith('/modules/') && !pathname.startsWith('/modules/ts-') && !pathname.startsWith('/modules/react-')) || pathname === '/tracks/javascript';
 
   const [isCollapsed, setIsCollapsed] = useState(false);
   const [isMobileOpen, setIsMobileOpen] = useState(false);
   const [isSearchOpen, setIsSearchOpen] = useState(false);
+  const [isReactOpen, setIsReactOpen] = useState(isReactRoute);
   const [isTsOpen, setIsTsOpen] = useState(isTsRoute);
   const [isJsOpen, setIsJsOpen] = useState(isJsRoute);
 
   useEffect(() => {
+    if (isReactRoute) setIsReactOpen(true);
     if (isTsRoute) setIsTsOpen(true);
     if (isJsRoute) setIsJsOpen(true);
-  }, [pathname, isTsRoute, isJsRoute]);
+  }, [pathname, isReactRoute, isTsRoute, isJsRoute]);
 
   // Global Ctrl+K / Cmd+K listener
   useEffect(() => {
@@ -292,6 +295,60 @@ export default function Sidebar({ searchIndex = [] }: SidebarProps) {
                 title="TypeScript Track (13 Modules)"
               >
                 TS
+              </Link>
+            </div>
+          )}
+
+          {/* Collapsible React Track Modules (7) */}
+          {!isCollapsed ? (
+            <div className="pt-3 border-t border-slate-800/60">
+              <button
+                onClick={() => setIsReactOpen(!isReactOpen)}
+                className="w-full flex items-center justify-between px-2 py-1 text-[10px] font-semibold uppercase tracking-wider text-slate-400 hover:text-slate-200 transition-colors"
+              >
+                <div className="flex items-center space-x-1.5">
+                  <span className="w-1.5 h-1.5 rounded-full bg-cyan-400"></span>
+                  <span>React Track ({REACT_MODULES.length})</span>
+                </div>
+                <span className="text-slate-500 font-mono text-xs font-bold">{isReactOpen ? '−' : '+'}</span>
+              </button>
+
+              {isReactOpen && (
+                <div className="mt-1 space-y-0.5 max-h-48 overflow-y-auto pr-1">
+                  {REACT_MODULES.map((m) => {
+                    const isCurrent = pathname === `/modules/${m.slug}`;
+                    return (
+                      <Link
+                        key={m.slug}
+                        href={`/modules/${m.slug}`}
+                        onClick={() => setIsMobileOpen(false)}
+                        className={`flex items-center justify-between px-2 py-1.5 rounded text-[11px] transition-all active:scale-[0.98] ${
+                          isCurrent
+                            ? 'bg-cyan-600/20 text-cyan-300 font-semibold border-l-2 border-cyan-400'
+                            : 'text-slate-400 hover:bg-slate-800/60 hover:text-slate-200'
+                        }`}
+                        title={m.title}
+                      >
+                        <span className="font-mono text-[9.5px] text-cyan-400 font-medium shrink-0 mr-1.5">
+                          {m.number}
+                        </span>
+                        <span className="truncate flex-1">{m.title}</span>
+                      </Link>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          ) : (
+            <div className="pt-2 border-t border-slate-800/60 flex flex-col items-center">
+              <Link
+                href="/tracks/react"
+                className={`w-9 h-6 flex items-center justify-center rounded text-[10px] font-mono font-bold transition-all ${
+                  isReactRoute ? 'bg-cyan-600 text-white' : 'text-cyan-400 hover:bg-slate-800'
+                }`}
+                title="React Track (7 Modules)"
+              >
+                RE
               </Link>
             </div>
           )}

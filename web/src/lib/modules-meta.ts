@@ -349,11 +349,82 @@ export const MODULES: ModuleMeta[] = [
     fileName: 'TS-12-RUNTIME-VALIDATION-AND-SCHEMA-SYNTHESIS.md',
     estimatedSections: 18,
     badge: 'TS Validation & ORMs'
+  },
+  {
+    id: 'react-00',
+    slug: 'react-00-queue-and-index',
+    number: 'REACT-00',
+    title: 'React Curriculum Queue & Architecture Index',
+    subtitle: 'Master Curriculum Roadmap, Fiber Mental Models, Double Buffering & 7-Module Runtime Progression',
+    fileName: 'REACT-00-QUEUE-AND-INDEX.md',
+    estimatedSections: 16,
+    badge: 'React Roadmap'
+  },
+  {
+    id: 'react-01',
+    slug: 'react-01-virtual-dom-and-fiber-architecture',
+    number: 'REACT-01',
+    title: 'Virtual DOM vs Fiber Architecture',
+    subtitle: 'Stack Reconciler Limitations, Fiber Node Anatomy, Singly-Linked List Traversal & Double-Buffering Mechanics',
+    fileName: 'REACT-01-VIRTUAL-DOM-AND-FIBER-ARCHITECTURE.md',
+    estimatedSections: 18,
+    badge: 'Fiber Architecture'
+  },
+  {
+    id: 'react-02',
+    slug: 'react-02-work-loop-concurrency-and-lanes',
+    number: 'REACT-02',
+    title: 'Work Loop, Concurrency & Priority Lanes',
+    subtitle: 'Cooperative Multitasking, MessageChannel Time-Slicing, 31-Bit Lane Bitmasks & Transition Interruptions',
+    fileName: 'REACT-02-WORK-LOOP-CONCURRENCY-AND-LANES.md',
+    estimatedSections: 18,
+    badge: 'Lanes & Scheduler'
+  },
+  {
+    id: 'react-03',
+    slug: 'react-03-hooks-internals-and-execution-model',
+    number: 'REACT-03',
+    title: 'Hooks Internals & Execution Model',
+    subtitle: 'Singly-Linked List Storage on memoizedState, Mount vs Update Dispatchers, Hook Rules & Stale Closures',
+    fileName: 'REACT-03-HOOKS-INTERNALS-AND-EXECUTION-MODEL.md',
+    estimatedSections: 18,
+    badge: 'Hooks Runtime'
+  },
+  {
+    id: 'react-04',
+    slug: 'react-04-synthetic-events-and-state-management',
+    number: 'REACT-04',
+    title: 'Synthetic Events & State Management',
+    subtitle: 'Root-Level Event Delegation, Automatic Batching Everywhere, Circular Update Queues & useSyncExternalStore',
+    fileName: 'REACT-04-SYNTHETIC-EVENTS-AND-STATE-MANAGEMENT.md',
+    estimatedSections: 18,
+    badge: 'Events & Batching'
+  },
+  {
+    id: 'react-05',
+    slug: 'react-05-react-server-components-and-streaming-ssr',
+    number: 'REACT-05',
+    title: 'React Server Components & Streaming SSR',
+    subtitle: 'RSC vs SSR, React Flight Protocol Wire Format, Suspense HTML Streaming & Server Actions',
+    fileName: 'REACT-05-REACT-SERVER-COMPONENTS-AND-STREAMING-SSR.md',
+    estimatedSections: 18,
+    badge: 'RSC & Streaming'
+  },
+  {
+    id: 'react-06',
+    slug: 'react-06-compiler-optimization-and-performance',
+    number: 'REACT-06',
+    title: 'Compiler Optimization & Performance',
+    subtitle: 'React Compiler (Forget) Reactive Scopes, List Diffing Mechanics, Index-as-Key Bug & Virtualization',
+    fileName: 'REACT-06-COMPILER-OPTIMIZATION-AND-PERFORMANCE.md',
+    estimatedSections: 18,
+    badge: 'Compiler & Profiling'
   }
 ];
 
-export const JS_MODULES: ModuleMeta[] = MODULES.filter((m) => !m.id.startsWith('ts-'));
+export const JS_MODULES: ModuleMeta[] = MODULES.filter((m) => !m.id.startsWith('ts-') && !m.id.startsWith('react-'));
 export const TS_MODULES: ModuleMeta[] = MODULES.filter((m) => m.id.startsWith('ts-'));
+export const REACT_MODULES: ModuleMeta[] = MODULES.filter((m) => m.id.startsWith('react-'));
 
 export interface ModuleNavigation {
   prev: ModuleMeta | null;

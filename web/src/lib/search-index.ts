@@ -57,10 +57,11 @@ export function getSearchIndex(): SearchItem[] {
     }
   }
 
-  // 2. Index All Active Curriculum Modules (JS & TS)
+  // 2. Index All Active Curriculum Modules (JS, TS & React)
   for (const m of MODULES) {
     const isTs = m.id.startsWith('ts-');
-    const prefix = isTs ? 'TS Module' : 'JS Module';
+    const isReact = m.id.startsWith('react-');
+    const prefix = isReact ? 'React' : isTs ? 'TS Module' : 'JS Module';
 
     items.push({
       id: m.slug,

@@ -172,7 +172,7 @@ const config = {
     port: 8080,
     host: "localhost"
   }
-};
+}; 
 
 console.log(config.server.port);
 console.log(config.server.host);

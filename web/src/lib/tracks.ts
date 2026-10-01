@@ -321,10 +321,10 @@ export const TECHNOLOGY_TRACKS: TechnologyTrack[] = [
     name: 'React Internals & Architecture',
     shortName: 'React',
     category: 'frameworks',
-    status: 'in-progress',
+    status: 'active',
     tagline: 'Fiber reconciler, concurrent scheduler, and modern frontend architecture.',
-    description: 'Understand how React works under the hood: Fiber node trees, lanes concurrency model, work loop, priority scheduling, hook state storage via linked lists, and React Server Components (RSC).',
-    badge: 'Curriculum In Progress',
+    description: 'Understand how React works under the hood: Fiber node trees, lanes concurrency model, work loop, priority scheduling, hook state storage via linked lists, React Server Components (RSC), and the React Compiler.',
+    badge: '7 Modules · React 19 Architecture',
     accentColor: 'cyan',
     topics: [
       'Fiber Tree Architecture',
@@ -335,34 +335,58 @@ export const TECHNOLOGY_TRACKS: TechnologyTrack[] = [
       'React Server Components (RSC)',
       'State Management Patterns',
       'Synthetic Event System',
-      'Performance Profiling'
+      'Compiler & Profiling'
     ],
     modulesCount: 7,
     syllabus: [
       {
-        title: '01: Virtual DOM vs Fiber Architecture',
-        description: 'Stack reconciler limitations, 2-phase render/commit model, and Fiber node pointers.',
-        status: 'in-progress'
+        title: '00: Curriculum Queue & Architecture Index',
+        description: 'Complete curriculum architecture, Fiber mental models, double buffering, and 7-module runtime progression.',
+        sectionsCount: 16,
+        status: 'available',
+        slug: 'react-00-queue-and-index'
       },
       {
-        title: '02: The React Work Loop & Priority Lanes',
-        description: 'MessageChannel time-slicing, cooperative multitasking, and transition interrupts.',
-        status: 'planned'
+        title: '01: Virtual DOM vs Fiber Architecture',
+        description: 'Stack reconciler limitations, Fiber node anatomy, singly-linked list traversal, and double-buffering mechanics.',
+        sectionsCount: 18,
+        status: 'available',
+        slug: 'react-01-virtual-dom-and-fiber-architecture'
+      },
+      {
+        title: '02: Work Loop, Concurrency & Priority Lanes',
+        description: 'Cooperative multitasking, MessageChannel time-slicing, 31-bit lane bitmasks, and transition interruptions.',
+        sectionsCount: 18,
+        status: 'available',
+        slug: 'react-02-work-loop-concurrency-and-lanes'
       },
       {
         title: '03: Hooks Internals & Execution Model',
-        description: 'How useState and useEffect maintain state across renders via circular linked lists.',
-        status: 'planned'
+        description: 'Singly-linked list storage on memoizedState, mount vs update dispatchers, hook rules, and stale closures.',
+        sectionsCount: 18,
+        status: 'available',
+        slug: 'react-03-hooks-internals-and-execution-model'
       },
       {
-        title: '04: Server Components (RSC) Architecture',
-        description: 'Wire format serialization, flight client, streaming SSR, and zero-bundle-size components.',
-        status: 'planned'
+        title: '04: Synthetic Events & State Management',
+        description: 'Root-level event delegation, automatic batching everywhere, circular update queues, and useSyncExternalStore.',
+        sectionsCount: 18,
+        status: 'available',
+        slug: 'react-04-synthetic-events-and-state-management'
       },
       {
-        title: '05: High-Performance Architecture',
-        description: 'Compiler optimizations, memoization strategies, virtualization, and web worker offloading.',
-        status: 'planned'
+        title: '05: React Server Components & Streaming SSR',
+        description: 'RSC vs SSR, React Flight protocol wire format, Suspense HTML streaming, and Server Actions.',
+        sectionsCount: 18,
+        status: 'available',
+        slug: 'react-05-react-server-components-and-streaming-ssr'
+      },
+      {
+        title: '06: Compiler Optimization & Performance',
+        description: 'React Compiler (Forget) reactive scopes, list diffing mechanics, index-as-key bug, and virtualization.',
+        sectionsCount: 18,
+        status: 'available',
+        slug: 'react-06-compiler-optimization-and-performance'
       }
     ]
   },

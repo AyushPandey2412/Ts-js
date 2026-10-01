@@ -110,6 +110,27 @@ export default async function TrackPage({ params }: Props) {
                 JavaScript Runtime Track &rarr;
               </Link>
             </>
+          ) : track.id === 'react' ? (
+            <>
+              <Link
+                href="/modules/react-00-queue-and-index"
+                className="inline-flex items-center justify-center px-4 py-2 bg-cyan-600 hover:bg-cyan-500 text-white text-xs font-semibold rounded transition-colors shadow-sm"
+              >
+                Curriculum Queue & Index &rarr;
+              </Link>
+              <Link
+                href="/modules/react-01-virtual-dom-and-fiber-architecture"
+                className="inline-flex items-center justify-center px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-semibold rounded border border-slate-700 transition-colors"
+              >
+                Start Chapter 01: Virtual DOM vs Fiber Architecture
+              </Link>
+              <Link
+                href="/tracks/typescript"
+                className="inline-flex items-center justify-center px-4 py-2 bg-slate-900 hover:bg-slate-800 text-cyan-400 text-xs font-semibold rounded border border-slate-800 transition-colors"
+              >
+                TypeScript Track &rarr;
+              </Link>
+            </>
           ) : (
             <>
               <div className="px-4 py-2 bg-slate-800/80 text-slate-300 text-xs font-semibold rounded border border-slate-700">
