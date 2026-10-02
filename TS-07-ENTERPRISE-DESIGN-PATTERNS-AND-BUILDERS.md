@@ -1,176 +1,1513 @@
 # Module TS-07: Enterprise Design Patterns, Generic Builders, & Reusable Architecture
 
-> **Track**: TypeScript Production Engineering Masterclass (TS 5.x)  
-> **Prerequisites**: [TS-00](file:///C:/Users/ayush/OneDrive/Desktop/js-learning/TS-00-QUEUE-AND-INDEX.md), [TS-01](file:///C:/Users/ayush/OneDrive/Desktop/js-learning/TS-01-TYPE-ARCHITECTURE-AND-STRUCTURAL-SUBTYPING.md), [TS-02](file:///C:/Users/ayush/OneDrive/Desktop/js-learning/TS-02-GENERICS-AND-TYPE-OPERATORS.md), [TS-03](file:///C:/Users/ayush/OneDrive/Desktop/js-learning/TS-03-CONDITIONAL-TYPES-AND-INFERENCE.md), [TS-04](file:///C:/Users/ayush/OneDrive/Desktop/js-learning/TS-04-MAPPED-TYPES-AND-METAPROGRAMMING.md), [TS-05](file:///C:/Users/ayush/OneDrive/Desktop/js-learning/TS-05-TEMPLATE-LITERAL-TYPES-AND-PARSERS.md), [TS-06](file:///C:/Users/ayush/OneDrive/Desktop/js-learning/TS-06-OOP-CLASS-INTERNALS-AND-SOLID.md)  
-> **Target Audience**: Principal Architects, Staff Software Engineers, Systems Designers  
-> **Universal Specification**: Complete Technical Treatise, 90 Real-World Interview Q&As with Runnable Code, 15 Prediction Puzzles with Step-by-Step Traces, 4 Complete Runnable Production Projects with Test Assertions, 20 DOs & DON'Ts, Real-World Enterprise Case Study, 75 Practice Drills (5 Tiers).
+Welcome to TypeScript Enterprise Design Patterns, Generic Builders, and Reusable Architecture. This module teaches how to build scalable, type-safe software systems. You will learn creational patterns like phantom type builders and generic factories, structural patterns like generic repositories and adapters, and behavioral patterns like middleware pipelines and Railway-Oriented Result monads.
 
 ---
 
-# Module TS-07: Enterprise Design Patterns, Generic Builders, & Reusable Architecture
+# Topic 1: Generic Factory with Auto-Registration Registry
 
-## 1. Architectural Deep-Dive & Specification Foundations
+### 1. What is it?
+A factory is a creational pattern that creates objects without exposing the exact instantiation logic to the caller. A **Generic Factory with Auto-Registration** is a factory class or object that maintains a dictionary of constructor functions. Classes register themselves with a unique string key, and callers instantiate objects by passing the key and constructor arguments.
 
-### 1.1 Creational Patterns in Modern TypeScript
-
-Creational design patterns in TypeScript go beyond classical object instantiation. By leveraging generic type parameters, constructor signatures, and mapped types, we can construct factories and builders that enforce compile-time correctness without runtime overhead.
-
+### 2. Why does it exist?
+Without a registry, factories rely on large `switch` or `if/else` statements:
+```typescript
+// Anti-pattern: Hard-coded conditional factory
+function createService(kind: string) {
+  if (kind === "auth") return new AuthService();
+  if (kind === "payment") return new PaymentService();
+  throw new Error("Unknown service");
+}
 ```
-+-------------------------------------------------------------------------+
-|                  Enterprise Design Pattern Taxonomies in TS             |
-+-------------------------------------------------------------------------+
-|  [Creational]                                                           |
-|    ├── Generic Factory with Auto-Registration Registry                  |
-|    ├── Type-State Step-Builder (Phantom Type State Tracking)            |
-|    └── Reflection-Proof Thread-Safe Singleton                           |
-|  [Structural]                                                           |
-|    ├── Generic Repository & Unit of Work (Identity Map)                 |
-|    ├── Dynamic Adapter & Type-Safe Facade                               |
-|    └── Compositional Decorator with Transparent Delegation              |
-|  [Behavioral]                                                           |
-|    ├── Middleware Chain of Responsibility (Context Transformation)      |
-|    ├── Strictly-Typed Observer & Event Map                              |
-|    └── Railway-Oriented Result / Either Error Recovery Monad            |
-+-------------------------------------------------------------------------+
-```
+This violates the Open/Closed Principle. Every time you add a new service, you must modify the factory function. A dynamic registry allows new classes to register themselves at runtime while preserving strict compile-time type safety.
 
----
-
-### 1.2 The Type-State Step-Builder Pattern (Phantom Types)
-
-The Step-Builder pattern solves the telescoping constructor anti-pattern while preventing runtime `InvalidStateException` errors by using **phantom types** to model a finite state machine directly within the TypeScript compiler:
+### 3. Basic example
 
 ```typescript
-// State Markers
+interface Service {
+  execute(): string;
+}
+
+type ServiceConstructor<T extends Service> = new (...args: any[]) => T;
+
+class ServiceRegistry {
+  private static registry = new Map<string, ServiceConstructor<Service>>();
+
+  static register<T extends Service>(key: string, ctor: ServiceConstructor<T>): void {
+    this.registry.set(key, ctor);
+  }
+
+  static create<T extends Service>(key: string, ...args: any[]): T {
+    const Ctor = this.registry.get(key);
+    if (!Ctor) {
+      throw new Error(`Service not registered: ${key}`);
+    }
+    return new Ctor(...args) as T;
+  }
+}
+
+class AuthService implements Service {
+  execute(): string {
+    return "AuthService executed";
+  }
+}
+
+ServiceRegistry.register("auth", AuthService);
+const auth = ServiceRegistry.create<AuthService>("auth");
+console.log(auth.execute());
+```
+
+**Line-by-line explanation:**
+- `interface Service { execute(): string; }`: Declares the base contract that all registered instances must satisfy.
+- `type ServiceConstructor<T extends Service> = new (...args: any[]) => T;`: Defines a constructor type that accepts any constructor arguments and produces an instance of `T`.
+- `private static registry = new Map<...>`: Holds the registered constructors in memory indexed by string keys.
+- `static register<T extends Service>(...)`: Adds a constructor to the map.
+- `static create<T extends Service>(...)`: Looks up the constructor by key, validates existence, calls `new Ctor(...args)`, and casts the result to `T`.
+- `ServiceRegistry.register("auth", AuthService)`: Registers `AuthService` under the key `"auth"`.
+- `const auth = ServiceRegistry.create<AuthService>("auth")`: Instantiates the service and infers its type.
+
+---
+
+### 4. How it works inside TypeScript
+1. **Constructor Signatures**: In TypeScript, the type `new (...args: any[]) => T` matches any class constructor whose instances satisfy `T`.
+2. **Type Parameter Bounds**: The constraint `<T extends Service>` ensures that no class can be registered or instantiated unless it satisfies the `Service` interface.
+3. **Map Storage**: At runtime, `new Map()` holds the constructor function references. At compile time, the generic parameter `T` provides type checking at the call site.
+
+---
+
+### 5. More examples
+
+#### Example 1: Strongly-typed registry with key-to-type mapping
+```typescript
+interface ServiceMap {
+  auth: AuthService;
+  database: DatabaseService;
+}
+
+class DatabaseService implements Service {
+  execute(): string {
+    return "Database connected";
+  }
+}
+
+class TypedServiceFactory {
+  private static map = new Map<keyof ServiceMap, ServiceConstructor<Service>>();
+
+  static register<K extends keyof ServiceMap>(key: K, ctor: ServiceConstructor<ServiceMap[K]>): void {
+    this.map.set(key, ctor);
+  }
+
+  static get<K extends keyof ServiceMap>(key: K): ServiceMap[K] {
+    const Ctor = this.map.get(key);
+    if (!Ctor) throw new Error(`Missing ${key}`);
+    return new Ctor() as ServiceMap[K];
+  }
+}
+
+TypedServiceFactory.register("auth", AuthService);
+TypedServiceFactory.register("database", DatabaseService);
+
+const db = TypedServiceFactory.get("database"); // Inferred as DatabaseService
+console.log(db.execute());
+```
+
+#### Example 2: Factory with dependency injection parameters
+```typescript
+interface Config {
+  apiUrl: string;
+}
+
+class ApiService implements Service {
+  constructor(private config: Config) {}
+  execute(): string {
+    return this.config.apiUrl;
+  }
+}
+
+type FactoryFn<T> = (config: Config) => T;
+
+class DynamicServiceFactory {
+  private static factories = new Map<string, FactoryFn<Service>>();
+
+  static register<T extends Service>(key: string, factory: FactoryFn<T>): void {
+    this.factories.set(key, factory as FactoryFn<Service>);
+  }
+
+  static create<T extends Service>(key: string, config: Config): T {
+    const fn = this.factories.get(key);
+    if (!fn) throw new Error(`Factory not found: ${key}`);
+    return fn(config) as T;
+  }
+}
+```
+
+---
+
+### 6. Common mistakes
+
+#### Mistake 1: Storing instances instead of constructor functions
+```typescript
+// WRONG: Pre-instantiating turns the factory into a cache or singleton
+class BrokenFactory {
+  private static registry = new Map<string, Service>();
+  static register(key: string, instance: Service) {
+    this.registry.set(key, instance); // Shares one single instance forever
+  }
+}
+```
+**Why it fails:** A factory's purpose is creating new instances on demand. Storing instances turns it into an eager service locator, which causes shared state mutations across different callers.
+
+```typescript
+// CORRECT: Store the constructor function or creator function
+class CorrectFactory {
+  private static registry = new Map<string, new () => Service>();
+  static register(key: string, ctor: new () => Service) {
+    this.registry.set(key, ctor);
+  }
+}
+```
+
+#### Mistake 2: Missing error check when key is unregistered
+```typescript
+// WRONG: Returning undefined without checking
+static create(key: string): Service {
+  const Ctor = this.registry.get(key);
+  return new Ctor(); // TypeError: Ctor is not a constructor (when undefined)
+}
+```
+**Why it fails:** If `key` is not in the map, `this.registry.get(key)` returns `undefined`. Calling `new undefined()` throws a runtime crash. Always validate and throw a descriptive error.
+
+---
+
+### 7. Rules to remember
+1. Use `new (...args: any[]) => T` to type a class constructor.
+2. Constrain generic constructors with `<T extends BaseContract>` to guarantee compatibility.
+3. Throw an explicit error when looking up an unregistered key rather than allowing `new undefined()` to fail at runtime.
+4. For compile-time key validation, use an interface map (`interface ServiceMap { [key]: ServiceType }`).
+
+---
+
+### Think first: Prediction puzzle
+Look at the following code. What does it print, or does it fail at compile time?
+
+```typescript
+interface Widget {
+  render(): string;
+}
+
+class ButtonWidget implements Widget {
+  render(): string { return "button"; }
+}
+
+class Registry {
+  static map = new Map<string, new () => Widget>();
+}
+
+Registry.map.set("btn", ButtonWidget);
+const Ctor = Registry.map.get("btn");
+const widget = new Ctor!();
+console.log(widget.render());
+```
+
+---
+
+**Answer:**
+It prints:
+```
+button
+```
+**Execution trace:**
+1. `Registry.map.set("btn", ButtonWidget)` stores the constructor function `ButtonWidget` under the key `"btn"`.
+2. `Registry.map.get("btn")` retrieves the constructor function.
+3. `new Ctor!()` executes `new ButtonWidget()`, producing an instance of `ButtonWidget`.
+4. `widget.render()` returns `"button"`, which is logged to the console.
+
+---
+
+### Practice exercises
+
+#### Exercise 1: Register and instantiate a Logger service
+- **Task**: Create an interface `Logger` with method `log(msg: string): void`. Create a class `ConsoleLogger` implementing `Logger`. Register it in a factory and instantiate it.
+- **Hint 1**: Define `type LoggerCtor = new () => Logger`.
+- **Hint 2**: Use a `Map<string, LoggerCtor>` to store the class.
+
+#### Exercise 2: Key-checked typed factory
+- **Task**: Define an interface `AppServices` with properties `user: UserService` and `audit: AuditService`. Write a factory `AppFactory` whose `.create(key)` method only accepts keys of `AppServices` and returns the matching type.
+- **Hint 1**: Use generic parameter `K extends keyof AppServices`.
+- **Hint 2**: Return type must be `AppServices[K]`.
+
+#### Exercise 3: Parameterized factory
+- **Task**: Modify `ServiceConstructor` to accept a generic arguments tuple `TArgs extends any[]` so that `new (...args: TArgs) => T` preserves exact parameter types.
+- **Hint 1**: Use `type ParamCtor<T, TArgs extends any[]> = new (...args: TArgs) => T`.
+- **Hint 2**: In `create<T, A extends any[]>(key: string, ...args: A): T`, pass `...args` to `new Ctor(...args)`.
+
+#### Exercise 4: Factory with fallback default constructor
+- **Task**: Implement a factory that returns a `DefaultService` if the requested key is not found in the registry instead of throwing an error.
+- **Hint 1**: Check `const Ctor = this.registry.get(key) ?? DefaultService;`.
+- **Hint 2**: Both the registered services and `DefaultService` must implement the same interface.
+
+---
+
+### Exercise solutions
+
+#### Solution 1: Register and instantiate a Logger service
+```typescript
+interface Logger {
+  log(msg: string): void;
+}
+
+class ConsoleLogger implements Logger {
+  log(msg: string): void {
+    console.log(`LOG: ${msg}`);
+  }
+}
+
+class LoggerFactory {
+  private static map = new Map<string, new () => Logger>();
+
+  static register(name: string, ctor: new () => Logger): void {
+    this.map.set(name, ctor);
+  }
+
+  static create(name: string): Logger {
+    const Ctor = this.map.get(name);
+    if (!Ctor) throw new Error(`Logger not found: ${name}`);
+    return new Ctor();
+  }
+}
+
+LoggerFactory.register("console", ConsoleLogger);
+const logger = LoggerFactory.create("console");
+logger.log("initialized");
+```
+
+#### Solution 2: Key-checked typed factory
+```typescript
+interface UserService {
+  getUser(): string;
+}
+
+interface AuditService {
+  record(): void;
+}
+
+interface AppServices {
+  user: UserService;
+  audit: AuditService;
+}
+
+class AppFactory {
+  private static registry = new Map<keyof AppServices, new () => any>();
+
+  static register<K extends keyof AppServices>(key: K, ctor: new () => AppServices[K]): void {
+    this.registry.set(key, ctor);
+  }
+
+  static create<K extends keyof AppServices>(key: K): AppServices[K] {
+    const Ctor = this.registry.get(key);
+    if (!Ctor) throw new Error(`Missing service: ${String(key)}`);
+    return new Ctor() as AppServices[K];
+  }
+}
+```
+
+#### Solution 3: Parameterized factory
+```typescript
+type TypedConstructor<T, A extends any[]> = new (...args: A) => T;
+
+class ParamFactory {
+  private static map = new Map<string, TypedConstructor<any, any[]>>();
+
+  static register<T, A extends any[]>(key: string, ctor: TypedConstructor<T, A>): void {
+    this.map.set(key, ctor);
+  }
+
+  static create<T, A extends any[]>(key: string, ...args: A): T {
+    const Ctor = this.map.get(key);
+    if (!Ctor) throw new Error(`Unknown: ${key}`);
+    return new Ctor(...args) as T;
+  }
+}
+
+class UserProfile {
+  constructor(public id: string, public active: boolean) {}
+}
+
+ParamFactory.register("profile", UserProfile);
+const profile = ParamFactory.create<UserProfile, [string, boolean]>("profile", "u1", true);
+```
+
+#### Solution 4: Factory with fallback default constructor
+```typescript
+interface CacheStore {
+  get(key: string): string | null;
+}
+
+class MemoryStore implements CacheStore {
+  get(key: string): string | null {
+    return null;
+  }
+}
+
+class CustomStore implements CacheStore {
+  get(key: string): string | null {
+    return "hit";
+  }
+}
+
+class CacheFactory {
+  private static map = new Map<string, new () => CacheStore>();
+
+  static register(key: string, ctor: new () => CacheStore): void {
+    this.map.set(key, ctor);
+  }
+
+  static create(key: string): CacheStore {
+    const Ctor = this.map.get(key) ?? MemoryStore;
+    return new Ctor();
+  }
+}
+
+const fallback = CacheFactory.create("redis"); // Returns MemoryStore
+```
+
+---
+
+### Recall
+1. What TypeScript syntax represents a constructor type? `new (...args: any[]) => T`.
+2. Why does a dynamic registry violate less architecture rules than a `switch` statement? It allows new classes to be added without modifying the factory source code (Open/Closed Principle).
+3. What is the difference between storing constructor references and storing instantiated objects in a factory? Constructors create fresh instances on demand; storing objects reuses the same instance (acting like a cache or singleton).
+
+> **If you remember only one thing:**  
+> A generic factory stores constructor functions (`new (...args: any[]) => T`) in a lookup map, letting callers instantiate objects dynamically with full type safety.
+
+---
+
+# Topic 2: The Type-State Step-Builder Pattern with Phantom Types
+
+### 1. What is it?
+The **Type-State Pattern** uses generic type parameters (called **phantom types**) to track the internal lifecycle state of an object at compile time. In a **Step-Builder**, the builder methods change these type parameters as you configure the object. The terminal `.build()` method is only allowed when all mandatory fields have reached the required state.
+
+### 2. Why does it exist?
+Standard builder patterns permit calling `.build()` prematurely before required fields are set:
+```typescript
+// Anti-pattern: runtime check in builder
+const builder = new QueryBuilder();
+builder.build(); // Throws runtime Error: "Table name is required"
+```
+The caller only finds out about the missing field when running the code. With the Type-State Step-Builder, TypeScript raises a compile-time error if `.build()` is called before all required configuration steps are completed.
+
+### 3. Basic example
+
+```typescript
+// 1. Phantom type markers for state
 interface NoUrl {}
 interface HasUrl {}
 
 interface NoMethod {}
 interface HasMethod {}
 
-// The Builder tracks state via generic phantom type parameters
-export class HttpRequestBuilder<TUrl = NoUrl, TMethod = NoMethod> {
-  private url?: string;
-  private method?: string;
-  private headers: Record<string, string> = {};
-  private body?: any;
+// 2. The builder carries the markers in type parameters
+class RequestBuilder<TUrl = NoUrl, TMethod = NoMethod> {
+  private urlValue?: string;
+  private methodValue?: string;
 
-  // Step 1: Set URL transitions TUrl from NoUrl -> HasUrl
-  public withUrl(url: string): HttpRequestBuilder<HasUrl, TMethod> {
-    const next = new HttpRequestBuilder<HasUrl, TMethod>();
-    next.url = url;
-    next.method = this.method;
-    next.headers = { ...this.headers };
-    next.body = this.body;
+  withUrl(url: string): RequestBuilder<HasUrl, TMethod> {
+    const next = new RequestBuilder<HasUrl, TMethod>();
+    next.urlValue = url;
+    next.methodValue = this.methodValue;
     return next;
   }
 
-  // Step 2: Set Method transitions TMethod from NoMethod -> HasMethod
-  public withMethod(method: "GET" | "POST" | "PUT" | "DELETE"): HttpRequestBuilder<TUrl, HasMethod> {
-    const next = new HttpRequestBuilder<TUrl, HasMethod>();
-    next.url = this.url;
-    next.method = method;
-    next.headers = { ...this.headers };
-    next.body = this.body;
+  withMethod(method: string): RequestBuilder<TUrl, HasMethod> {
+    const next = new RequestBuilder<TUrl, HasMethod>();
+    next.urlValue = this.urlValue;
+    next.methodValue = method;
     return next;
   }
 
-  public withHeader(key: string, value: string): this {
-    this.headers[key] = value;
-    return this;
-  }
-
-  public withBody(body: any): this {
-    this.body = body;
-    return this;
-  }
-
-  // Final Step: .build() is ONLY callable when both HasUrl AND HasMethod are satisfied!
-  public build(this: HttpRequestBuilder<HasUrl, HasMethod>): {
-    url: string;
-    method: string;
-    headers: Record<string, string>;
-    body?: any;
-  } {
+  // 3. .build() is only callable when TUrl = HasUrl and TMethod = HasMethod
+  build(this: RequestBuilder<HasUrl, HasMethod>): { url: string; method: string } {
     return {
-      url: this.url!,
-      method: this.method!,
-      headers: this.headers,
-      body: this.body,
+      url: this.urlValue!,
+      method: this.methodValue!,
     };
   }
 }
 
-// Compile-Time Verification:
-const partial = new HttpRequestBuilder().withUrl("https://api.internal.com");
-// partial.build(); // TS2684: The 'this' context of type 'HttpRequestBuilder<HasUrl, NoMethod>' is not assignable to method's 'this' of type 'HttpRequestBuilder<HasUrl, HasMethod>'.
+// Valid chain: compile passes
+const req = new RequestBuilder()
+  .withUrl("https://example.com/api")
+  .withMethod("POST")
+  .build();
 
-const ready = partial.withMethod("POST").withBody({ data: 123 });
-const req = ready.build(); // Compiles cleanly!
+console.log(req.url, req.method);
 ```
+
+**Line-by-line explanation:**
+- `interface NoUrl {}` and `interface HasUrl {}`: Marker interfaces. They contain no runtime code. They only exist to inform the compiler.
+- `class RequestBuilder<TUrl = NoUrl, TMethod = NoMethod>`: Defaults to `NoUrl` and `NoMethod`.
+- `withUrl(...)`: Returns a new `RequestBuilder<HasUrl, TMethod>`. The `TUrl` parameter is now advanced to `HasUrl`.
+- `withMethod(...)`: Returns a new `RequestBuilder<TUrl, HasMethod>`. The `TMethod` parameter is advanced to `HasMethod`.
+- `build(this: RequestBuilder<HasUrl, HasMethod>)`: TypeScript's `this` parameter typing restricts calling `.build()` unless both markers are satisfied.
+- If you call `new RequestBuilder().build()`, TypeScript raises an error: `The 'this' context of type 'RequestBuilder<NoUrl, NoMethod>' is not assignable to method's 'this' of type 'RequestBuilder<HasUrl, HasMethod>'`.
 
 ---
 
-### 1.3 Type-Safe Dynamic Factory with Self-Registering Constructors
+### 4. How it works inside TypeScript
+1. **Phantom Type Parameters**: The generic parameters `TUrl` and `TMethod` are never used as values inside the class. They only serve as tags on the type signature.
+2. **`this` Parameter Constraint**: Specifying `this: Class<StateA, StateB>` on a method signature tells the TypeScript checker to verify that the caller's static type matches that exact generic state.
+3. **Immutable Step Progression**: By returning a new builder with the updated type parameter on each step, the compiler enforces a state transition machine.
 
-A classical factory requires manual `switch(type)` statements that violate the Open/Closed Principle. A TypeScript Generic Factory binds constructor types dynamically:
+---
 
+### 5. More examples
+
+#### Example 1: Enforcing strictly ordered sequential steps
 ```typescript
-export type ServiceConstructor<T> = new (...args: any[]) => T;
+interface Step1 {
+  setName(name: string): Step2;
+}
 
-export class ServiceFactory<TBase> {
-  private registry: Map<string, ServiceConstructor<TBase>> = new Map();
+interface Step2 {
+  setEmail(email: string): Step3;
+}
 
-  public register<TDerived extends TBase>(
-    typeKey: string,
-    ctor: ServiceConstructor<TDerived>
-  ): void {
-    if (this.registry.has(typeKey)) {
-      throw new Error(`Service key '${typeKey}' already registered.`);
-    }
-    this.registry.set(typeKey, ctor);
+interface Step3 {
+  build(): { name: string; email: string };
+}
+
+class UserStepBuilder implements Step1, Step2, Step3 {
+  private name: string = "";
+  private email: string = "";
+
+  static start(): Step1 {
+    return new UserStepBuilder();
   }
 
-  public create<TDerived extends TBase = TBase>(
-    typeKey: string,
-    ...args: any[]
-  ): TDerived {
-    const Ctor = this.registry.get(typeKey);
-    if (!Ctor) {
-      throw new Error(`Unregistered service key: '${typeKey}'`);
-    }
-    return new Ctor(...args) as TDerived;
+  setName(name: string): Step2 {
+    this.name = name;
+    return this;
+  }
+
+  setEmail(email: string): Step3 {
+    this.email = email;
+    return this;
+  }
+
+  build(): { name: string; email: string } {
+    return { name: this.name, email: this.email };
+  }
+}
+
+// Forced order: must call setName, then setEmail, then build
+const newUser = UserStepBuilder.start()
+  .setName("Alex")
+  .setEmail("alex@example.com")
+  .build();
+```
+
+#### Example 2: Optional fields that preserve required type states
+```typescript
+class ConfigBuilder<THost = false, TPort = false> {
+  private host?: string;
+  private port?: number;
+  private timeout: number = 5000;
+
+  setHost(host: string): ConfigBuilder<true, TPort> {
+    const next = new ConfigBuilder<true, TPort>();
+    next.host = host;
+    next.port = this.port;
+    next.timeout = this.timeout;
+    return next;
+  }
+
+  setPort(port: number): ConfigBuilder<THost, true> {
+    const next = new ConfigBuilder<THost, true>();
+    next.host = this.host;
+    next.port = port;
+    next.timeout = this.timeout;
+    return next;
+  }
+
+  // Optional step: keeps current THost and TPort unchanged!
+  setTimeout(ms: number): ConfigBuilder<THost, TPort> {
+    const next = new ConfigBuilder<THost, TPort>();
+    next.host = this.host;
+    next.port = this.port;
+    next.timeout = ms;
+    return next;
+  }
+
+  build(this: ConfigBuilder<true, true>): { host: string; port: number; timeout: number } {
+    return { host: this.host!, port: this.port!, timeout: this.timeout };
   }
 }
 ```
 
 ---
 
-### 1.4 The Generic Repository Pattern with Specification Querying
+### 6. Common mistakes
 
-Decoupling persistence logic from domain entities using generic specifications:
+#### Mistake 1: Mutating `this` without returning the updated type
+```typescript
+// WRONG: Returning 'this' typed as current instance
+class BadBuilder<THasData = false> {
+  setData(data: string): this {
+    return this; // Still typed as BadBuilder<false>!
+  }
+}
+```
+**Why it fails:** Calling `return this;` keeps the original `this` type (which is `BadBuilder<false>`). It does not update the generic parameter to `true`. You must return `BadBuilder<true>` (or cast `return this as unknown as BadBuilder<true>`).
+
+#### Mistake 2: Missing `this` parameter typing on `.build()`
+```typescript
+// WRONG: Calling build without 'this' constraint
+class MissingCheckBuilder<TReady> {
+  build(): string {
+    return "done"; // Can be called at any time, even when TReady is false!
+  }
+}
+```
+**Why it fails:** If `.build()` does not specify `this: MissingCheckBuilder<true>`, TypeScript will allow calling `.build()` immediately upon instantiation.
+
+---
+
+### 7. Rules to remember
+1. Phantom types are generic parameters used strictly for type checking, not stored as runtime values.
+2. Use `build(this: Builder<RequiredState1, RequiredState2>)` to lock the build method until requirements are satisfied.
+3. Methods that supply a required field must transition the type parameter to its fulfilled marker.
+4. Optional configuration methods must preserve existing type parameters: `method(...): Builder<T1, T2>`.
+
+---
+
+### Think first: Prediction puzzle
+What happens when you compile this snippet?
 
 ```typescript
-export interface Specification<T> {
+class ConnectionBuilder<TConnected = false> {
+  connect(): ConnectionBuilder<true> {
+    return new ConnectionBuilder<true>();
+  }
+
+  send(this: ConnectionBuilder<true>, msg: string): void {
+    console.log(`Sent: ${msg}`);
+  }
+}
+
+const conn = new ConnectionBuilder();
+conn.send("hello");
+```
+
+---
+
+**Answer:**
+TypeScript compiler error on line `conn.send("hello")`:
+```
+The 'this' context of type 'ConnectionBuilder<false>' is not assignable to method's 'this' of type 'ConnectionBuilder<true>'.
+```
+**Reason:** `conn` is of type `ConnectionBuilder<false>`. The `send` method requires `this: ConnectionBuilder<true>`. To fix the error, the caller must call `.connect()` first: `conn.connect().send("hello")`.
+
+---
+
+### Practice exercises
+
+#### Exercise 1: SQL Query Step-Builder
+- **Task**: Create a `SelectQueryBuilder<TTable = false>` that requires `.from(table: string)` before `.execute()` can be called.
+- **Hint 1**: Set `from(table: string): SelectQueryBuilder<true>`.
+- **Hint 2**: Constrain `execute(this: SelectQueryBuilder<true>): string`.
+
+#### Exercise 2: Two-step authentication builder
+- **Task**: Build an `AuthSessionBuilder` requiring both `setUsername(u: string)` and `setPassword(p: string)` in any order before `.login()` can be called.
+- **Hint 1**: Use two boolean phantom type parameters: `<THasUser = false, THasPass = false>`.
+- **Hint 2**: `.login()` must require `this: AuthSessionBuilder<true, true>`.
+
+#### Exercise 3: Strict state-machine interface builder
+- **Task**: Implement a 3-stage interface chain for a deployment task: `InitStage` -> `BuildStage` -> `DeployStage`.
+- **Hint 1**: Each interface method returns the interface of the next stage.
+- **Hint 2**: `InitStage` has `setRepo(url: string): BuildStage`.
+
+#### Exercise 4: Immutable builder with custom payload
+- **Task**: Implement an immutable `JobBuilder<TData = void>` where `.withPayload<T>(data: T)` transitions the builder to `JobBuilder<T>`, and `.run(this: JobBuilder<object>): void` requires `TData` to be an object.
+- **Hint 1**: Type `.withPayload<T>(data: T): JobBuilder<T>`.
+- **Hint 2**: Set constraint `this: JobBuilder<object>` on `run()`.
+
+---
+
+### Exercise solutions
+
+#### Solution 1: SQL Query Step-Builder
+```typescript
+class SelectQueryBuilder<TTable = false> {
+  private table?: string;
+  private fields: string[] = ["*"];
+
+  select(fields: string[]): this {
+    this.fields = fields;
+    return this;
+  }
+
+  from(table: string): SelectQueryBuilder<true> {
+    const next = new SelectQueryBuilder<true>();
+    next.table = table;
+    next.fields = this.fields;
+    return next;
+  }
+
+  execute(this: SelectQueryBuilder<true>): string {
+    return `SELECT ${this.fields.join(", ")} FROM ${this.table}`;
+  }
+}
+
+const query = new SelectQueryBuilder().select(["id", "name"]).from("users").execute();
+console.log(query);
+```
+
+#### Solution 2: Two-step authentication builder
+```typescript
+class AuthSessionBuilder<THasUser = false, THasPass = false> {
+  private user?: string;
+  private pass?: string;
+
+  setUsername(user: string): AuthSessionBuilder<true, THasPass> {
+    const next = new AuthSessionBuilder<true, THasPass>();
+    next.user = user;
+    next.pass = this.pass;
+    return next;
+  }
+
+  setPassword(pass: string): AuthSessionBuilder<THasUser, true> {
+    const next = new AuthSessionBuilder<THasUser, true>();
+    next.user = this.user;
+    next.pass = pass;
+    return next;
+  }
+
+  login(this: AuthSessionBuilder<true, true>): string {
+    return `Authenticated user: ${this.user}`;
+  }
+}
+
+const session = new AuthSessionBuilder()
+  .setPassword("secret")
+  .setUsername("admin")
+  .login();
+```
+
+#### Solution 3: Strict state-machine interface builder
+```typescript
+interface DeployStage {
+  deploy(): string;
+}
+
+interface BuildStage {
+  compile(): DeployStage;
+}
+
+interface InitStage {
+  setRepo(url: string): BuildStage;
+}
+
+class Pipeline implements InitStage, BuildStage, DeployStage {
+  private repo = "";
+
+  static create(): InitStage {
+    return new Pipeline();
+  }
+
+  setRepo(url: string): BuildStage {
+    this.repo = url;
+    return this;
+  }
+
+  compile(): DeployStage {
+    return this;
+  }
+
+  deploy(): string {
+    return `Deployed repo from ${this.repo}`;
+  }
+}
+
+const pipeline = Pipeline.create().setRepo("github.com/org/repo").compile().deploy();
+```
+
+#### Solution 4: Immutable builder with custom payload
+```typescript
+class JobBuilder<TData = void> {
+  constructor(private payload?: TData) {}
+
+  withPayload<T extends object>(data: T): JobBuilder<T> {
+    return new JobBuilder<T>(data);
+  }
+
+  run(this: JobBuilder<object>): string {
+    return JSON.stringify(this.payload);
+  }
+}
+
+const job = new JobBuilder().withPayload({ retries: 3 }).run();
+```
+
+---
+
+### Recall
+1. What is a "phantom type"? A generic type parameter that exists only at compile time for static checking and has no runtime value representation.
+2. How do you prevent `.build()` from running when required fields are missing? By typing the method with a constrained `this` parameter: `build(this: Builder<true, true>)`.
+3. Does the Type-State pattern add JavaScript runtime overhead? No; phantom types are completely erased during TypeScript compilation.
+
+> **If you remember only one thing:**  
+> The Type-State Step-Builder uses phantom generic parameters to track completed steps at compile time, completely eliminating invalid state errors before code runs.
+
+---
+
+# Topic 3: Fluent Builders with Type Parameter Accumulation
+
+### 1. What is it?
+A **Fluent Builder with Type Parameter Accumulation** is a builder that dynamically widens or extends its return type as keys are added. Instead of holding a fixed interface, each method call intersects (`T & { [K]: V }`) or merges the new property into the generic type accumulator.
+
+### 2. Why does it exist?
+When constructing dynamic configuration objects or entities where properties are optional or discovered incrementally, a fixed class requires defining every possible permutation of fields. By accumulating types across chained calls, the final `.build()` method returns an exact object type containing precisely the keys that were set:
+```typescript
+const config = new ConfigAccumulator()
+  .set("host", "localhost")
+  .set("port", 8080)
+  .build();
+// Inferred type: { host: string; port: number }
+```
+
+### 3. Basic example
+
+```typescript
+class RecordAccumulator<T = {}> {
+  private data: Record<string, any> = {};
+
+  constructor(initialData?: Record<string, any>) {
+    if (initialData) {
+      this.data = { ...initialData };
+    }
+  }
+
+  set<K extends string, V>(key: K, value: V): RecordAccumulator<T & Record<K, V>> {
+    const next = new RecordAccumulator<T & Record<K, V>>(this.data);
+    next.data[key] = value;
+    return next;
+  }
+
+  build(): T {
+    return this.data as T;
+  }
+}
+
+const userSettings = new RecordAccumulator()
+  .set("theme", "dark")
+  .set("fontSize", 14)
+  .set("notifications", true)
+  .build();
+
+// TypeScript infers:
+// userSettings: { theme: string } & { fontSize: number } & { notifications: boolean }
+console.log(userSettings.theme);
+console.log(userSettings.fontSize);
+```
+
+**Line-by-line explanation:**
+- `class RecordAccumulator<T = {}>`: The accumulator starts with an empty object type `{}` as default.
+- `set<K extends string, V>(key: K, value: V)`: Captures the literal key name `K` and value type `V`.
+- `RecordAccumulator<T & Record<K, V>>`: Returns a new accumulator whose generic type is the intersection of the previous type `T` and the new `{ [K]: V }`.
+- `build(): T`: Returns the accumulated object typed as `T`.
+- `userSettings.theme`: TypeScript knows `theme` exists and is a `string`.
+
+---
+
+### 4. How it works inside TypeScript
+1. **Intersection Chaining**: Each call to `.set("k", v)` intersects the accumulator with `Record<"k", typeof v>`.
+2. **Type Simplification**: TypeScript preserves intersection types until properties are accessed. Property accesses like `userSettings.theme` resolve cleanly across the intersection.
+3. **Literal Key Preservation**: By constraining `K extends string`, passing `"theme"` keeps the string literal `"theme"` rather than widening to generic `string`.
+
+---
+
+### 5. More examples
+
+#### Example 1: Preventing duplicate keys from being overwritten
+```typescript
+class SafeAccumulator<T = {}> {
+  private state: Record<string, any> = {};
+
+  constructor(state?: Record<string, any>) {
+    if (state) this.state = { ...state };
+  }
+
+  // K must NOT already be a key in T!
+  set<K extends string, V>(
+    key: K extends keyof T ? never : K,
+    value: V
+  ): SafeAccumulator<T & Record<K, V>> {
+    const next = new SafeAccumulator<T & Record<K, V>>(this.state);
+    next.state[key as string] = value;
+    return next;
+  }
+
+  build(): T {
+    return this.state as T;
+  }
+}
+
+const safe = new SafeAccumulator()
+  .set("host", "127.0.0.1")
+  // .set("host", "localhost") // Compile error: Argument of type '"host"' is not assignable to parameter of type 'never'!
+  .set("port", 3000)
+  .build();
+```
+
+#### Example 2: Type-safe dynamic schema builder
+```typescript
+type Validator<T> = (val: unknown) => val is T;
+
+class SchemaBuilder<TShape = {}> {
+  private fields = new Map<string, Validator<any>>();
+
+  field<K extends string, TType>(
+    name: K,
+    validator: Validator<TType>
+  ): SchemaBuilder<TShape & Record<K, TType>> {
+    const next = new SchemaBuilder<TShape & Record<K, TType>>();
+    for (const [k, v] of this.fields) next.fields.set(k, v);
+    next.fields.set(name, validator);
+    return next;
+  }
+
+  validate(data: Record<string, unknown>): data is TShape {
+    for (const [k, validator] of this.fields) {
+      if (!validator(data[k])) return false;
+    }
+    return true;
+  }
+}
+```
+
+---
+
+### 6. Common mistakes
+
+#### Mistake 1: Widening keys to `string`
+```typescript
+// WRONG: Not making key a generic parameter K
+set(key: string, value: any): RecordAccumulator<T & Record<string, any>> {
+  // Lost literal key name!
+}
+```
+**Why it fails:** If `key` is typed as plain `string`, TypeScript forgets the exact name of the property. The returned object will have an index signature `Record<string, any>` instead of specific property names like `host` or `port`.
+
+```typescript
+// CORRECT: Capture K extends string
+set<K extends string, V>(key: K, value: V): RecordAccumulator<T & Record<K, V>>
+```
+
+#### Mistake 2: Mutating the same accumulator instance across branches
+```typescript
+// WRONG: In-place mutation can corrupt shared branches
+const base = new RecordAccumulator().set("env", "prod");
+const configA = base.set("port", 80);
+const configB = base.set("port", 443); // If mutating in-place, configA.port becomes 443!
+```
+**Why it fails:** Accumulators must be immutable. Each call to `.set()` must copy the internal dictionary so that branching builders do not overwrite each other's state.
+
+---
+
+### 7. Rules to remember
+1. Always make the key a generic parameter `K extends string` to capture literal string types.
+2. Accumulate properties using intersection types: `T & Record<K, V>`.
+3. To disallow duplicate property definition, type the key parameter as `K extends keyof T ? never : K`.
+4. Copy the internal state on every step to maintain immutability.
+
+---
+
+### Think first: Prediction puzzle
+What is the inferred type of `result` below?
+
+```typescript
+class Builder<T = {}> {
+  add<K extends string, V>(k: K, v: V): Builder<T & Record<K, V>> {
+    return new Builder<T & Record<K, V>>();
+  }
+  build(): T {
+    return {} as T;
+  }
+}
+
+const result = new Builder()
+  .add("id", 101)
+  .add("name", "Settings")
+  .build();
+```
+
+---
+
+**Answer:**
+The inferred type of `result` is:
+```typescript
+Record<"id", number> & Record<"name", string>
+```
+Which is functionally equivalent to `{ id: number; name: string }`.
+
+---
+
+### Practice exercises
+
+#### Exercise 1: Basic accumulator
+- **Task**: Implement a `PropAccumulator` class with `.put(key, value)` and `.get()` methods.
+- **Hint 1**: The class signature should be `class PropAccumulator<T = {}>`.
+- **Hint 2**: `.put<K extends string, V>(k: K, v: V): PropAccumulator<T & Record<K, V>>`.
+
+#### Exercise 2: Prevent overwriting existing keys
+- **Task**: Add a duplicate guard to `PropAccumulator` so passing an existing key causes a compile error.
+- **Hint 1**: Set key type to `K extends keyof T ? never : K`.
+
+#### Exercise 3: Pre-seeded accumulator
+- **Task**: Allow `PropAccumulator` to be initialized with an existing typed object: `new PropAccumulator({ id: "init" })`.
+- **Hint 1**: Constructor accepts `initial: T`.
+
+#### Exercise 4: Merging two accumulators
+- **Task**: Add a method `.merge<U>(other: PropAccumulator<U>): PropAccumulator<T & U>` that combines two accumulators into a single object.
+- **Hint 1**: Return `new PropAccumulator<T & U>({ ...this.data, ...other.data })`.
+
+---
+
+### Exercise solutions
+
+#### Solution 1: Basic accumulator
+```typescript
+class PropAccumulator<T = {}> {
+  private store: Record<string, any> = {};
+
+  put<K extends string, V>(key: K, val: V): PropAccumulator<T & Record<K, V>> {
+    const next = new PropAccumulator<T & Record<K, V>>();
+    next.store = { ...this.store, [key]: val };
+    return next;
+  }
+
+  get(): T {
+    return this.store as T;
+  }
+}
+
+const obj = new PropAccumulator().put("count", 42).put("active", true).get();
+console.log(obj.count, obj.active);
+```
+
+#### Solution 2: Prevent overwriting existing keys
+```typescript
+class SafePropAccumulator<T = {}> {
+  private store: Record<string, any> = {};
+
+  put<K extends string, V>(
+    key: K extends keyof T ? never : K,
+    val: V
+  ): SafePropAccumulator<T & Record<K, V>> {
+    const next = new SafePropAccumulator<T & Record<K, V>>();
+    next.store = { ...this.store, [key as string]: val };
+    return next;
+  }
+
+  get(): T {
+    return this.store as T;
+  }
+}
+```
+
+#### Solution 3: Pre-seeded accumulator
+```typescript
+class SeededAccumulator<T> {
+  private store: Record<string, any>;
+
+  constructor(initial: T) {
+    this.store = { ...(initial as Record<string, any>) };
+  }
+
+  put<K extends string, V>(key: K, val: V): SeededAccumulator<T & Record<K, V>> {
+    const next = new SeededAccumulator<T & Record<K, V>>({} as any);
+    next.store = { ...this.store, [key]: val };
+    return next;
+  }
+
+  get(): T {
+    return this.store as T;
+  }
+}
+
+const seeded = new SeededAccumulator({ defaultRole: "guest" }).put("timeout", 1000).get();
+```
+
+#### Solution 4: Merging two accumulators
+```typescript
+class MergeableAccumulator<T = {}> {
+  public store: Record<string, any> = {};
+
+  put<K extends string, V>(key: K, val: V): MergeableAccumulator<T & Record<K, V>> {
+    const next = new MergeableAccumulator<T & Record<K, V>>();
+    next.store = { ...this.store, [key]: val };
+    return next;
+  }
+
+  merge<U>(other: MergeableAccumulator<U>): MergeableAccumulator<T & U> {
+    const next = new MergeableAccumulator<T & U>();
+    next.store = { ...this.store, ...other.store };
+    return next;
+  }
+
+  get(): T {
+    return this.store as T;
+  }
+}
+
+const acc1 = new MergeableAccumulator().put("a", 1);
+const acc2 = new MergeableAccumulator().put("b", "two");
+const combined = acc1.merge(acc2).get();
+console.log(combined.a, combined.b);
+```
+
+---
+
+### Recall
+1. What does `T & Record<K, V>` do to the generic type parameter? It intersects the previous type with the newly added key-value pair, producing a combined type.
+2. Why is `K extends string` preferred over `key: string`? It keeps the exact literal string name of the property instead of discarding it to generic `string`.
+3. How can you cause a compile error if a caller tries to set an existing key? By typing the key parameter as `K extends keyof T ? never : K`.
+
+> **If you remember only one thing:**  
+> By intersecting type parameters on every method call (`T & Record<K, V>`), a fluent builder accumulates exact property names and types dynamically.
+
+---
+
+# Topic 4: Singleton Pattern and Module-Level Encapsulation
+
+### 1. What is it?
+The **Singleton Pattern** ensures that a class has only one instance and provides a global access point to it. In modern TypeScript, singletons can be created via classical private constructors or via **module-level export encapsulation**.
+
+### 2. Why does it exist?
+Certain shared resources—such as a database connection pool, a global configuration manager, or a hardware clock client—must have exactly one coordinated coordinator. Creating multiple instances can cause socket exhaustion, conflicting writes, or out-of-sync cache state.
+
+### 3. Basic example
+
+```typescript
+class DatabaseConnection {
+  private static instance: DatabaseConnection | null = null;
+  private isConnected: boolean = false;
+
+  // Private constructor prevents direct 'new DatabaseConnection()' calls
+  private constructor() {
+    this.isConnected = true;
+  }
+
+  public static getInstance(): DatabaseConnection {
+    if (!DatabaseConnection.instance) {
+      DatabaseConnection.instance = new DatabaseConnection();
+    }
+    return DatabaseConnection.instance;
+  }
+
+  public query(sql: string): string {
+    return `Executing "${sql}" on active connection`;
+  }
+}
+
+// Usage:
+const db1 = DatabaseConnection.getInstance();
+const db2 = DatabaseConnection.getInstance();
+
+console.log(db1 === db2); // true: both reference the identical instance
+```
+
+**Line-by-line explanation:**
+- `private static instance: DatabaseConnection | null = null;`: Holds the single cached instance in static memory.
+- `private constructor()`: Disallows `new DatabaseConnection()`. Calling `new` outside the class triggers a TypeScript compile error.
+- `public static getInstance()`: The gatekeeper method. If `instance` is `null`, it instantiates the class once; otherwise it returns the existing instance.
+- `console.log(db1 === db2)`: Confirms reference equality. Both variables point to the exact same heap memory allocation.
+
+---
+
+### 4. How it works inside TypeScript
+1. **Private Constructor**: Marking `constructor()` as `private` removes the constructor signature from the public static type, making `new DatabaseConnection()` illegal.
+2. **Static Property Persistence**: The static property `instance` lives on the constructor function object in JavaScript memory for the lifetime of the application process.
+3. **Module Singleton Alternative**: In ES modules, exporting a `const instance = new Service()` creates a module-level singleton because Node.js and bundlers cache evaluated module exports.
+
+---
+
+### 5. More examples
+
+#### Example 1: Module-level singleton (the idiomatic modern TS approach)
+```typescript
+// config.ts
+class AppConfig {
+  readonly environment: string;
+  readonly port: number;
+
+  constructor() {
+    this.environment = "production";
+    this.port = 8080;
+  }
+}
+
+// Export a single instance directly:
+export const appConfig = new AppConfig();
+// Any file importing appConfig receives the exact same cached object reference!
+```
+
+#### Example 2: Thread-safe lazy initialization with reset for unit tests
+```typescript
+class CacheRegistry {
+  private static instance: CacheRegistry | null = null;
+  private cache = new Map<string, unknown>();
+
+  private constructor() {}
+
+  static get instance(): CacheRegistry {
+    if (!this.instance) {
+      this.instance = new CacheRegistry();
+    }
+    return this.instance;
+  }
+
+  set(key: string, value: unknown): void {
+    this.cache.set(key, value);
+  }
+
+  get(key: string): unknown {
+    return this.cache.get(key);
+  }
+
+  // Testing hook to reset state between test cases
+  static resetForTesting(): void {
+    this.instance = null;
+  }
+}
+
+const cache = CacheRegistry.instance;
+cache.set("user_1", { name: "Alice" });
+```
+
+---
+
+### 6. Common mistakes
+
+#### Mistake 1: Leaving constructor public
+```typescript
+// WRONG: Default public constructor
+class LeakySingleton {
+  private static instance = new LeakySingleton();
+  static getInstance() { return this.instance; }
+  // constructor is implicitly public!
+}
+
+const a = LeakySingleton.getInstance();
+const b = new LeakySingleton(); // Legal! Breaks singleton contract!
+```
+**Why it fails:** If you omit `private constructor()`, TypeScript provides a default public constructor. Anyone can bypass `.getInstance()` by calling `new`.
+
+#### Mistake 2: Singletons across dual-package hazard or multi-bundle environments
+```typescript
+// Gotcha: Bundling the same singleton file into two separate chunks
+// Chunk A imports from dist/esm/singleton.js
+// Chunk B imports from dist/cjs/singleton.js
+// Two separate module instances are created!
+```
+**Why it fails:** Module-level singletons rely on module resolution caching. If two different build bundles or package versions load the file, two instances will exist. For global cross-bundle singletons, store on `globalThis`:
+```typescript
+const GLOBAL_KEY = Symbol.for("app.database.singleton");
+const globalScope = globalThis as unknown as { [GLOBAL_KEY]?: DatabaseConnection };
+```
+
+---
+
+### 7. Rules to remember
+1. Always mark the `constructor()` as `private`.
+2. Provide a `public static getInstance()` method or a `static get instance` getter.
+3. For unit testing, provide a controlled `resetForTesting()` hook if the singleton maintains mutable state.
+4. Prefer exporting a `const instance = new Service()` for simple module-scoped singletons unless you need lazy initialization.
+
+---
+
+### Think first: Prediction puzzle
+What does the following code log?
+
+```typescript
+class Counter {
+  private static _instance: Counter | null = null;
+  public count = 0;
+
+  private constructor() {}
+
+  static get instance(): Counter {
+    if (!this._instance) this._instance = new Counter();
+    return this._instance;
+  }
+}
+
+const c1 = Counter.instance;
+c1.count += 5;
+
+const c2 = Counter.instance;
+c2.count += 10;
+
+console.log(Counter.instance.count);
+```
+
+---
+
+**Answer:**
+```
+15
+```
+**Execution trace:**
+1. `c1` initializes the singleton. `count` is incremented by 5 (now 5).
+2. `c2` retrieves the existing singleton reference.
+3. `c2.count += 10` adds 10 to the existing 5 (now 15).
+4. `Counter.instance.count` accesses the same instance and prints `15`.
+
+---
+
+### Practice exercises
+
+#### Exercise 1: Application Clock Singleton
+- **Task**: Implement a `SystemClock` singleton with method `now(): number` returning `Date.now()`.
+- **Hint 1**: Mark the constructor `private`.
+- **Hint 2**: Use `static getInstance(): SystemClock`.
+
+#### Exercise 2: Testable singleton with reset
+- **Task**: Implement an `AuditLog` singleton that stores log strings in an internal array. Provide a static `_reset()` method that clears the instance for tests.
+- **Hint 1**: `static _reset() { this.instance = null; }`.
+
+#### Exercise 3: Global scope attached singleton
+- **Task**: Write a singleton that attaches to `globalThis` using `Symbol.for("my.app.singleton")` to survive dual-package imports.
+- **Hint 1**: Check `(globalThis as any)[KEY]`.
+
+#### Exercise 4: Async initialized singleton
+- **Task**: Implement an `AsyncDb` singleton where `.getInstance()` returns `Promise<AsyncDb>` and runs an async connection step only on the first call.
+- **Hint 1**: Store `private static initPromise: Promise<AsyncDb> | null = null;`.
+
+---
+
+### Exercise solutions
+
+#### Solution 1: Application Clock Singleton
+```typescript
+class SystemClock {
+  private static instance: SystemClock | null = null;
+  private constructor() {}
+
+  static getInstance(): SystemClock {
+    if (!this.instance) {
+      this.instance = new SystemClock();
+    }
+    return this.instance;
+  }
+
+  now(): number {
+    return Date.now();
+  }
+}
+
+const clock1 = SystemClock.getInstance();
+const clock2 = SystemClock.getInstance();
+console.log(clock1 === clock2);
+```
+
+#### Solution 2: Testable singleton with reset
+```typescript
+class AuditLog {
+  private static _instance: AuditLog | null = null;
+  private entries: string[] = [];
+
+  private constructor() {}
+
+  static get instance(): AuditLog {
+    if (!this._instance) this._instance = new AuditLog();
+    return this._instance;
+  }
+
+  log(msg: string): void {
+    this.entries.push(msg);
+  }
+
+  getEntries(): string[] {
+    return [...this.entries];
+  }
+
+  static _reset(): void {
+    this._instance = null;
+  }
+}
+```
+
+#### Solution 3: Global scope attached singleton
+```typescript
+const GLOBAL_SINGLETON_KEY = Symbol.for("app.metrics.singleton");
+
+class MetricsCollector {
+  private count = 0;
+  increment() { this.count++; }
+  get value() { return this.count; }
+}
+
+function getGlobalMetrics(): MetricsCollector {
+  const g = globalThis as any;
+  if (!g[GLOBAL_SINGLETON_KEY]) {
+    g[GLOBAL_SINGLETON_KEY] = new MetricsCollector();
+  }
+  return g[GLOBAL_SINGLETON_KEY];
+}
+```
+
+#### Solution 4: Async initialized singleton
+```typescript
+class AsyncDb {
+  private static instance: AsyncDb | null = null;
+  private static initPromise: Promise<AsyncDb> | null = null;
+
+  private constructor() {}
+
+  static async getInstance(): Promise<AsyncDb> {
+    if (this.instance) return this.instance;
+    if (!this.initPromise) {
+      this.initPromise = (async () => {
+        const db = new AsyncDb();
+        // simulate async handshake
+        await new Promise((res) => setTimeout(res, 10));
+        this.instance = db;
+        return db;
+      })();
+    }
+    return this.initPromise;
+  }
+}
+```
+
+---
+
+### Recall
+1. Why must the constructor of a classical singleton be marked `private`? To prevent external code from creating new instances with `new`.
+2. How does ES module caching act as a singleton? A module is evaluated once when first imported; subsequent imports receive the cached export references.
+3. What is the danger of mutable singletons in unit testing suites? State changes in one test leak into subsequent tests, causing intermittent test failures.
+
+> **If you remember only one thing:**  
+> A TypeScript singleton combines a `private constructor()` with a static accessor method to guarantee that exactly one instance exists across the application.
+
+---
+
+# Topic 5: The Generic Repository Pattern with Type-Safe Query Specifications
+
+### 1. What is it?
+The **Generic Repository Pattern** abstracts data persistence operations behind a collection-like interface (`find`, `save`, `delete`). Combined with the **Specification Pattern**, queries are encapsulated into reusable, combinable type-safe filter objects (`and`, `or`, `not`).
+
+### 2. Why does it exist?
+Hardcoding database queries or ORM calls directly inside business controllers tightly couples business logic to the database schema:
+```typescript
+// Anti-pattern: Leaking SQL/ORM into controllers
+class UserController {
+  async getActiveUsers() {
+    return db.query("SELECT * FROM users WHERE status = 'active' AND age > 18");
+  }
+}
+```
+If you switch from PostgreSQL to MongoDB or want to test business logic in memory, every controller must be rewritten. The Generic Repository decouples storage from domain logic, and Specifications allow type-safe composable filtering.
+
+### 3. Basic example
+
+```typescript
+// 1. Entity Base Contract
+interface Entity {
+  id: string;
+}
+
+// 2. Generic Repository Interface
+interface Repository<T extends Entity> {
+  findById(id: string): Promise<T | null>;
+  findAll(spec?: Specification<T>): Promise<T[]>;
+  save(entity: T): Promise<void>;
+  delete(id: string): Promise<boolean>;
+}
+
+// 3. Specification Pattern Interface
+interface Specification<T> {
   isSatisfiedBy(candidate: T): boolean;
-  and(other: Specification<T>): Specification<T>;
-  or(other: Specification<T>): Specification<T>;
-  not(): Specification<T>;
 }
 
-export abstract class CompositeSpecification<T> implements Specification<T> {
-  public abstract isSatisfiedBy(candidate: T): boolean;
+// 4. In-Memory Implementation
+class InMemoryRepository<T extends Entity> implements Repository<T> {
+  private items = new Map<string, T>();
 
-  public and(other: Specification<T>): Specification<T> {
+  async findById(id: string): Promise<T | null> {
+    return this.items.get(id) ?? null;
+  }
+
+  async findAll(spec?: Specification<T>): Promise<T[]> {
+    const all = Array.from(this.items.values());
+    if (!spec) return all;
+    return all.filter((item) => spec.isSatisfiedBy(item));
+  }
+
+  async save(entity: T): Promise<void> {
+    this.items.set(entity.id, entity);
+  }
+
+  async delete(id: string): Promise<boolean> {
+    return this.items.delete(id);
+  }
+}
+
+// Usage
+interface User extends Entity {
+  id: string;
+  name: string;
+  active: boolean;
+}
+
+class ActiveUserSpec implements Specification<User> {
+  isSatisfiedBy(user: User): boolean {
+    return user.active;
+  }
+}
+
+async function run() {
+  const repo = new InMemoryRepository<User>();
+  await repo.save({ id: "1", name: "Alice", active: true });
+  await repo.save({ id: "2", name: "Bob", active: false });
+
+  const activeUsers = await repo.findAll(new ActiveUserSpec());
+  console.log(activeUsers.length); // 1 (Alice)
+}
+run();
+```
+
+**Line-by-line explanation:**
+- `interface Entity { id: string; }`: Enforces that every managed domain entity has a unique identifier.
+- `interface Repository<T extends Entity>`: Defines generic CRUD methods parameterised by the entity type `T`.
+- `interface Specification<T>`: Declares the predicate contract `isSatisfiedBy(candidate: T): boolean`.
+- `InMemoryRepository<T>`: Implements storage using a `Map<string, T>`.
+- `findAll(spec?: Specification<T>)`: Uses the specification's `isSatisfiedBy` to filter items without modifying repository internals.
+
+---
+
+### 4. How it works inside TypeScript
+1. **Generic Constraints**: `<T extends Entity>` allows the repository implementation to rely on `entity.id` safely across all operations.
+2. **Predicate Inversion**: The specification encapsulates domain query rules into standalone classes, keeping the repository generic and decoupled.
+3. **Composable Logic**: Specifications can be chained using composite operations (`AndSpecification`, `OrSpecification`).
+
+---
+
+### 5. More examples
+
+#### Example 1: Composable Specifications (`and`, `or`, `not`)
+```typescript
+abstract class CompositeSpecification<T> implements Specification<T> {
+  abstract isSatisfiedBy(candidate: T): boolean;
+
+  and(other: Specification<T>): Specification<T> {
     return new AndSpecification(this, other);
   }
 
-  public or(other: Specification<T>): Specification<T> {
+  or(other: Specification<T>): Specification<T> {
     return new OrSpecification(this, other);
-  }
-
-  public not(): Specification<T> {
-    return new NotSpecification(this);
   }
 }
 
@@ -178,7 +1515,7 @@ class AndSpecification<T> extends CompositeSpecification<T> {
   constructor(private left: Specification<T>, private right: Specification<T>) {
     super();
   }
-  public isSatisfiedBy(candidate: T): boolean {
+  isSatisfiedBy(candidate: T): boolean {
     return this.left.isSatisfiedBy(candidate) && this.right.isSatisfiedBy(candidate);
   }
 }
@@ -187,2510 +1524,2120 @@ class OrSpecification<T> extends CompositeSpecification<T> {
   constructor(private left: Specification<T>, private right: Specification<T>) {
     super();
   }
-  public isSatisfiedBy(candidate: T): boolean {
+  isSatisfiedBy(candidate: T): boolean {
     return this.left.isSatisfiedBy(candidate) || this.right.isSatisfiedBy(candidate);
   }
 }
 
-class NotSpecification<T> extends CompositeSpecification<T> {
-  constructor(private spec: Specification<T>) {
-    super();
+class MinAgeSpec extends CompositeSpecification<{ age: number }> {
+  constructor(private min: number) { super(); }
+  isSatisfiedBy(candidate: { age: number }): boolean {
+    return candidate.age >= this.min;
   }
-  public isSatisfiedBy(candidate: T): boolean {
+}
+
+class PremiumSpec extends CompositeSpecification<{ isPremium: boolean }> {
+  isSatisfiedBy(candidate: { isPremium: boolean }): boolean {
+    return candidate.isPremium;
+  }
+}
+
+// Chain: (age >= 18) AND (isPremium == true)
+const eligibleSpec = new MinAgeSpec(18).and(new PremiumSpec());
+```
+
+#### Example 2: Type-safe property specification using keyof
+```typescript
+class PropertyEqualsSpec<T, K extends keyof T> implements Specification<T> {
+  constructor(private key: K, private expected: T[K]) {}
+
+  isSatisfiedBy(candidate: T): boolean {
+    return candidate[this.key] === this.expected;
+  }
+}
+
+interface Order extends Entity {
+  id: string;
+  status: "pending" | "shipped" | "delivered";
+}
+
+const pendingOrderSpec = new PropertyEqualsSpec<Order, "status">("status", "pending");
+```
+
+---
+
+### 6. Common mistakes
+
+#### Mistake 1: Exposing SQL/ORM types in the repository interface
+```typescript
+// WRONG: Coupling repository contract to Prisma/TypeORM
+interface UserRepository {
+  find(query: Prisma.UserWhereInput): Promise<User[]>; // Leaks DB driver!
+}
+```
+**Why it fails:** If you replace the database driver or try to write an in-memory repository for fast unit tests, your test code must mock complex ORM driver objects. Keep the interface agnostic using Domain Specifications.
+
+#### Mistake 2: Returning internal mutable entity references
+```typescript
+// WRONG: Returning internal references
+async findById(id: string): Promise<T | null> {
+  return this.items.get(id) ?? null; // Caller can mutate this item in-place without save()!
+}
+```
+**Why it fails:** Modifying the returned object directly updates the internal cache without triggering change detection or domain events. Return a clone (`{ ...item }` or `structuredClone(item)`).
+
+---
+
+### 7. Rules to remember
+1. Repository interfaces should be generic over `<T extends Entity>` and independent of database drivers.
+2. The Specification pattern moves query filter logic into testable, composable predicates (`isSatisfiedBy`).
+3. Specifications can be combined with `and()`, `or()`, and `not()` operators.
+4. Clone entities on return to protect the repository's internal state.
+
+---
+
+### Think first: Prediction puzzle
+What does this test print?
+
+```typescript
+interface Item {
+  id: string;
+  price: number;
+}
+
+const items: Item[] = [
+  { id: "1", price: 10 },
+  { id: "2", price: 50 },
+  { id: "3", price: 100 },
+];
+
+const cheapSpec = { isSatisfiedBy: (i: Item) => i.price < 60 };
+const expensiveSpec = { isSatisfiedBy: (i: Item) => i.price > 20 };
+
+const combined = items.filter((i) => cheapSpec.isSatisfiedBy(i) && expensiveSpec.isSatisfiedBy(i));
+console.log(combined.map((i) => i.id));
+```
+
+---
+
+**Answer:**
+```
+[ "2" ]
+```
+**Explanation:**
+- Item 1: price 10 is `< 60` (true), but not `> 20` (false).
+- Item 2: price 50 is `< 60` (true) AND `> 20` (true). Matches!
+- Item 3: price 100 is not `< 60` (false).
+Only Item `"2"` satisfies both specifications.
+
+---
+
+### Practice exercises
+
+#### Exercise 1: In-memory repository with count
+- **Task**: Extend `Repository<T>` with a `count(spec?: Specification<T>): Promise<number>` method and implement it in `InMemoryRepository`.
+- **Hint 1**: Call `(await this.findAll(spec)).length`.
+
+#### Exercise 2: Negation specification (`NotSpecification`)
+- **Task**: Implement a `NotSpecification<T>` that wraps any specification and inverts its result.
+- **Hint 1**: `!this.inner.isSatisfiedBy(candidate)`.
+
+#### Exercise 3: Key range specification
+- **Task**: Create a specification `NumberRangeSpec<T, K extends keyof T>` where `T[K]` is a number, checking `min <= candidate[key] && candidate[key] <= max`.
+- **Hint 1**: Constrain `T[K] extends number`.
+
+#### Exercise 4: Unit test with mocked repository
+- **Task**: Write a service `UserRegistrationService` that accepts `Repository<User>` in its constructor. Test user creation with `InMemoryRepository`.
+- **Hint 1**: The service method calls `await this.repo.save(user)`.
+
+---
+
+### Exercise solutions
+
+#### Solution 1: In-memory repository with count
+```typescript
+interface ExtendedRepo<T extends Entity> extends Repository<T> {
+  count(spec?: Specification<T>): Promise<number>;
+}
+
+class ExtendedInMemoryRepo<T extends Entity> extends InMemoryRepository<T> implements ExtendedRepo<T> {
+  async count(spec?: Specification<T>): Promise<number> {
+    const matches = await this.findAll(spec);
+    return matches.length;
+  }
+}
+```
+
+#### Solution 2: Negation specification (`NotSpecification`)
+```typescript
+class NotSpecification<T> implements Specification<T> {
+  constructor(private spec: Specification<T>) {}
+  isSatisfiedBy(candidate: T): boolean {
     return !this.spec.isSatisfiedBy(candidate);
   }
 }
+```
 
-export interface IRepository<T, TId> {
-  findById(id: TId): Promise<T | null>;
-  find(spec: Specification<T>): Promise<T[]>;
-  save(entity: T): Promise<void>;
-  delete(id: TId): Promise<void>;
+#### Solution 3: Key range specification
+```typescript
+class NumberRangeSpec<T, K extends keyof T> implements Specification<T> {
+  constructor(
+    private key: K,
+    private min: number,
+    private max: number
+  ) {}
+
+  isSatisfiedBy(candidate: T): boolean {
+    const val = candidate[this.key] as unknown as number;
+    return val >= this.min && val <= this.max;
+  }
 }
+```
+
+#### Solution 4: Unit test with mocked repository
+```typescript
+class UserService {
+  constructor(private repo: Repository<User>) {}
+
+  async registerUser(id: string, name: string): Promise<void> {
+    const existing = await this.repo.findById(id);
+    if (existing) throw new Error("User exists");
+    await this.repo.save({ id, name, active: true });
+  }
+}
+
+async function testService() {
+  const repo = new InMemoryRepository<User>();
+  const service = new UserService(repo);
+
+  await service.registerUser("u100", "Alice");
+  const saved = await repo.findById("u100");
+  console.log(saved?.name === "Alice"); // true
+}
+testService();
+```
+
+---
+
+### Recall
+1. What is the main benefit of the Generic Repository pattern? It decouples business domain logic from specific database drivers and ORMs.
+2. How does the Specification pattern improve filtering? It encapsulates query rules into testable, reusable classes with `isSatisfiedBy(item)` methods.
+3. Why should repository interfaces be typed with `<T extends Entity>`? To guarantee all entities have an identifiable key (`id`) for indexing and queries.
+
+> **If you remember only one thing:**  
+> The Generic Repository pattern provides collection-like persistence, while Specifications encapsulate query filters into composable, testable objects.
+
+---
+
+# Checkpoint Challenge 1: Creational & Repository Architecture (Topics 1-5)
+
+### Challenge Specification
+Design an order processing setup combining:
+1. A **Type-State Order Builder** requiring `setCustomer(id: string)` and `addItem(sku: string, price: number)` before calling `.build()`.
+2. A **Generic Repository** to persist the built orders in memory.
+3. A **Specification** that finds orders whose total price exceeds a minimum threshold.
+
+### Solution
+
+```typescript
+// 1. Order Entity & State Markers
+interface HasCustomer {}
+interface HasItems {}
+
+interface OrderItem {
+  sku: string;
+  price: number;
+}
+
+interface OrderEntity {
+  id: string;
+  customerId: string;
+  items: OrderItem[];
+  total: number;
+}
+
+// 2. Type-State Step Builder
+class OrderBuilder<TCustomer = false, TItems = false> {
+  private id: string = `ord_${Date.now()}`;
+  private customerId?: string;
+  private items: OrderItem[] = [];
+
+  setCustomer(customerId: string): OrderBuilder<true, TItems> {
+    const next = new OrderBuilder<true, TItems>();
+    next.id = this.id;
+    next.customerId = customerId;
+    next.items = [...this.items];
+    return next;
+  }
+
+  addItem(sku: string, price: number): OrderBuilder<TCustomer, true> {
+    const next = new OrderBuilder<TCustomer, true>();
+    next.id = this.id;
+    next.customerId = this.customerId;
+    next.items = [...this.items, { sku, price }];
+    return next;
+  }
+
+  build(this: OrderBuilder<true, true>): OrderEntity {
+    const total = this.items.reduce((sum, item) => sum + item.price, 0);
+    return {
+      id: this.id,
+      customerId: this.customerId!,
+      items: this.items,
+      total,
+    };
+  }
+}
+
+// 3. Generic Specification & High-Value Filter
+interface Specification<T> {
+  isSatisfiedBy(candidate: T): boolean;
+}
+
+class MinOrderTotalSpec implements Specification<OrderEntity> {
+  constructor(private minAmount: number) {}
+  isSatisfiedBy(order: OrderEntity): boolean {
+    return order.total >= this.minAmount;
+  }
+}
+
+// 4. In-Memory Order Repository
+class OrderRepository {
+  private orders = new Map<string, OrderEntity>();
+
+  async save(order: OrderEntity): Promise<void> {
+    this.orders.set(order.id, order);
+  }
+
+  async find(spec: Specification<OrderEntity>): Promise<OrderEntity[]> {
+    return Array.from(this.orders.values()).filter((o) => spec.isSatisfiedBy(o));
+  }
+}
+
+// 5. Verification Run
+async function runCheckpoint1() {
+  const repo = new OrderRepository();
+
+  const order1 = new OrderBuilder()
+    .setCustomer("cust_101")
+    .addItem("SKU_LAPTOP", 1200)
+    .build();
+
+  const order2 = new OrderBuilder()
+    .setCustomer("cust_102")
+    .addItem("SKU_CABLE", 25)
+    .build();
+
+  await repo.save(order1);
+  await repo.save(order2);
+
+  const highValueOrders = await repo.find(new MinOrderTotalSpec(500));
+  console.log(`High value orders found: ${highValueOrders.length}`); // 1 (order1)
+}
+runCheckpoint1();
 ```
 
 
 ---
 
-## 2. Reusable Code Architecture, Functional Utilities, & Railway-Oriented Programming
+# Topic 6: Unit of Work & Identity Map Pattern
 
-### 2.1 The Railway-Oriented `Result<T, E>` Monad
+### 1. What is it?
+The **Unit of Work** pattern maintains a list of entities affected by a business transaction and coordinates the writing of changes. The **Identity Map** ensures that each entity is loaded only once per session or transaction by maintaining a map of primary keys to in-memory instances.
 
-Throwing raw runtime exceptions (`throw new Error(...)`) breaks referential transparency and forces callers to guess what exceptions might be thrown. The `Result<T, E>` pattern models success and failure as explicit types:
+### 2. Why does it exist?
+Without an Identity Map, loading the same user twice in one request creates two independent objects:
+```typescript
+const userA = await repo.findById("u1");
+const userB = await repo.findById("u1");
+userA.name = "Alice Updated";
+await repo.save(userB); // Overwrites userA's change because userB had the stale name!
+```
+This is the "lost update" problem. Without a Unit of Work, updating 5 items executes 5 separate database network trips. A Unit of Work aggregates inserts, updates, and deletes into a single atomic transactional commit.
+
+### 3. Basic example
 
 ```typescript
-export type Result<T, E> = Ok<T, E> | Err<T, E>;
+interface Entity {
+  id: string;
+}
 
-export class Ok<T, E> {
-  public readonly isOk: true = true;
-  public readonly isErr: false = false;
-  public readonly value: T;
+class IdentityMap<T extends Entity> {
+  private cache = new Map<string, T>();
 
-  constructor(value: T) {
-    this.value = value;
+  get(id: string): T | undefined {
+    return this.cache.get(id);
   }
 
-  public map<U>(fn: (val: T) => U): Result<U, E> {
-    return new Ok<U, E>(fn(this.value));
+  set(entity: T): void {
+    this.cache.set(entity.id, entity);
   }
 
-  public flatMap<U>(fn: (val: T) => Result<U, E>): Result<U, E> {
-    return fn(this.value);
+  has(id: string): boolean {
+    return this.cache.has(id);
   }
 
-  public match<U>(patterns: { onOk: (v: T) => U; onErr: (e: E) => U }): U {
-    return patterns.onOk(this.value);
-  }
-
-  public unwrap(): T {
-    return this.value;
+  clear(): void {
+    this.cache.clear();
   }
 }
 
-export class Err<T, E> {
-  public readonly isOk: false = false;
-  public readonly isErr: true = true;
-  public readonly error: E;
+class UnitOfWork<T extends Entity> {
+  private toInsert = new Set<T>();
+  private toUpdate = new Set<T>();
+  private toDelete = new Set<T>();
+  private identityMap = new IdentityMap<T>();
 
-  constructor(error: E) {
-    this.error = error;
+  registerNew(entity: T): void {
+    this.toInsert.add(entity);
+    this.identityMap.set(entity);
   }
 
-  public map<U>(_fn: (val: T) => U): Result<U, E> {
-    return new Err<U, E>(this.error);
+  registerDirty(entity: T): void {
+    if (!this.toInsert.has(entity)) {
+      this.toUpdate.add(entity);
+    }
   }
 
-  public flatMap<U>(_fn: (val: T) => Result<U, E>): Result<U, E> {
-    return new Err<U, E>(this.error);
+  registerRemoved(entity: T): void {
+    if (this.toInsert.has(entity)) {
+      this.toInsert.delete(entity);
+      return;
+    }
+    this.toUpdate.delete(entity);
+    this.toDelete.add(entity);
   }
 
-  public match<U>(patterns: { onOk: (v: T) => U; onErr: (e: E) => U }): U {
-    return patterns.onErr(this.error);
+  async commit(
+    sink: {
+      insert(items: T[]): Promise<void>;
+      update(items: T[]): Promise<void>;
+      delete(items: T[]): Promise<void>;
+    }
+  ): Promise<void> {
+    if (this.toInsert.size > 0) await sink.insert(Array.from(this.toInsert));
+    if (this.toUpdate.size > 0) await sink.update(Array.from(this.toUpdate));
+    if (this.toDelete.size > 0) await sink.delete(Array.from(this.toDelete));
+
+    this.toInsert.clear();
+    this.toUpdate.clear();
+    this.toDelete.clear();
   }
 
-  public unwrap(): never {
-    throw this.error instanceof Error ? this.error : new Error(String(this.error));
+  get(id: string): T | undefined {
+    return this.identityMap.get(id);
   }
 }
+```
 
-export function ok<T, E = never>(value: T): Result<T, E> {
-  return new Ok<T, E>(value);
+**Line-by-line explanation:**
+- `class IdentityMap<T extends Entity>`: Caches objects by `id` so lookups return the exact same instance in memory.
+- `private toInsert = new Set<T>()`: Holds entities created during this transaction.
+- `private toUpdate = new Set<T>()`: Holds entities modified during this transaction.
+- `private toDelete = new Set<T>()`: Holds entities marked for removal.
+- `registerDirty(entity)`: If an entity was already marked for insert, it stays in `toInsert`. Otherwise it is queued in `toUpdate`.
+- `commit(sink)`: Batches each category into single bulk operations (`insert`, `update`, `delete`), then empties the tracking sets.
+
+---
+
+### 4. How it works inside TypeScript
+1. **Reference Tracking**: By using `Set<T>`, duplicate registrations of the same object reference are automatically ignored.
+2. **Transaction Scoping**: A `UnitOfWork` instance is created per request/transaction and discarded after `commit()`, ensuring changes do not bleed between requests.
+3. **Identity Coherence**: `IdentityMap` ensures `u1 === u2` for any query during that transaction.
+
+---
+
+### 5. More examples
+
+#### Example 1: Rollback capability on transaction failure
+```typescript
+class TransactionUnitOfWork<T extends Entity> {
+  private inserted: T[] = [];
+  private updated: T[] = [];
+  private deleted: T[] = [];
+
+  registerNew(item: T) { this.inserted.push(item); }
+  registerDirty(item: T) { this.updated.push(item); }
+  registerDeleted(item: T) { this.deleted.push(item); }
+
+  rollback(): void {
+    this.inserted = [];
+    this.updated = [];
+    this.deleted = [];
+    console.log("Unit of Work rolled back: tracking sets cleared");
+  }
 }
+```
 
-export function err<E, T = never>(error: E): Result<T, E> {
-  return new Err<T, E>(error);
+#### Example 2: Snapshot-based automatic dirty checking
+```typescript
+class DirtyCheckingUnitOfWork<T extends Entity> {
+  private snapshots = new Map<string, string>();
+  private entities = new Map<string, T>();
+
+  registerLoaded(entity: T): void {
+    this.entities.set(entity.id, entity);
+    this.snapshots.set(entity.id, JSON.stringify(entity));
+  }
+
+  getDirtyEntities(): T[] {
+    const dirty: T[] = [];
+    for (const [id, entity] of this.entities) {
+      const original = this.snapshots.get(id);
+      if (original !== JSON.stringify(entity)) {
+        dirty.push(entity);
+      }
+    }
+    return dirty;
+  }
 }
+```
 
-// Utility: wrap throwing functions into Result safely
-export function tryCatch<T, E = Error>(fn: () => T): Result<T, E> {
+---
+
+### 6. Common mistakes
+
+#### Mistake 1: Making Identity Map global across all HTTP requests
+```typescript
+// WRONG: Single global identity map across entire server process
+export const globalIdentityMap = new IdentityMap<User>(); // LEAKS MEMORY and causes cross-user concurrency bugs!
+```
+**Why it fails:** An Identity Map held across all HTTP requests will continuously grow in memory (memory leak) and serve stale data from User A to User B. The Identity Map MUST be scoped to the lifetime of a single request or transaction.
+
+#### Mistake 2: Forgetting to remove deleted items from insert/update sets
+```typescript
+// WRONG: Adding to delete without cleaning up insert set
+registerRemoved(item: T) {
+  this.toDelete.add(item); // If it was just inserted, trying to delete it from DB will crash!
+}
+```
+**Why it fails:** If an object is created and then deleted within the same transaction, you should simply remove it from `toInsert` and never touch the database.
+
+---
+
+### 7. Rules to remember
+1. Scope the `UnitOfWork` and `IdentityMap` to a single HTTP request or atomic transaction.
+2. An Identity Map ensures that querying the same ID multiple times returns the identical object reference.
+3. The Unit of Work aggregates database writes into batch operations at transaction commit time.
+4. If an entity is registered as new and subsequently deleted within the same unit, remove it from the insert set without dispatching a delete query.
+
+---
+
+### Think first: Prediction puzzle
+What does the code log?
+
+```typescript
+const map = new IdentityMap<{ id: string; name: string }>();
+
+const user1 = { id: "u1", name: "Alice" };
+map.set(user1);
+
+const user2 = map.get("u1")!;
+user2.name = "Bob";
+
+console.log(user1.name);
+```
+
+---
+
+**Answer:**
+```
+Bob
+```
+**Explanation:** `map.get("u1")` returns the exact memory reference of `user1`. Mutating `user2.name` modifies the same object in heap memory. Therefore, `user1.name` reflects `"Bob"`.
+
+---
+
+### Practice exercises
+
+#### Exercise 1: Implement an Identity Map with eviction
+- **Task**: Create an `IdentityMap<T extends Entity>` with an `.evict(id: string)` method that removes an item.
+- **Hint 1**: `this.cache.delete(id)`.
+
+#### Exercise 2: Dirty tracking set verification
+- **Task**: Implement a `UnitOfWork` method `isDirty(entity: T): boolean` that checks if the entity is in `toUpdate`.
+- **Hint 1**: `this.toUpdate.has(entity)`.
+
+#### Exercise 3: Snapshot comparison function
+- **Task**: Write a generic function `isChanged<T extends object>(original: T, current: T): boolean` using property comparison.
+- **Hint 1**: Check `Object.keys(original)` against `current`.
+
+#### Exercise 4: Atomic commit transaction runner
+- **Task**: Wrap `uow.commit()` in a `try/catch` block that invokes `uow.rollback()` if an error occurs.
+- **Hint 1**: `try { await uow.commit(); } catch (err) { uow.rollback(); throw err; }`.
+
+---
+
+### Exercise solutions
+
+#### Solution 1: Implement an Identity Map with eviction
+```typescript
+class EvictingIdentityMap<T extends Entity> {
+  private cache = new Map<string, T>();
+
+  get(id: string): T | undefined { return this.cache.get(id); }
+  set(entity: T): void { this.cache.set(entity.id, entity); }
+  evict(id: string): boolean { return this.cache.delete(id); }
+}
+```
+
+#### Solution 2: Dirty tracking set verification
+```typescript
+class TrackedUow<T extends Entity> {
+  private dirty = new Set<T>();
+
+  markDirty(entity: T): void { this.dirty.add(entity); }
+  isDirty(entity: T): boolean { return this.dirty.has(entity); }
+}
+```
+
+#### Solution 3: Snapshot comparison function
+```typescript
+function isChanged<T extends Record<string, any>>(original: T, current: T): boolean {
+  for (const key of Object.keys(original)) {
+    if (original[key] !== current[key]) return true;
+  }
+  return false;
+}
+```
+
+#### Solution 4: Atomic commit transaction runner
+```typescript
+async function executeTransaction<T extends Entity>(
+  uow: UnitOfWork<T>,
+  sink: any,
+  operations: (u: UnitOfWork<T>) => Promise<void>
+): Promise<void> {
   try {
-    return ok(fn());
-  } catch (caught) {
-    return err(caught as E);
-  }
-}
-
-export async function tryCatchAsync<T, E = Error>(fn: () => Promise<T>): Promise<Result<T, E>> {
-  try {
-    const res = await fn();
-    return ok(res);
-  } catch (caught) {
-    return err(caught as E);
+    await operations(uow);
+    await uow.commit(sink);
+  } catch (error) {
+    console.error("Transaction aborted, clearing state:", error);
+    throw error;
   }
 }
 ```
 
 ---
 
-### 2.2 Functional Utilities: Type-Safe `pipe` and `compose`
+### Recall
+1. What bug does an Identity Map prevent during concurrent reads? The lost update problem caused by modifying two distinct in-memory copies of the same entity.
+2. What does a Unit of Work do at commit time? Batches all pending inserts, updates, and deletes into a single atomic persistence operation.
+3. Why must Identity Maps not be shared globally across all server requests? It causes memory leaks and cross-request data corruption.
 
-Chaining synchronous and asynchronous data transformations with 100% parameter and return type preservation:
+> **If you remember only one thing:**  
+> The Identity Map guarantees that an entity exists only once in memory per transaction, while the Unit of Work tracks its modifications for atomic batch commit.
+
+---
+
+# Topic 7: Dynamic Adapter Pattern
+
+### 1. What is it?
+The **Adapter Pattern** converts the interface of a class or third-party service into another interface that clients expect. It allows classes with incompatible interfaces to work together by wrapping the adaptee and translating method calls, parameters, and return types.
+
+### 2. Why does it exist?
+Third-party libraries (e.g., Stripe, PayPal, SendGrid, AWS SES) have vendor-specific APIs. If your domain code calls `stripe.charges.create()` directly, you cannot swap providers without refactoring your entire codebase:
+```typescript
+// Anti-pattern: Direct vendor coupling
+class CheckoutService {
+  async pay(stripe: StripeClient, amount: number) {
+    return stripe.charges.create({ amount_in_cents: amount * 100 });
+  }
+}
+```
+An Adapter wraps the vendor client in a stable domain interface (`PaymentGateway`), isolating vendor changes to a single translation layer.
+
+### 3. Basic example
 
 ```typescript
-// Type-Safe Pipe for up to 5 functions:
-export function pipe<A>(a: A): A;
-export function pipe<A, B>(a: A, fn1: (a: A) => B): B;
-export function pipe<A, B, C>(a: A, fn1: (a: A) => B, fn2: (b: B) => C): C;
-export function pipe<A, B, C, D>(a: A, fn1: (a: A) => B, fn2: (b: B) => C, fn3: (c: C) => D): D;
-export function pipe<A, B, C, D, E>(a: A, fn1: (a: A) => B, fn2: (b: B) => C, fn3: (c: C) => D, fn4: (d: D) => E): E;
-export function pipe(initial: any, ...fns: Function[]): any {
-  return fns.reduce((acc, fn) => fn(acc), initial);
+// 1. Target interface required by your application
+interface PaymentProcessor {
+  processPayment(userId: string, amountDollars: number): Promise<boolean>;
 }
 
-const double = (n: number) => n * 2;
-const addFive = (n: number) => n + 5;
-const toCurrencyString = (n: number) => `$${n.toFixed(2)}`;
+// 2. Adaptee: Legacy or external third-party SDK with different method signature
+class ExternalStripeSdk {
+  makeCharge(cents: number, customerId: string): { success: boolean; id: string } {
+    console.log(`Charged ${cents} cents for customer ${customerId}`);
+    return { success: true, id: "ch_999" };
+  }
+}
 
-const formattedPrice = pipe(10, double, addFive, toCurrencyString);
-// Type: string ("$25.00")
+// 3. Adapter: Implements the Target interface and delegates to the Adaptee
+class StripePaymentAdapter implements PaymentProcessor {
+  constructor(private sdk: ExternalStripeSdk) {}
+
+  async processPayment(userId: string, amountDollars: number): Promise<boolean> {
+    const cents = Math.round(amountDollars * 100);
+    const response = this.sdk.makeCharge(cents, userId);
+    return response.success;
+  }
+}
+
+// Usage in application code
+const adapter: PaymentProcessor = new StripePaymentAdapter(new ExternalStripeSdk());
+adapter.processPayment("usr_42", 29.99);
+```
+
+**Line-by-line explanation:**
+- `interface PaymentProcessor`: The unified domain contract (`userId: string, amountDollars: number`).
+- `class ExternalStripeSdk`: The third-party API that expects cents and `customerId` in opposite order.
+- `class StripePaymentAdapter implements PaymentProcessor`: The adapter that fulfills the domain contract.
+- `const cents = Math.round(...)`: Translates dollars to cents before invoking the vendor SDK.
+- `return response.success`: Translates the vendor's object response into the domain's expected boolean.
+
+---
+
+### 4. How it works inside TypeScript
+1. **Structural Subtyping**: Because `StripePaymentAdapter` has the `processPayment` method, it satisfies `PaymentProcessor` anywhere in the app.
+2. **Encapsulation of Vendor Incompatibilities**: Type conversions (e.g., snake_case to camelCase, string timestamps to `Date` objects) happen inside the adapter methods.
+3. **Pluggability**: Switching from Stripe to PayPal only requires writing a `PayPalAdapter implements PaymentProcessor`.
+
+---
+
+### 5. More examples
+
+#### Example 1: Adapting callback-based legacy API to Promise-based modern interface
+```typescript
+interface ModernStorage {
+  getItem(key: string): Promise<string | null>;
+}
+
+class LegacyCallbackStorage {
+  read(k: string, cb: (err: Error | null, val: string | null) => void): void {
+    cb(null, "stored_value");
+  }
+}
+
+class StorageAdapter implements ModernStorage {
+  constructor(private legacy: LegacyCallbackStorage) {}
+
+  getItem(key: string): Promise<string | null> {
+    return new Promise((resolve, reject) => {
+      this.legacy.read(key, (err, val) => {
+        if (err) reject(err);
+        else resolve(val);
+      });
+    });
+  }
+}
+```
+
+#### Example 2: Generic data mapper adapter
+```typescript
+interface DomainUser {
+  id: string;
+  fullName: string;
+  emailAddress: string;
+}
+
+interface ExternalUserDto {
+  user_id: string;
+  first_name: string;
+  last_name: string;
+  email: string;
+}
+
+class UserAdapter {
+  static toDomain(dto: ExternalUserDto): DomainUser {
+    return {
+      id: dto.user_id,
+      fullName: `${dto.first_name} ${dto.last_name}`,
+      emailAddress: dto.email,
+    };
+  }
+}
 ```
 
 ---
 
-### 2.3 Type-Safe Middleware Chain of Responsibility
+### 6. Common mistakes
 
-Modeling Express/Koa/Hono-style asynchronous pipelines where context is passed and augmented down the chain:
+#### Mistake 1: Leaking vendor types through the adapter interface
+```typescript
+// WRONG: Returning vendor types from the domain interface
+interface PaymentProcessor {
+  charge(amount: number): Stripe.Charge; // Defeats the purpose of the adapter!
+}
+```
+**Why it fails:** If the interface returns `Stripe.Charge`, any code using the adapter is still coupled to Stripe. You cannot write a `PayPalAdapter` because PayPal does not return `Stripe.Charge`.
+
+#### Mistake 2: Putting business domain logic into the adapter
+```typescript
+// WRONG: Putting order discount calculations inside the payment adapter
+async processPayment(userId: string, amount: number) {
+  if (amount > 100) amount -= 10; // Business rule belongs in Domain Service, not Adapter!
+  return this.sdk.charge(amount);
+}
+```
+**Why it fails:** Adapters should ONLY translate data formats, parameter orders, and calls. Business logic belongs in domain services.
+
+---
+
+### 7. Rules to remember
+1. The adapter must implement a pure domain interface that contains zero vendor-specific types.
+2. The adaptee (vendor client) should be injected via the constructor.
+3. Keep adapters strictly focused on translation: mapping parameter formats, converting callbacks to promises, and mapping return types.
+4. Business calculations must remain in domain services, not inside adapters.
+
+---
+
+### Think first: Prediction puzzle
+What does the adapter return in this example?
 
 ```typescript
-export type MiddlewareNext = () => Promise<void>;
-export type MiddlewareFn<TContext> = (ctx: TContext, next: MiddlewareNext) => Promise<void>;
+interface KVStore {
+  get(key: string): string;
+}
 
-export class MiddlewarePipeline<TContext> {
-  private middlewares: MiddlewareFn<TContext>[] = [];
+class NumberStore {
+  lookup(k: string): number {
+    return 404;
+  }
+}
 
-  public use(fn: MiddlewareFn<TContext>): this {
-    this.middlewares.push(fn);
+class NumberStoreAdapter implements KVStore {
+  constructor(private store: NumberStore) {}
+  get(key: string): string {
+    return String(this.store.lookup(key));
+  }
+}
+
+const kv: KVStore = new NumberStoreAdapter(new NumberStore());
+console.log(typeof kv.get("item"));
+```
+
+---
+
+**Answer:**
+```
+string
+```
+**Explanation:** The adaptee produces `404` (number), but the adapter transforms it with `String(...)`, satisfying the `KVStore` return type of `string`.
+
+---
+
+### Practice exercises
+
+#### Exercise 1: Temperature Unit Adapter
+- **Task**: Create an interface `CelsiusSensor` with `readCelsius(): number`. Adapt a `FahrenheitSensor` (with `readFahrenheit(): number`) using the formula `(f - 32) * 5 / 9`.
+- **Hint 1**: Wrap `FahrenheitSensor` inside `FahrenheitAdapter implements CelsiusSensor`.
+
+#### Exercise 2: Date format adapter
+- **Task**: Adapt an API returning Unix epoch timestamps (`number`) into a domain interface returning `Date` instances.
+- **Hint 1**: `return new Date(timestamp * 1000)`.
+
+#### Exercise 3: Key-value map to array adapter
+- **Task**: Adapt an object containing `{ [key: string]: string }` into an iterable list of `{ key: string; value: string }` entries.
+- **Hint 1**: Use `Object.entries(dict).map(([key, value]) => ({ key, value }))`.
+
+#### Exercise 4: Async filesystem adapter
+- **Task**: Adapt Node's callback-based `fs.readFile` into an interface `FileReader` returning `Promise<string>`.
+- **Hint 1**: Wrap the callback in `new Promise((resolve, reject) => ...)`.
+
+---
+
+### Exercise solutions
+
+#### Solution 1: Temperature Unit Adapter
+```typescript
+interface CelsiusSensor {
+  readCelsius(): number;
+}
+
+class FahrenheitSensor {
+  readFahrenheit(): number {
+    return 68; // 68°F = 20°C
+  }
+}
+
+class FahrenheitAdapter implements CelsiusSensor {
+  constructor(private sensor: FahrenheitSensor) {}
+
+  readCelsius(): number {
+    const f = this.sensor.readFahrenheit();
+    return Math.round(((f - 32) * 5) / 9);
+  }
+}
+
+const sensor: CelsiusSensor = new FahrenheitAdapter(new FahrenheitSensor());
+console.log(sensor.readCelsius()); // 20
+```
+
+#### Solution 2: Date format adapter
+```typescript
+interface TimestampSource {
+  getEpoch(): number;
+}
+
+interface DateProvider {
+  getDate(): Date;
+}
+
+class DateAdapter implements DateProvider {
+  constructor(private source: TimestampSource) {}
+
+  getDate(): Date {
+    return new Date(this.source.getEpoch() * 1000);
+  }
+}
+```
+
+#### Solution 3: Key-value map to array adapter
+```typescript
+interface EntryListProvider {
+  getEntries(): Array<{ key: string; value: string }>;
+}
+
+class DictionaryAdapter implements EntryListProvider {
+  constructor(private dict: Record<string, string>) {}
+
+  getEntries(): Array<{ key: string; value: string }> {
+    return Object.entries(this.dict).map(([key, value]) => ({ key, value }));
+  }
+}
+```
+
+#### Solution 4: Async filesystem adapter
+```typescript
+interface FileReader {
+  readText(path: string): Promise<string>;
+}
+
+type LegacyReaderFn = (path: string, cb: (err: Error | null, content: string) => void) => void;
+
+class FileReaderAdapter implements FileReader {
+  constructor(private legacyRead: LegacyReaderFn) {}
+
+  readText(path: string): Promise<string> {
+    return new Promise((resolve, reject) => {
+      this.legacyRead(path, (err, data) => {
+        if (err) reject(err);
+        else resolve(data);
+      });
+    });
+  }
+}
+```
+
+---
+
+### Recall
+1. What is the core role of an Adapter? To make incompatible interfaces work together by translating method calls, arguments, and return types.
+2. Why should domain interfaces never expose vendor-specific types? Because doing so couples the domain to that vendor, preventing easy substitution.
+3. Where does business logic belong when using adapters? In domain services, never inside the adapter translation layer.
+
+> **If you remember only one thing:**  
+> An Adapter translates an external or incompatible interface into a standardized application interface without changing the underlying code.
+
+---
+
+# Topic 8: Type-Safe Facade Pattern
+
+### 1. What is it?
+The **Facade Pattern** provides a simplified, high-level interface to a complex subsystem composed of multiple classes, libraries, or asynchronous workflows.
+
+### 2. Why does it exist?
+Enterprise subsystems often consist of multiple cooperating services (e.g., authentication, inventory reservation, payment processing, shipping dispatch, and notification). If client controllers must coordinate all five services manually, code duplication and ordering bugs inevitably arise:
+```typescript
+// Anti-pattern: Controller coordinating 5 low-level services manually
+await auth.verify(token);
+await inventory.reserve(item);
+await payment.charge(amount);
+await shipping.schedule(address);
+await notifications.sendEmail(user);
+```
+A Facade encapsulates this entire workflow behind a single, clean method call: `await orderFacade.placeOrder(command)`.
+
+### 3. Basic example
+
+```typescript
+// Subsystem 1: Inventory
+class InventoryService {
+  checkStock(sku: string): boolean {
+    return true;
+  }
+  reserve(sku: string): void {
+    console.log(`Reserved SKU: ${sku}`);
+  }
+}
+
+// Subsystem 2: Payment
+class PaymentGateway {
+  charge(cardToken: string, amount: number): boolean {
+    console.log(`Charged $${amount}`);
+    return true;
+  }
+}
+
+// Subsystem 3: Notifications
+class EmailNotifier {
+  sendConfirmation(email: string, message: string): void {
+    console.log(`Email to ${email}: ${message}`);
+  }
+}
+
+// The Facade
+interface CheckoutRequest {
+  sku: string;
+  amount: number;
+  cardToken: string;
+  email: string;
+}
+
+class OrderCheckoutFacade {
+  constructor(
+    private inventory = new InventoryService(),
+    private payment = new PaymentGateway(),
+    private notifier = new EmailNotifier()
+  ) {}
+
+  public async placeOrder(req: CheckoutRequest): Promise<{ success: boolean; orderId: string }> {
+    if (!this.inventory.checkStock(req.sku)) {
+      throw new Error(`Item ${req.sku} out of stock`);
+    }
+
+    this.inventory.reserve(req.sku);
+
+    const paid = this.payment.charge(req.cardToken, req.amount);
+    if (!paid) throw new Error("Payment failed");
+
+    const orderId = `ord_${Date.now()}`;
+    this.notifier.sendConfirmation(req.email, `Order ${orderId} confirmed`);
+
+    return { success: true, orderId };
+  }
+}
+
+// Client usage is clean and concise:
+const checkout = new OrderCheckoutFacade();
+checkout.placeOrder({
+  sku: "ITEM_101",
+  amount: 49.99,
+  cardToken: "tok_visa",
+  email: "customer@example.com",
+});
+```
+
+**Line-by-line explanation:**
+- `class InventoryService`, `PaymentGateway`, `EmailNotifier`: Three distinct subsystems with specialized responsibilities.
+- `class OrderCheckoutFacade`: Encapsulates all three subsystems via constructor injection.
+- `placeOrder(req)`: Coordinates the multi-step workflow in the correct sequence.
+- Client code invokes only `placeOrder`, completely shielded from the internal complexity of the three underlying subsystems.
+
+---
+
+### 4. How it works inside TypeScript
+1. **Encapsulated Dependencies**: Subsystems can be injected with default parameters or supplied via dependency injection.
+2. **Simplified Parameter Object**: The Facade uses a cohesive Request type (`CheckoutRequest`) instead of sprawling parameter lists.
+3. **Information Hiding**: Callers do not need to know the order of operations, caching rules, or fallback mechanisms.
+
+---
+
+### 5. More examples
+
+#### Example 1: Subsystem Facade with unified error handling
+```typescript
+class CloudStorageFacade {
+  constructor(
+    private authClient: { getAuthToken(): string },
+    private s3Client: { putObject(bucket: string, token: string, data: Buffer): void },
+    private cdnClient: { purge(path: string): void }
+  ) {}
+
+  uploadFile(bucket: string, path: string, data: Buffer): boolean {
+    try {
+      const token = this.authClient.getAuthToken();
+      this.s3Client.putObject(bucket, token, data);
+      this.cdnClient.purge(path);
+      return true;
+    } catch (err) {
+      console.error("Cloud storage upload failed:", err);
+      return false;
+    }
+  }
+}
+```
+
+#### Example 2: Read Facade aggregating data from multiple services
+```typescript
+interface DashboardSummary {
+  username: string;
+  activeOrders: number;
+  unreadNotifications: number;
+}
+
+class UserDashboardFacade {
+  constructor(
+    private users: { getProfile(id: string): { name: string } },
+    private orders: { getActiveCount(id: string): number },
+    private notifications: { getUnreadCount(id: string): number }
+  ) {}
+
+  getSummary(userId: string): DashboardSummary {
+    return {
+      username: this.users.getProfile(userId).name,
+      activeOrders: this.orders.getActiveCount(userId),
+      unreadNotifications: this.notifications.getUnreadCount(userId),
+    };
+  }
+}
+```
+
+---
+
+### 6. Common mistakes
+
+#### Mistake 1: Making the Facade a "God Object" with direct business logic
+```typescript
+// WRONG: Implementing low-level logic directly in the Facade
+class BadOrderFacade {
+  placeOrder() {
+    // 500 lines of raw SQL, credit card algorithm calculation, and direct socket calls!
+  }
+}
+```
+**Why it fails:** A Facade should orchestrate and delegate to underlying subsystems, not implement the underlying work itself.
+
+#### Mistake 2: Preventing access to underlying subsystems when low-level control is needed
+```typescript
+// GOTCHA: Making subsystems strictly private with no escape hatch when power users need it
+```
+**Why it fails:** A Facade is intended to provide a convenient default path. If a caller occasionally needs specialized lower-level subsystem control, they should still be able to access the underlying services directly.
+
+---
+
+### 7. Rules to remember
+1. A Facade delegates to subsystems; it does not implement business mechanics directly.
+2. Accept cohesive request parameter objects (`Command` or `Dto`) rather than long parameter lists.
+3. Allow callers to bypass the Facade if they require fine-grained low-level control.
+4. Inject subsystems in the constructor to maintain unit testability.
+
+---
+
+### Think first: Prediction puzzle
+Does the Facade pattern prevent calling the subsystem classes directly?
+
+```typescript
+class SubsystemA {
+  opA(): string { return "A"; }
+}
+
+class Facade {
+  constructor(public a = new SubsystemA()) {}
+  run(): string { return this.a.opA(); }
+}
+
+const f = new Facade();
+const raw = new SubsystemA();
+console.log(f.run() === raw.opA());
+```
+
+---
+
+**Answer:**
+```
+true
+```
+**Explanation:** The Facade pattern simplifies access, but it does NOT forbid or encapsulate the subsystem classes away from the rest of the application. Both `f.run()` and `raw.opA()` produce `"A"`.
+
+---
+
+### Practice exercises
+
+#### Exercise 1: Media Converter Facade
+- **Task**: Implement a `VideoConversionFacade` that coordinates `AudioExtractor`, `VideoCompressor`, and `Muxer` to convert a file.
+- **Hint 1**: Method `convert(fileName: string, format: string): string`.
+
+#### Exercise 2: User Onboarding Facade
+- **Task**: Create an `OnboardingFacade` that creates a database account, provisions a workspace folder, and sends a welcome notification.
+- **Hint 1**: Group parameters into `interface OnboardRequest { email: string; name: string }`.
+
+#### Exercise 3: Testable Facade with Mock Subsystems
+- **Task**: Write a unit test for `UserDashboardFacade` using mock implementations of the 3 underlying services.
+- **Hint 1**: Pass object literals satisfying the subsystem interfaces to `new UserDashboardFacade(...)`.
+
+#### Exercise 4: Facade with rollback compensation
+- **Task**: In an `EnrollmentFacade`, if step 2 (`billing.charge()`) fails, call step 1's undo method (`course.unenroll()`).
+- **Hint 1**: Use `try / catch` around the billing call.
+
+---
+
+### Exercise solutions
+
+#### Solution 1: Media Converter Facade
+```typescript
+class AudioExtractor { extract(file: string) { return "audio_track"; } }
+class VideoCompressor { compress(file: string) { return "compressed_video"; } }
+class Muxer { mux(audio: string, video: string, format: string) { return `output.${format}`; } }
+
+class VideoConversionFacade {
+  private audio = new AudioExtractor();
+  private video = new VideoCompressor();
+  private muxer = new Muxer();
+
+  convert(file: string, format: string): string {
+    const a = this.audio.extract(file);
+    const v = this.video.compress(file);
+    return this.muxer.mux(a, v, format);
+  }
+}
+```
+
+#### Solution 2: User Onboarding Facade
+```typescript
+interface OnboardRequest {
+  email: string;
+  name: string;
+}
+
+class OnboardingFacade {
+  constructor(
+    private db: { createUser(email: string, name: string): string },
+    private fs: { createWorkspace(userId: string): void },
+    private notify: { sendWelcome(email: string): void }
+  ) {}
+
+  onboard(req: OnboardRequest): string {
+    const userId = this.db.createUser(req.email, req.name);
+    this.fs.createWorkspace(userId);
+    this.notify.sendWelcome(req.email);
+    return userId;
+  }
+}
+```
+
+#### Solution 3: Testable Facade with Mock Subsystems
+```typescript
+const mockUsers = { getProfile: (id: string) => ({ name: "Test User" }) };
+const mockOrders = { getActiveCount: (id: string) => 3 };
+const mockNotifications = { getUnreadCount: (id: string) => 0 };
+
+const facade = new UserDashboardFacade(mockUsers, mockOrders, mockNotifications);
+const summary = facade.getSummary("usr_1");
+console.log(summary.username === "Test User" && summary.activeOrders === 3); // true
+```
+
+#### Solution 4: Facade with rollback compensation
+```typescript
+class EnrollmentFacade {
+  constructor(
+    private course: { enroll(u: string, c: string): void; unenroll(u: string, c: string): void },
+    private billing: { charge(u: string, fee: number): void }
+  ) {}
+
+  enrollStudent(user: string, courseId: string, fee: number): boolean {
+    this.course.enroll(user, courseId);
+    try {
+      this.billing.charge(user, fee);
+      return true;
+    } catch (err) {
+      this.course.unenroll(user, courseId);
+      return false;
+    }
+  }
+}
+```
+
+---
+
+### Recall
+1. What problem does the Facade pattern solve? It hides the complexity of multi-step subsystems behind a simplified high-level interface.
+2. How does a Facade differ from an Adapter? An Adapter makes two incompatible interfaces match; a Facade creates a brand new simplified interface over a system.
+3. Should a Facade prevent clients from calling low-level subsystems directly? No; clients with advanced needs can still use the underlying subsystems directly.
+
+> **If you remember only one thing:**  
+> A Facade provides a single, high-level entry point to orchestrate a complex subsystem without hiding or breaking the underlying classes.
+
+---
+
+# Topic 9: Compositional Decorator Pattern (Wrappers vs Subclassing)
+
+### 1. What is it?
+The **Compositional Decorator Pattern** dynamically attaches additional responsibilities and behavior to an object at runtime. Instead of using class inheritance (`extends`), the decorator wraps the target object and implements the same interface, delegating calls while adding functionality before or after.
+
+### 2. Why does it exist?
+Inheritance is static. If you have a `DataService` and want to add:
+1. In-memory caching
+2. Execution logging
+3. Metrics timing
+
+Using subclassing requires an explosion of classes: `CachedDataService`, `LoggedDataService`, `CachedAndLoggedDataService`, etc. With compositional decorators, you can mix and match behaviors dynamically:
+```typescript
+const service = new MetricsDecorator(new LoggingDecorator(new CachingDecorator(new BaseDataService())));
+```
+
+### 3. Basic example
+
+```typescript
+// 1. Component Interface
+interface DataService {
+  fetchData(id: string): Promise<string>;
+}
+
+// 2. Concrete Base Component
+class BaseDataService implements DataService {
+  async fetchData(id: string): Promise<string> {
+    console.log(`[Base] Reading data for ${id} from database`);
+    return `payload_${id}`;
+  }
+}
+
+// 3. Decorator 1: Caching Decorator
+class CachingDataServiceDecorator implements DataService {
+  private cache = new Map<string, string>();
+
+  constructor(private wrappee: DataService) {}
+
+  async fetchData(id: string): Promise<string> {
+    if (this.cache.has(id)) {
+      console.log(`[Cache] HIT for ${id}`);
+      return this.cache.get(id)!;
+    }
+
+    const result = await this.wrappee.fetchData(id);
+    this.cache.set(id, result);
+    return result;
+  }
+}
+
+// 4. Decorator 2: Logging Decorator
+class LoggingDataServiceDecorator implements DataService {
+  constructor(private wrappee: DataService) {}
+
+  async fetchData(id: string): Promise<string> {
+    console.log(`[Log] Starting fetchData(${id})`);
+    const start = Date.now();
+    const result = await this.wrappee.fetchData(id);
+    console.log(`[Log] Finished fetchData(${id}) in ${Date.now() - start}ms`);
+    return result;
+  }
+}
+
+// Usage: Stack decorators flexibly!
+async function demo() {
+  const base = new BaseDataService();
+  const cached = new CachingDataServiceDecorator(base);
+  const loggedAndCached = new LoggingDataServiceDecorator(cached);
+
+  await loggedAndCached.fetchData("100"); // Executes log -> cache check (miss) -> base
+  await loggedAndCached.fetchData("100"); // Executes log -> cache check (hit) -> returns immediately!
+}
+demo();
+```
+
+**Line-by-line explanation:**
+- `interface DataService`: The shared contract implemented by both the base service and all decorators.
+- `class CachingDataServiceDecorator implements DataService`: Holds `private wrappee: DataService`. Intercepts calls to check the cache before delegating.
+- `class LoggingDataServiceDecorator implements DataService`: Intercepts calls to record timings before and after delegating.
+- `new LoggingDataServiceDecorator(cached)`: Wraps the decorators like layers of an onion.
+
+---
+
+### 4. How it works inside TypeScript
+1. **Interface Transparency**: Because the decorator implements the identical interface `DataService`, any function expecting `DataService` accepts decorated instances transparently.
+2. **Transparent Delegation**: Method calls pass down through the wrapper chain until reaching the concrete base component.
+3. **Runtime Composition**: Features can be enabled or disabled conditionally at runtime based on environment flags without recompilation.
+
+---
+
+### 5. More examples
+
+#### Example 1: Retry decorator with exponential backoff
+```typescript
+class RetryDecorator implements DataService {
+  constructor(
+    private wrappee: DataService,
+    private maxRetries: number = 3
+  ) {}
+
+  async fetchData(id: string): Promise<string> {
+    let attempt = 0;
+    while (true) {
+      try {
+        return await this.wrappee.fetchData(id);
+      } catch (err) {
+        attempt++;
+        if (attempt >= this.maxRetries) throw err;
+        await new Promise((res) => setTimeout(res, 50 * Math.pow(2, attempt)));
+      }
+    }
+  }
+}
+```
+
+#### Example 2: Generic method decorator factory
+```typescript
+function withTiming<T extends (...args: any[]) => Promise<any>>(fn: T, label: string): T {
+  return (async (...args: any[]) => {
+    const t0 = performance.now();
+    try {
+      return await fn(...args);
+    } finally {
+      console.log(`[Timing] ${label}: ${(performance.now() - t0).toFixed(2)}ms`);
+    }
+  }) as T;
+}
+```
+
+---
+
+### 6. Common mistakes
+
+#### Mistake 1: Confusing TypeScript experimental/TC39 decorators with the Compositional Decorator pattern
+```typescript
+// Gotcha:
+@LogMethod // This is a language syntax feature (Class/Method decorator)!
+class Service {}
+
+// vs Compositional Decorator Pattern:
+const service = new LoggingDecorator(new Service()); // This is an architectural design pattern!
+```
+**Why it matters:** Language decorators (`@decorator`) modify classes or prototypes during definition. The Design Pattern Decorator is an object wrapper that conforms to an interface at runtime.
+
+#### Mistake 2: Breaking the interface contract
+```typescript
+// WRONG: Decorator alters return type
+class BadDecorator {
+  constructor(private wrappee: DataService) {}
+  fetchData(id: string): { data: string; cached: boolean } { // Breaks DataService contract!
+    return { data: "...", cached: true };
+  }
+}
+```
+**Why it fails:** A decorator MUST implement the same interface as the wrappee. If the method signature changes, it is an Adapter, not a Decorator.
+
+---
+
+### 7. Rules to remember
+1. Both the base service and the decorator MUST implement the exact same interface.
+2. The decorator accepts the interface type in its constructor (`private wrappee: ServiceInterface`).
+3. Call order is determined by the nesting order of the constructor calls.
+4. If you change method signatures or return types, you are writing an Adapter, not a Decorator.
+
+---
+
+### Think first: Prediction puzzle
+In what order are log messages printed when `service.execute()` is called below?
+
+```typescript
+interface Action { execute(): void; }
+
+class BaseAction implements Action {
+  execute() { console.log("Base"); }
+}
+
+class OuterDec implements Action {
+  constructor(private inner: Action) {}
+  execute() {
+    console.log("Outer Before");
+    this.inner.execute();
+    console.log("Outer After");
+  }
+}
+
+class InnerDec implements Action {
+  constructor(private inner: Action) {}
+  execute() {
+    console.log("Inner Before");
+    this.inner.execute();
+    console.log("Inner After");
+  }
+}
+
+const action = new OuterDec(new InnerDec(new BaseAction()));
+action.execute();
+```
+
+---
+
+**Answer:**
+```
+Outer Before
+Inner Before
+Base
+Inner After
+Outer After
+```
+**Execution trace:**
+1. `OuterDec` runs `console.log("Outer Before")`.
+2. `OuterDec` calls `this.inner.execute()` (`InnerDec`).
+3. `InnerDec` runs `console.log("Inner Before")`.
+4. `InnerDec` calls `this.inner.execute()` (`BaseAction`).
+5. `BaseAction` logs `"Base"`.
+6. Control returns to `InnerDec`: logs `"Inner After"`.
+7. Control returns to `OuterDec`: logs `"Outer After"`.
+
+---
+
+### Practice exercises
+
+#### Exercise 1: Authorization Decorator
+- **Task**: Implement an `AuthDecorator` for an interface `Command { run(): void }` that verifies `this.user.isAdmin` before delegating to `wrappee.run()`.
+- **Hint 1**: If `!isAdmin`, throw `new Error("Unauthorized")`.
+
+#### Exercise 2: UpperCase Text Decorator
+- **Task**: Create a `TextTransformer` interface with `transform(s: string): string`. Implement `BaseTransformer` and an `UpperCaseDecorator`.
+- **Hint 1**: `return this.wrappee.transform(s).toUpperCase()`.
+
+#### Exercise 3: Metrics Counter Decorator
+- **Task**: Build an execution counter decorator that increments a public `invocationCount` integer on every method call.
+- **Hint 1**: `this.invocationCount++` before calling `this.wrappee.call()`.
+
+#### Exercise 4: Fallback Decorator
+- **Task**: Implement a `FallbackDecorator` that wraps a primary service and catches any error, delegating to a backup service.
+- **Hint 1**: `try { return await this.primary.run(); } catch { return await this.backup.run(); }`.
+
+---
+
+### Exercise solutions
+
+#### Solution 1: Authorization Decorator
+```typescript
+interface Command {
+  run(): void;
+}
+
+class AuthDecorator implements Command {
+  constructor(
+    private wrappee: Command,
+    private user: { isAdmin: boolean }
+  ) {}
+
+  run(): void {
+    if (!this.user.isAdmin) {
+      throw new Error("Unauthorized");
+    }
+    this.wrappee.run();
+  }
+}
+```
+
+#### Solution 2: UpperCase Text Decorator
+```typescript
+interface TextTransformer {
+  transform(s: string): string;
+}
+
+class BaseTransformer implements TextTransformer {
+  transform(s: string): string { return s; }
+}
+
+class UpperCaseDecorator implements TextTransformer {
+  constructor(private wrappee: TextTransformer) {}
+
+  transform(s: string): string {
+    return this.wrappee.transform(s).toUpperCase();
+  }
+}
+```
+
+#### Solution 3: Metrics Counter Decorator
+```typescript
+interface TaskRunner {
+  run(): Promise<void>;
+}
+
+class MetricsCounterDecorator implements TaskRunner {
+  public invocationCount = 0;
+
+  constructor(private wrappee: TaskRunner) {}
+
+  async run(): Promise<void> {
+    this.invocationCount++;
+    await this.wrappee.run();
+  }
+}
+```
+
+#### Solution 4: Fallback Decorator
+```typescript
+interface QueryService {
+  execute(q: string): Promise<string>;
+}
+
+class FallbackDecorator implements QueryService {
+  constructor(
+    private primary: QueryService,
+    private fallback: QueryService
+  ) {}
+
+  async execute(q: string): Promise<string> {
+    try {
+      return await this.primary.execute(q);
+    } catch {
+      return await this.fallback.execute(q);
+    }
+  }
+}
+```
+
+---
+
+### Recall
+1. Why does the Compositional Decorator pattern avoid subclass explosion? Because behaviors are composed dynamically by nesting objects rather than declaring a new subclass for every combination.
+2. What contract must a Decorator satisfy? It must implement the identical interface as the wrapped object.
+3. What is the difference between an Adapter and a Decorator? An Adapter changes an interface; a Decorator preserves the interface and augments behavior.
+
+> **If you remember only one thing:**  
+> A Decorator wraps an object while implementing the exact same interface, dynamically enhancing behavior without class inheritance.
+
+---
+
+# Topic 10: Middleware Chain of Responsibility Pattern (Onion Model)
+
+### 1. What is it?
+The **Middleware Chain of Responsibility Pattern** passes a request or context through a chain of processing handlers. In the **Onion Model** (popularized by Koa, Express, and Redux), each middleware can execute logic before invoking `await next()`, pass control to the downstream handlers, and then execute cleanup or formatting logic on the way back up.
+
+### 2. Why does it exist?
+In web servers, HTTP clients, and command dispatchers, cross-cutting concerns (authentication, rate limiting, error catching, tracing, response compression) need to execute around the core business handler. Hardcoding these concerns into the route handler creates monolithic, untestable code. A middleware pipeline allows handlers to be registered independently and chained sequentially.
+
+### 3. Basic example
+
+```typescript
+type NextFn = () => Promise<void>;
+type Middleware<TContext> = (context: TContext, next: NextFn) => Promise<void>;
+
+class Pipeline<TContext> {
+  private middlewares: Middleware<TContext>[] = [];
+
+  use(middleware: Middleware<TContext>): this {
+    this.middlewares.push(middleware);
     return this;
   }
 
-  public async execute(context: TContext): Promise<void> {
+  async execute(context: TContext): Promise<void> {
     let index = -1;
 
     const dispatch = async (i: number): Promise<void> => {
       if (i <= index) {
-        throw new Error("next() called multiple times in single middleware");
+        throw new Error("next() called multiple times");
       }
       index = i;
 
-      const fn = this.middlewares[i];
-      if (!fn) return;
+      if (i >= this.middlewares.length) {
+        return;
+      }
 
+      const fn = this.middlewares[i];
       await fn(context, () => dispatch(i + 1));
     };
 
     await dispatch(0);
   }
 }
-```
 
----
-
-### 2.4 Generic LRU Cache with TTL Eviction
-
-A production-grade, generic Least-Recently-Used (LRU) cache with time-to-live expiration:
-
-```typescript
-interface CacheEntry<V> {
-  value: V;
-  expiresAt: number;
+// Usage Example
+interface RequestContext {
+  url: string;
+  user?: string;
+  statusCode?: number;
 }
 
-export class LRUCache<K extends string | number, V> {
-  private capacity: number;
-  private defaultTtlMs: number;
-  private cache: Map<K, CacheEntry<V>>;
+const pipeline = new Pipeline<RequestContext>();
 
-  constructor(capacity: number, defaultTtlMs: number = 60000) {
-    this.capacity = capacity;
-    this.defaultTtlMs = defaultTtlMs;
-    this.cache = new Map();
-  }
-
-  public get(key: K): V | null {
-    const entry = this.cache.get(key);
-    if (!entry) return null;
-
-    if (Date.now() > entry.expiresAt) {
-      this.cache.delete(key);
-      return null;
-    }
-
-    // Refresh LRU ordering: delete and re-insert
-    this.cache.delete(key);
-    this.cache.set(key, entry);
-    return entry.value;
-  }
-
-  public set(key: K, value: V, ttlMs?: number): void {
-    if (this.cache.has(key)) {
-      this.cache.delete(key);
-    } else if (this.cache.size >= this.capacity) {
-      // Evict oldest item (first item in Map iteration)
-      const oldestKey = this.cache.keys().next().value;
-      if (oldestKey !== undefined) {
-        this.cache.delete(oldestKey);
-      }
-    }
-
-    this.cache.set(key, {
-      value,
-      expiresAt: Date.now() + (ttlMs ?? this.defaultTtlMs),
-    });
-  }
-
-  public size(): number {
-    return this.cache.size;
-  }
-}
-```
-
-
----
-
-## 3. 90 Real-World Technical Interview Q&As (Part 1: Q1–Q45)
-
----
-
-#### Q1: What are Phantom Types and how do they enable the Type-State Pattern?
-**Answer:**
-A Phantom Type is a generic type parameter that appears only in the type definition but is never used as the type of an actual runtime property. In the Type-State pattern, phantom types represent the compile-time state of an object, preventing invalid operations (e.g. calling `.build()` before setting mandatory fields).
-
-```typescript
-interface Unconfigured {}
-interface Configured {}
-
-class Pipeline<TState = Unconfigured> {
-  public configure(): Pipeline<Configured> {
-    return new Pipeline<Configured>();
-  }
-
-  // Only callable when TState is Configured:
-  public execute(this: Pipeline<Configured>): void {
-    console.log("Pipeline executed successfully");
-  }
-}
-
-const p = new Pipeline();
-// p.execute(); // TS2684 Error! Cannot execute unconfigured pipeline!
-p.configure().execute(); // OK
-```
-
----
-
-#### Q2: How does the Step-Builder pattern solve the "telescoping constructor" anti-pattern?
-**Answer:**
-Instead of passing 8 constructor parameters where several are optional or boolean flags (e.g. `new Server(8080, "0.0.0.0", true, false, 5000, ...)`), the Step-Builder provides fluent, readable configuration methods where the compiler enforces the exact sequence of mandatory steps before allowing `.build()`.
-
----
-
-#### Q3: How do you implement a Type-Safe Generic Factory that avoids `switch` statements?
-**Answer:**
-Bind constructor signatures to a dynamic registry map where subclasses register themselves:
-
-```typescript
-type Constructor<T> = new (...args: any[]) => T;
-
-class GenericFactory<TBase> {
-  private registry = new Map<string, Constructor<TBase>>();
-
-  register(key: string, ctor: Constructor<TBase>): void {
-    this.registry.set(key, ctor);
-  }
-
-  create(key: string, ...args: any[]): TBase {
-    const Ctor = this.registry.get(key);
-    if (!Ctor) throw new Error(`Unknown key: ${key}`);
-    return new Ctor(...args);
-  }
-}
-```
-
----
-
-#### Q4: What is the Abstract Factory Pattern in TypeScript?
-**Answer:**
-An interface that provides an abstract contract for creating families of related or dependent objects without specifying their concrete classes:
-
-```typescript
-interface Button { render(): string; }
-interface Checkbox { check(): void; }
-
-interface GUIFactory {
-  createButton(): Button;
-  createCheckbox(): Checkbox;
-}
-
-class WindowsFactory implements GUIFactory {
-  createButton(): Button { return { render: () => "[WinButton]" }; }
-  createCheckbox(): Checkbox { return { check: () => {} }; }
-}
-```
-
----
-
-#### Q5: How do you harden a Singleton class against reflection bypass and cloning in TypeScript?
-**Answer:**
-1. Make the constructor `private`.
-2. Throw an exception if an instance already exists.
-3. Freeze the instance with `Object.freeze()`.
-4. Hide the instance reference behind a Symbol.
-
-```typescript
-const SINGLETON_INSTANCE = Symbol("SINGLETON");
-
-class HardenedSingleton {
-  private static [SINGLETON_INSTANCE]: HardenedSingleton | null = null;
-
-  private constructor() {
-    if (HardenedSingleton[SINGLETON_INSTANCE]) {
-      throw new Error("Cannot re-instantiate Singleton");
-    }
-    Object.freeze(this);
-  }
-
-  public static getInstance(): HardenedSingleton {
-    if (!this[SINGLETON_INSTANCE]) {
-      this[SINGLETON_INSTANCE] = new HardenedSingleton();
-    }
-    return this[SINGLETON_INSTANCE]!;
-  }
-}
-```
-
----
-
-#### Q6: What is the Generic Repository Pattern?
-**Answer:**
-It mediates between the domain and data mapping layers, acting like an in-memory domain object collection with standard CRUD operations:
-
-```typescript
-interface IRepository<T, TId> {
-  getById(id: TId): Promise<T | null>;
-  getAll(): Promise<T[]>;
-  add(entity: T): Promise<void>;
-  remove(id: TId): Promise<void>;
-}
-```
-
----
-
-#### Q7: What is the Unit of Work pattern and how does it collaborate with Repositories?
-**Answer:**
-The Unit of Work maintains a list of database transactions and dirty/modified entities during a business transaction, coordinating the writing out of changes and atomic rollbacks upon failure.
-
----
-
-#### Q8: What is the Identity Map pattern in enterprise data persistence?
-**Answer:**
-An in-memory cache that ensures each database record is loaded only once into the application memory per transaction, preventing duplicate instances and stale reference conflicts.
-
----
-
-#### Q9: How does the Specification Pattern enable composable business rules?
-**Answer:**
-It encapsulates boolean query criteria into discrete classes with chaining methods (`and`, `or`, `not`), allowing them to be combined dynamically without coupling domain rules to SQL queries.
-
-```typescript
-interface Spec<T> {
-  isSatisfied(item: T): boolean;
-}
-
-class InStockSpec implements Spec<{ inStock: boolean }> {
-  isSatisfied(item: { inStock: boolean }) { return item.inStock; }
-}
-```
-
----
-
-#### Q10: How do you implement a Type-Safe Decorator / Wrapper without inheritance?
-**Answer:**
-Implement the same interface as the target and hold a reference to the inner object:
-
-```typescript
-interface QueryExecutor {
-  query(sql: string): Promise<any[]>;
-}
-
-class TimedQueryExecutor implements QueryExecutor {
-  constructor(private inner: QueryExecutor) {}
-
-  async query(sql: string): Promise<any[]> {
-    const start = performance.now();
-    try {
-      return await this.inner.query(sql);
-    } finally {
-      console.log(`Query took ${(performance.now() - start).toFixed(2)}ms`);
-    }
-  }
-}
-```
-
----
-
-#### Q11: What is the Adapter Pattern and how is it used in API migration?
-**Answer:**
-It translates the interface of an old or third-party service into the target interface your domain expects:
-
-```typescript
-interface ModernPaymentGateway {
-  charge(amountCents: number, currency: string): Promise<string>;
-}
-
-class LegacyPaymentApi {
-  processOldPayment(dollars: number): { receiptId: string } {
-    return { receiptId: "rec_123" };
-  }
-}
-
-class PaymentAdapter implements ModernPaymentGateway {
-  constructor(private legacy: LegacyPaymentApi) {}
-
-  async charge(amountCents: number, currency: string): Promise<string> {
-    const res = this.legacy.processOldPayment(amountCents / 100);
-    return res.receiptId;
-  }
-}
-```
-
----
-
-#### Q12: What is the Facade Pattern and how does it improve system architecture?
-**Answer:**
-A Facade provides a simplified, unified high-level interface to a complex subsystem (e.g. video encoding, audio mixing, compression), shielding client code from complex low-level API wiring.
-
----
-
-#### Q13: How do you implement the Composite Pattern in TypeScript?
-**Answer:**
-Compose objects into tree structures to represent part-whole hierarchies. Both individual leaf nodes and composite branches implement a common interface:
-
-```typescript
-interface FileSystemItem {
-  getSize(): number;
-}
-
-class FileItem implements FileSystemItem {
-  constructor(private size: number) {}
-  getSize(): number { return this.size; }
-}
-
-class DirectoryItem implements FileSystemItem {
-  private children: FileSystemItem[] = [];
-  add(item: FileSystemItem) { this.children.push(item); }
-  getSize(): number {
-    return this.children.reduce((total, child) => total + child.getSize(), 0);
-  }
-}
-```
-
----
-
-#### Q14: How do you implement a Type-Safe Proxy for change tracking?
-**Answer:**
-Using JavaScript's native `Proxy` with typed handlers:
-
-```typescript
-export function createChangeTracker<T extends object>(target: T, onChange: (prop: keyof T) => void): T {
-  return new Proxy(target, {
-    set(obj, prop, value) {
-      Reflect.set(obj, prop, value);
-      onChange(prop as keyof T);
-      return true;
-    }
-  });
-}
-```
-
----
-
-#### Q15: What is the Strategy Pattern and how does it differ from the State Pattern?
-**Answer:**
-- **Strategy**: The client typically passes a specific algorithm to a context object to configure how a task is performed. Strategies are usually independent and do not know about each other.
-- **State**: The context's internal behavior changes automatically as its internal state changes. State classes frequently transition the context to other concrete states.
-
----
-
-#### Q16: How do you model a Type-Safe Middleware Chain of Responsibility?
-**Answer:**
-Pass a typed context and an asynchronous `next()` function down a pipeline of handlers:
-
-```typescript
-type Next = () => Promise<void>;
-type Middleware<C> = (ctx: C, next: Next) => Promise<void>;
-
-class Pipeline<C> {
-  private stack: Middleware<C>[] = [];
-  use(fn: Middleware<C>) { this.stack.push(fn); return this; }
-}
-```
-
----
-
-#### Q17: How does an in-process Observer Pattern differ from distributed Pub/Sub?
-**Answer:**
-- **In-Process Observer**: Synchronous or microtask-based notification within the same V8 isolate; zero serialization cost; strong compile-time type checking.
-- **Distributed Pub/Sub**: Message brokers (Kafka, RabbitMQ, Redis); involves network boundaries, JSON/Protobuf serialization, and eventual consistency.
-
----
-
-#### Q18: How do you build a strictly-typed EventEmitter in TypeScript?
-**Answer:**
-Use mapped types over an event-name-to-payload dictionary:
-
-```typescript
-type EventMap = Record<string, any>;
-
-class TypedEventEmitter<Events extends EventMap> {
-  private listeners: { [K in keyof Events]?: ((payload: Events[K]) => void)[] } = {};
-
-  on<K extends keyof Events>(event: K, handler: (payload: Events[K]) => void): void {
-    if (!this.listeners[event]) this.listeners[event] = [];
-    this.listeners[event]!.push(handler);
-  }
-
-  emit<K extends keyof Events>(event: K, payload: Events[K]): void {
-    this.listeners[event]?.forEach((h) => h(payload));
-  }
-}
-```
-
----
-
-#### Q19: What is the Command Pattern and how does it support Undo/Redo?
-**Answer:**
-Encapsulates all information needed to perform an action as an object containing `execute()` and `undo()` methods. A command history stack pushes executed commands for undoing.
-
----
-
-#### Q20: What is the Memento Pattern and when is it used?
-**Answer:**
-It captures and externalizes an object's internal state without violating encapsulation, allowing the object to be restored to this state later (snapshots/checkpoints).
-
----
-
-#### Q21: What is the Visitor Pattern and how do you achieve Double Dispatch in TypeScript?
-**Answer:**
-It separates algorithms from the object structures on which they operate. The element class accepts a visitor (`element.accept(visitor)`), and calls the visitor's corresponding method (`visitor.visitConcreteElement(this)`).
-
----
-
-#### Q22: What is the Template Method Pattern?
-**Answer:**
-An abstract class defines the invariant execution workflow of an algorithm while leaving variant steps to abstract or hook methods implemented by subclasses.
-
----
-
-#### Q23: What is the Flyweight Pattern?
-**Answer:**
-Minimizes memory usage by sharing common immutable state (intrinsic state) across multiple objects, while externalizing unique variable state (extrinsic state).
-
----
-
-#### Q24: Why is Railway-Oriented Programming with `Result<T, E>` preferred over throwing exceptions?
-**Answer:**
-1. **Explicit Error Contracts**: Callers know exactly what errors can happen from the type signature (`Result<User, UserNotFoundError | DatabaseError>`).
-2. **Referential Transparency**: Functions return values instead of jumping out of the call stack.
-3. **No Unhandled Crashes**: The compiler forces callers to handle both `Ok` and `Err` branches before accessing `.value`.
-
----
-
-#### Q25: What is the difference between `Result.map` and `Result.flatMap`?
-**Answer:**
-- `map(fn)`: Transforms `value` using a function that returns a regular value `U`, automatically wrapping it into `Ok<U, E>`.
-- `flatMap(fn)`: Transforms `value` using a function that returns another `Result<U, E>`, preventing nested `Result<Result<U, E>, E>`.
-
----
-
-#### Q26: How do you wrap throwing legacy functions into `Result` safely?
-**Answer:**
-Using a `tryCatch` helper:
-
-```typescript
-function tryCatch<T>(fn: () => T): Result<T, Error> {
-  try {
-    return ok(fn());
-  } catch (err) {
-    return err(err instanceof Error ? err : new Error(String(err)));
-  }
-}
-```
-
----
-
-#### Q27: What is the `Option<T>` (or `Maybe<T>`) pattern and how does it prevent null pointer errors?
-**Answer:**
-Represents an optional value as either `Some(value)` or `None`. Forces callers to pattern match or unwrap safely, eliminating defensive `if (x !== null && x !== undefined)` checks.
-
----
-
-#### Q28: How does `pipe()` function application work in TypeScript?
-**Answer:**
-Passes a value through a sequence of functions from left to right: `pipe(x, f, g) === g(f(x))`.
-
----
-
-#### Q29: How does `compose()` differ from `pipe()`?
-**Answer:**
-`compose()` evaluates functions from **right to left**: `compose(f, g)(x) === f(g(x))`, matching mathematical function composition $(f \circ g)(x)$.
-
----
-
-#### Q30: What is Function Currying and how is it typed in TypeScript?
-**Answer:**
-Translating a function that takes multiple arguments `(a, b, c) => d` into a sequence of unary functions `a => b => c => d`.
-
----
-
-#### Q31: How do you implement a Type-Safe `memoize` function in TypeScript?
-**Answer:**
-Cache function results indexed by stringified arguments:
-
-```typescript
-export function memoize<Args extends any[], Return>(
-  fn: (...args: Args) => Return
-): (...args: Args) => Return {
-  const cache = new Map<string, Return>();
-  return (...args: Args): Return => {
-    const key = JSON.stringify(args);
-    if (cache.has(key)) return cache.get(key)!;
-    const res = fn(...args);
-    cache.set(key, res);
-    return res;
-  };
-}
-```
-
----
-
-#### Q32: What is the Least-Recently-Used (LRU) cache eviction policy?
-**Answer:**
-When the cache reaches maximum capacity, the item that has not been accessed for the longest time is evicted first. In JavaScript, `Map` insertion ordering enables fast $O(1)$ LRU tracking.
-
----
-
-#### Q33: What is the difference between Dependency Injection (DI) and the Service Locator anti-pattern?
-**Answer:**
-- **Dependency Injection**: Dependencies are pushed explicitly into a class via constructor parameters. The class's contract clearly states what it needs.
-- **Service Locator**: The class actively pulls dependencies from a global registry (`Locator.get("Db")`). Dependencies are hidden and cannot be verified at compile time.
-
----
-
-#### Q34: What is Constructor Injection and why is it preferred over Property Injection?
-**Answer:**
-Constructor injection passes dependencies at object construction time, guaranteeing that an instance cannot exist in an uninitialized or broken state.
-
----
-
-#### Q35: What are the three standard service lifetimes in IoC containers?
-**Answer:**
-1. **Transient**: Created every time requested.
-2. **Scoped**: Created once per request/transaction context.
-3. **Singleton**: Created once for the entire application lifetime.
-
----
-
-#### Q36: How do Service Tokens provide type safety in an IoC Container?
-**Answer:**
-A token pairs a unique runtime `symbol` with a compile-time phantom type `_type?: T`:
-
-```typescript
-interface Token<T> {
-  symbol: symbol;
-  _type?: T;
-}
-
-function createToken<T>(name: string): Token<T> {
-  return { symbol: Symbol(name) };
-}
-```
-
----
-
-#### Q37: How do you detect circular dependencies in an IoC container?
-**Answer:**
-Maintain a set of "currently resolving" tokens during resolution. If a token being resolved is already in the set, throw `CircularDependencyError`.
-
----
-
-#### Q38: What are Ports and Adapters in Hexagonal Architecture?
-**Answer:**
-- **Ports**: Inbound/Outbound interfaces defined by the core domain (e.g. `UserRepository`, `PaymentGateway`).
-- **Adapters**: Concrete implementations outside the domain (e.g. `PostgresUserRepository`, `StripePaymentGateway`).
-
----
-
-#### Q39: What is the Active Record pattern and why is Data Mapper preferred in complex domains?
-**Answer:**
-- **Active Record**: An entity class contains both data properties and direct database persistence methods (`user.save()`, `User.find()`). Couples domain logic to DB tables.
-- **Data Mapper**: Separates the in-memory domain model from the database schema entirely (`userRepo.save(user)`). Keeps domain models pure and testable.
-
----
-
-#### Q40: What is the Circuit Breaker pattern?
-**Answer:**
-Wraps remote service calls to prevent cascading failures. It tracks failures; when a threshold is breached, it trips to the "Open" state, rejecting requests immediately without hitting the failing remote service.
-
----
-
-#### Q41: What are the three states of a Circuit Breaker?
-**Answer:**
-1. **Closed**: Normal operations; requests pass through.
-2. **Open**: Service failing; all requests fail fast immediately.
-3. **Half-Open**: Probe requests sent to test if the service has recovered.
-
----
-
-#### Q42: What is the Retry with Exponential Backoff pattern?
-**Answer:**
-Retrying failed transient network calls with exponentially increasing delays ($2^n \times \text{base} + \text{jitter}$) to prevent hammering recovering servers.
-
----
-
-#### Q43: How do you model an Immutable Event-Sourced Entity?
-**Answer:**
-The entity's state is not mutated directly; instead, state is derived by replaying a sequence of past immutable domain events:
-
-```typescript
-type Event = { type: "OrderCreated"; amount: number } | { type: "OrderCancelled" };
-
-function evolve(state: { status: string; amount: number }, event: Event) {
-  switch (event.type) {
-    case "OrderCreated": return { status: "created", amount: event.amount };
-    case "OrderCancelled": return { ...state, status: "cancelled" };
-  }
-}
-```
-
----
-
-#### Q44: What is the Bulkhead pattern in distributed systems?
-**Answer:**
-Isolating system resources (thread pools, connection pools, memory) into distinct pools so that the failure of one downstream service does not exhaust resources for the rest of the application.
-
----
-
-#### Q45: How do you enforce transactional boundaries using the Unit of Work pattern?
-**Answer:**
-All repository mutation calls register operations in the Unit of Work. Only when `await unitOfWork.commit()` is called are all changes committed in a single atomic database transaction.
-
-
----
-
-## 3. 90 Real-World Technical Interview Q&As (Part 2: Q46–Q90)
-
----
-
-#### Q46: How do you build a type-safe CQRS Command Dispatcher in TypeScript?
-**Answer:**
-Separate write commands from read queries using dedicated command handlers:
-
-```typescript
-interface Command<Type extends string, Payload> {
-  type: Type;
-  payload: Payload;
-}
-
-interface CommandHandler<C extends Command<string, any>, Result = void> {
-  handle(command: C): Promise<Result>;
-}
-
-class CommandBus {
-  private handlers = new Map<string, CommandHandler<any, any>>();
-
-  register<C extends Command<string, any>, R>(type: C["type"], handler: CommandHandler<C, R>) {
-    this.handlers.set(type, handler);
-  }
-
-  async execute<C extends Command<string, any>, R>(command: C): Promise<R> {
-    const handler = this.handlers.get(command.type);
-    if (!handler) throw new Error(`No handler for command: ${command.type}`);
-    return handler.handle(command);
-  }
-}
-```
-
----
-
-#### Q47: What is the Outbox Pattern in distributed microservices?
-**Answer:**
-To guarantee atomic database writes and message publishing, domain events are saved into an "Outbox" table in the same database transaction as the business entity. A separate background worker reads the outbox table and publishes events to the message broker.
-
----
-
-#### Q48: How do you model a Saga Orchestrator in TypeScript?
-**Answer:**
-A Saga manages a distributed transaction across multiple services as a sequence of steps. Each step has an action and a compensating transaction (rollback) if subsequent steps fail:
-
-```typescript
-interface SagaStep<TContext> {
-  execute(ctx: TContext): Promise<void>;
-  compensate(ctx: TContext): Promise<void>;
-}
-
-class SagaOrchestrator<TContext> {
-  private steps: SagaStep<TContext>[] = [];
-
-  addStep(step: SagaStep<TContext>) { this.steps.push(step); return this; }
-
-  async run(ctx: TContext): Promise<void> {
-    const executed: SagaStep<TContext>[] = [];
-    for (const step of this.steps) {
-      try {
-        await step.execute(ctx);
-        executed.push(step);
-      } catch (err) {
-        // Rollback executed steps in reverse order
-        for (const done of executed.reverse()) {
-          await done.compensate(ctx);
-        }
-        throw err;
-      }
-    }
-  }
-}
-```
-
----
-
-#### Q49: How do you implement the Null Object Pattern to eliminate `undefined` checks?
-**Answer:**
-Provide a concrete class implementing an interface that performs neutral / no-op behavior instead of passing `null`:
-
-```typescript
-interface Logger { log(msg: string): void; }
-
-class ConsoleLogger implements Logger {
-  log(msg: string) { console.log(msg); }
-}
-
-class NullLogger implements Logger {
-  log(_msg: string): void {} // Silent no-op
-}
-
-function initService(logger: Logger = new NullLogger()) {
-  logger.log("Service started"); // Never needs 'if (logger)' check!
-}
-```
-
----
-
-#### Q50: How do you implement a Token Bucket Rate Limiter in TypeScript?
-**Answer:**
-Refill tokens at a fixed rate up to a capacity limit. Each incoming request consumes one or more tokens:
-
-```typescript
-export class TokenBucketRateLimiter {
-  private tokens: number;
-  private lastRefill: number;
-
-  constructor(
-    private capacity: number,
-    private refillRatePerSec: number
-  ) {
-    this.tokens = capacity;
-    this.lastRefill = Date.now();
-  }
-
-  public tryConsume(cost: number = 1): boolean {
-    this.refill();
-    if (this.tokens >= cost) {
-      this.tokens -= cost;
-      return true;
-    }
-    return false;
-  }
-
-  private refill(): void {
-    const now = Date.now();
-    const elapsedSec = (now - this.lastRefill) / 1000;
-    this.tokens = Math.min(this.capacity, this.tokens + elapsedSec * this.refillRatePerSec);
-    this.lastRefill = now;
-  }
-}
-```
-
----
-
-#### Q51: How do you build a Type-Safe Promise Pool for concurrency throttling?
-**Answer:**
-Run asynchronous tasks with a maximum concurrency limit:
-
-```typescript
-export async function promisePool<T, R>(
-  items: T[],
-  limit: number,
-  worker: (item: T) => Promise<R>
-): Promise<R[]> {
-  const results: R[] = [];
-  const executing: Promise<any>[] = [];
-
-  for (const item of items) {
-    const p = Promise.resolve().then(() => worker(item)).then((res) => results.push(res));
-    executing.push(p);
-
-    if (executing.length >= limit) {
-      await Promise.race(executing);
-      // Remove completed promises
-      for (let i = executing.length - 1; i >= 0; i--) {
-        // Simple race filter
-      }
-    }
-  }
-
-  await Promise.all(executing);
-  return results;
-}
-```
-
----
-
-#### Q52: How do you implement an Exponential Backoff retry utility with jitter?
-**Answer:**
-```typescript
-export async function retryWithBackoff<T>(
-  fn: () => Promise<T>,
-  retries: number = 3,
-  delayMs: number = 100
-): Promise<T> {
-  try {
-    return await fn();
-  } catch (err) {
-    if (retries <= 0) throw err;
-    const jitter = Math.random() * 50;
-    await new Promise((r) => setTimeout(r, delayMs + jitter));
-    return retryWithBackoff(fn, retries - 1, delayMs * 2);
-  }
-}
-```
-
----
-
-#### Q53: What is the Gateway Pattern in enterprise software?
-**Answer:**
-An object that encapsulates access to an external system, providing a clean domain-oriented interface while handling HTTP headers, serialization, authentication, and error mapping internally.
-
----
-
-#### Q54: How do you prevent memory leaks in Node.js EventEmitters?
-**Answer:**
-1. Always remove event listeners when components or subscriptions unmount (`emitter.off()` or returning unsubscribe closures).
-2. Avoid registering anonymous inline functions as listeners if you intend to remove them later.
-3. Monitor `emitter.listenerCount(event)`.
-
----
-
-#### Q55: How do you use `WeakRef` and `FinalizationRegistry` to prevent memory leaks in caches?
-**Answer:**
-Store weak references to cached values so the garbage collector can reclaim them if no other references exist:
-
-```typescript
-class WeakValueCache<K, V extends object> {
-  private cache = new Map<K, WeakRef<V>>();
-
-  set(key: K, value: V) {
-    this.cache.set(key, new WeakRef(value));
-  }
-
-  get(key: K): V | null {
-    const ref = this.cache.get(key);
-    if (!ref) return null;
-    const val = ref.deref();
-    if (!val) {
-      this.cache.delete(key);
-      return null;
-    }
-    return val;
-  }
-}
-```
-
----
-
-#### Q56: How do you handle Graceful Shutdown (`SIGTERM` / `SIGINT`) in TypeScript Node.js services?
-**Answer:**
-Intercept process termination signals, stop accepting new connections, wait for active transactions to complete, and close database pools:
-
-```typescript
-export class GracefulShutdownManager {
-  private cleanupTasks: (() => Promise<void>)[] = [];
-
-  public register(task: () => Promise<void>): void {
-    this.cleanupTasks.push(task);
-  }
-
-  public listen(): void {
-    const handler = async (signal: string) => {
-      console.log(`Received ${signal}. Shutting down cleanly...`);
-      for (const task of this.cleanupTasks) {
-        try { await task(); } catch (e) { console.error(e); }
-      }
-      process.exit(0);
-    };
-    process.on("SIGTERM", () => handler("SIGTERM"));
-    process.on("SIGINT", () => handler("SIGINT"));
-  }
-}
-```
-
----
-
-#### Q57: How do you implement the Mediator Pattern in TypeScript?
-**Answer:**
-An object that encapsulates how a set of components interact, preventing them from referring to each other explicitly and keeping their coupling loose:
-
-```typescript
-interface DialogMediator {
-  notify(sender: Component, event: string): void;
-}
-
-abstract class Component {
-  constructor(protected mediator: DialogMediator) {}
-}
-
-class Checkbox extends Component {
-  check() { this.mediator.notify(this, "check"); }
-}
-
-class SubmitButton extends Component {
-  enable() { console.log("Button enabled"); }
-}
-```
-
----
-
-#### Q58: What is the difference between Cohesion and Coupling in software architecture?
-**Answer:**
-- **Cohesion**: How closely related and focused the responsibilities of a single module/class are (High cohesion is desirable).
-- **Coupling**: How much one module/class depends on the internal details of other modules/classes (Low coupling is desirable).
-
----
-
-#### Q59: How do you enforce architectural boundaries using TypeScript Project References?
-**Answer:**
-In a monorepo, define separate `tsconfig.json` files for `domain`, `application`, and `infrastructure` layers, configuring `composite: true` and `references: [...]` to prevent inner layers from referencing outer layers.
-
----
-
-#### Q60: What is the Data Transfer Object (DTO) pattern?
-**Answer:**
-An object that carries data between processes or layers (e.g. over HTTP or RPC) without any business logic, ensuring API serialization formats remain decoupled from domain entity models.
-
----
-
-#### Q61: How do you build an In-Memory Unit of Work with transaction rollback?
-**Answer:**
-Stage state changes in memory. If any operation fails, discard the staged state without updating the primary storage.
-
----
-
-#### Q62: What is the difference between Optimistic and Pessimistic Concurrency Control?
-**Answer:**
-- **Optimistic**: Records include a `version` number. When updating, the write checks `WHERE version = currentVersion`. If modified by another transaction, the update fails.
-- **Pessimistic**: Acquires a database lock (`SELECT FOR UPDATE`) on the row, blocking other transactions until the lock is released.
-
----
-
-#### Q63: How do you write a Type-Safe Dynamic Adapter?
-**Answer:**
-```typescript
-interface SourceData { first_name: string; age_years: number; }
-interface TargetData { fullName: string; isAdult: boolean; }
-
-function adaptUser(src: SourceData): TargetData {
-  return {
-    fullName: src.first_name,
-    isAdult: src.age_years >= 18,
-  };
-}
-```
-
----
-
-#### Q64: What is the Health Check pattern for containerized services?
-**Answer:**
-Exposing `/health/liveness` (checks if the Node.js process is alive) and `/health/readiness` (checks if database, Redis, and message broker connections are healthy).
-
----
-
-#### Q65: How do you implement a Type-Safe Feature Flag client?
-**Answer:**
-```typescript
-interface FeatureFlags {
-  "new-checkout-flow": boolean;
-  "max-upload-size-mb": number;
-}
-
-class FeatureFlagService {
-  constructor(private flags: FeatureFlags) {}
-
-  isEnabled(flag: keyof FeatureFlags): boolean {
-    return Boolean(this.flags[flag]);
-  }
-
-  getValue<K extends keyof FeatureFlags>(flag: K): FeatureFlags[K] {
-    return this.flags[flag];
-  }
-}
-```
-
----
-
-#### Q66: What is the difference between Monadic `flatMap` and `Promise.then`?
-**Answer:**
-`Promise.then` automatically unwraps nested promises (flattening them) whether the return value is a bare value or a promise. Monadic `flatMap` strictly requires a function returning a monad (`Result<U, E>`), while `map` handles bare values.
-
----
-
-#### Q67: How do you implement the Memento Pattern with deep snapshots?
-**Answer:**
-```typescript
-class EditorState {
-  constructor(public text: string) {}
-}
-
-class TextEditor {
-  private content: string = "";
-
-  public type(words: string) { this.content += words; }
-  public saveSnapshot(): EditorState { return new EditorState(this.content); }
-  public restore(snapshot: EditorState) { this.content = snapshot.text; }
-  public getText() { return this.content; }
-}
-```
-
----
-
-#### Q68: How do you implement a Type-Safe Command History stack?
-**Answer:**
-```typescript
-interface Command {
-  execute(): void;
-  undo(): void;
-}
-
-class CommandHistory {
-  private history: Command[] = [];
-
-  public pushAndExecute(cmd: Command): void {
-    cmd.execute();
-    this.history.push(cmd);
-  }
-
-  public undo(): void {
-    const cmd = this.history.pop();
-    if (cmd) cmd.undo();
-  }
-}
-```
-
----
-
-#### Q69: What is the difference between Synchronous and Asynchronous Middleware?
-**Answer:**
-Synchronous middleware executes in a single event loop tick. Asynchronous middleware returns a `Promise<void>`, allowing `await next()` to pause execution until downstream asynchronous operations complete.
-
----
-
-#### Q70: How do you build an In-Memory Event Store?
-**Answer:**
-```typescript
-interface StoredEvent {
-  aggregateId: string;
-  version: number;
-  type: string;
-  data: any;
-  timestamp: Date;
-}
-
-class EventStore {
-  private events: StoredEvent[] = [];
-
-  append(streamId: string, expectedVersion: number, newEvents: StoredEvent[]) {
-    // Check concurrency
-    this.events.push(...newEvents);
-  }
-
-  getEvents(streamId: string): StoredEvent[] {
-    return this.events.filter((e) => e.aggregateId === streamId);
-  }
-}
-```
-
----
-
-#### Q71: How do you test a class that depends on `Date.now()` without mocking global clocks?
-**Answer:**
-Inject an abstract `Clock` interface:
-
-```typescript
-interface Clock { now(): number; }
-class SystemClock implements Clock { now() { return Date.now(); } }
-class FrozenClock implements Clock {
-  constructor(private time: number) {}
-  now() { return this.time; }
-}
-```
-
----
-
-#### Q72: How do you type an immutable Reducer function in TypeScript?
-**Answer:**
-```typescript
-type Reducer<State, Action> = (prevState: State, action: Action) => State;
-```
-
----
-
-#### Q73: What is the difference between Factory Method and Abstract Factory?
-**Answer:**
-- **Factory Method**: A single method on a class responsible for creating a single product.
-- **Abstract Factory**: An object responsible for creating families of multiple related products.
-
----
-
-#### Q74: How do you write a Type-Safe Curried function?
-**Answer:**
-```typescript
-function curry2<A, B, R>(fn: (a: A, b: B) => R): (a: A) => (b: B) => R {
-  return (a: A) => (b: B) => fn(a, b);
-}
-```
-
----
-
-#### Q75: How do you implement a Type-Safe Logger Decorator?
-**Answer:**
-Wrap any service interface with automatic entry/exit logging:
-
-```typescript
-function withLogging<T extends Record<string, (...args: any[]) => any>>(service: T): T {
-  const handler: ProxyHandler<T> = {
-    get(target, prop, receiver) {
-      const orig = Reflect.get(target, prop, receiver);
-      if (typeof orig === "function") {
-        return (...args: any[]) => {
-          console.log(`[CALL] ${String(prop)} with`, args);
-          return orig.apply(target, args);
-        };
-      }
-      return orig;
-    }
-  };
-  return new Proxy(service, handler);
-}
-```
-
----
-
-#### Q76: What is the Idempotency Key pattern in payment APIs?
-**Answer:**
-A unique client-generated token passed with a write request. If the client retries the request due to network failure, the server detects the idempotency key and returns the cached result without charging the card again.
-
----
-
-#### Q77: How do you model Idempotency in a Repository?
-**Answer:**
-Store idempotency keys alongside transactions and check if an operation has already executed before processing.
-
----
-
-#### Q78: How do you build an In-Memory Mutex / Lock in TypeScript?
-**Answer:**
-```typescript
-class AsyncMutex {
-  private queue: Promise<void> = Promise.resolve();
-
-  async acquire(): Promise<() => void> {
-    let release: () => void;
-    const next = new Promise<void>((r) => { release = r; });
-    const current = this.queue;
-    this.queue = this.queue.then(() => next);
-    await current;
-    return release!;
-  }
-}
-```
-
----
-
-#### Q79: How do you implement the Observer Pattern with Unsubscribe tokens?
-**Answer:**
-Return an unsubscribe function from the subscription method:
-
-```typescript
-type Unsubscribe = () => void;
-class EventHub {
-  private subs = new Set<(msg: string) => void>();
-  subscribe(fn: (msg: string) => void): Unsubscribe {
-    this.subs.add(fn);
-    return () => this.subs.delete(fn);
-  }
-}
-```
-
----
-
-#### Q80: How do you implement a Type-Safe Builder with Default Options?
-**Answer:**
-Merge default options with user-provided options using object spread:
-
-```typescript
-interface Options { port: number; host: string; }
-const defaultOpts: Options = { port: 8080, host: "0.0.0.0" };
-function createServer(opts: Partial<Options> = {}): Options {
-  return { ...defaultOpts, ...opts };
-}
-```
-
----
-
-#### Q81: What is the Flyweight Factory Pattern?
-**Answer:**
-A factory that maintains an internal pool of existing flyweight instances, returning an existing object if one with matching intrinsic state already exists.
-
----
-
-#### Q82: How do you prevent prototype pollution in dynamic object mergers?
-**Answer:**
-Filter out forbidden prototype keys (`__proto__`, `constructor`, `prototype`):
-
-```typescript
-function safeMerge(target: any, source: any): any {
-  for (const key of Object.keys(source)) {
-    if (key === "__proto__" || key === "constructor" || key === "prototype") continue;
-    target[key] = source[key];
-  }
-  return target;
-}
-```
-
----
-
-#### Q83: What is the difference between Lazy and Eager evaluation in design patterns?
-**Answer:**
-- **Eager**: Computed immediately at program start or object construction.
-- **Lazy**: Postponed until the value is actually accessed for the first time, saving CPU/memory if never used.
-
----
-
-#### Q84: How do you build a Lazy Evaluator in TypeScript?
-**Answer:**
-```typescript
-export class Lazy<T> {
-  private instance?: T;
-  constructor(private factory: () => T) {}
-
-  public get value(): T {
-    if (this.instance === undefined) {
-      this.instance = this.factory();
-    }
-    return this.instance;
-  }
-}
-```
-
----
-
-#### Q85: What is the Strangler Fig Pattern in legacy migration?
-**Answer:**
-Incrementally replacing specific functionalities of a legacy monolith with modern microservices until the legacy system has been completely replaced.
-
----
-
-#### Q86: How do you implement a Type-Safe In-Memory Queue?
-**Answer:**
-```typescript
-class Queue<T> {
-  private items: T[] = [];
-  enqueue(item: T) { this.items.push(item); }
-  dequeue(): T | undefined { return this.items.shift(); }
-  peek(): T | undefined { return this.items[0]; }
-  isEmpty(): boolean { return this.items.length === 0; }
-}
-```
-
----
-
-#### Q87: What is the Composite Specification Pattern?
-**Answer:**
-Combining multiple specifications using boolean combinators (`and`, `or`, `not`) into an expression tree.
-
----
-
-#### Q88: How do you design an Extensible Plugin Architecture?
-**Answer:**
-Define a `Plugin` interface with lifecycle hooks (`initialize(context)`, `destroy()`) and register plugins in an orchestrator.
-
----
-
-#### Q89: How do you test a Class using Test Doubles (Mocks, Stubs, Spies)?
-**Answer:**
-- **Stub**: Provides canned responses to calls made during the test.
-- **Mock**: Registers expectations of calls and asserts they occurred.
-- **Spy**: Wraps real implementation to record invocations.
-
----
-
-#### Q90: What is the ultimate benefit of Reusable Architecture in TypeScript?
-**Answer:**
-Codebases scale without exponential complexity. Changes in business rules are localized to single components (SRP), extensions require zero edits to existing classes (OCP), and the compiler catches 100% of contract violations at build time before deployment.
-
-
----
-
-## 4. Output Prediction Puzzles (15 Puzzles with Step-by-Step Traces)
-
-Test your mental model of TypeScript's phantom type state builders, railway-oriented monads, middleware execution order, and caching mechanics.
-
----
-
-### Puzzle 1: Phantom Type State Enforcement in Step-Builder
-
-```typescript
-interface StateInitial {}
-interface StateWithUrl {}
-interface StateReady {}
-
-class ApiBuilder<TState = StateInitial> {
-  public setUrl(url: string): ApiBuilder<StateWithUrl> {
-    return new ApiBuilder<StateWithUrl>();
-  }
-
-  public setToken(token: string): ApiBuilder<StateReady> {
-    return new ApiBuilder<StateReady>();
-  }
-
-  public fetch(this: ApiBuilder<StateReady>): string {
-    return "SUCCESS";
-  }
-}
-
-const b1 = new ApiBuilder();
-const b2 = b1.setUrl("https://api.test");
-// Case A: b2.fetch()
-// Case B: b2.setToken("tok_123").fetch()
-```
-
-**Step-by-Step Evaluation Trace:**
-1. `b1` has type `ApiBuilder<StateInitial>`.
-2. `b2 = b1.setUrl(...)` transitions type to `ApiBuilder<StateWithUrl>`.
-3. In Case A: `.fetch()` declares `this: ApiBuilder<StateReady>`. Because `StateWithUrl` is not assignable to `StateReady`, Case A triggers compile error `TS2684`.
-4. In Case B: `.setToken("tok_123")` transitions the builder to `ApiBuilder<StateReady>`. Calling `.fetch()` succeeds, returning `"SUCCESS"`.
-5. **Result:** Case A produces compilation error `TS2684`; Case B produces `"SUCCESS"`.
-
----
-
-### Puzzle 2: Railway Monad `flatMap` Short-Circuiting on Error
-
-```typescript
-const result = ok<number, string>(10)
-  .map((n) => n * 2)
-  .flatMap((n) => err<string, number>("Failed calculation at step 2"))
-  .map((n) => n + 5);
-
-const output = result.match({
-  onOk: (v) => `OK: ${v}`,
-  onErr: (e) => `ERR: ${e}`,
-});
-// Question: What is the value of 'output'?
-```
-
-**Step-by-Step Evaluation Trace:**
-1. `ok(10)` creates an `Ok` with value `10`.
-2. `.map(n => n * 2)` executes the callback -> `Ok(20)`.
-3. `.flatMap(...)` executes the callback, which returns `Err("Failed calculation at step 2")`.
-4. Now the pipeline holds an `Err` instance!
-5. The subsequent `.map(n => n + 5)` encounters `Err`. In the `Err` class, `.map()` is a no-op that immediately returns `this` without calling the transformer.
-6. `.match()` evaluates `onErr` with the error message.
-7. **Output Value:** `"ERR: Failed calculation at step 2"`.
-
----
-
-### Puzzle 3: Onion Model Middleware Execution Order
-
-```typescript
-const executionTrail: string[] = [];
-
-const pipeline = new MiddlewarePipeline<{ id: string }>();
-
+// Middleware 1: Logger (Around logic)
 pipeline.use(async (ctx, next) => {
-  executionTrail.push("M1 Entry");
+  console.log(`--> ${ctx.url}`);
+  const start = Date.now();
   await next();
-  executionTrail.push("M1 Exit");
+  console.log(`<-- ${ctx.url} completed in ${Date.now() - start}ms with status ${ctx.statusCode}`);
 });
 
+// Middleware 2: Authenticator
 pipeline.use(async (ctx, next) => {
-  executionTrail.push("M2 Entry");
+  ctx.user = "auth_user_42";
   await next();
-  executionTrail.push("M2 Exit");
 });
 
-await pipeline.execute({ id: "ctx_1" });
-// Question: What is executionTrail?
+// Middleware 3: Route Handler
+pipeline.use(async (ctx, next) => {
+  ctx.statusCode = 200;
+  await next();
+});
+
+pipeline.execute({ url: "/api/v1/orders" });
 ```
 
-**Step-by-Step Evaluation Trace:**
-1. Pipeline begins: enters Middleware 1 -> pushes `"M1 Entry"`.
-2. `await next()` invokes Middleware 2.
-3. Middleware 2 enters -> pushes `"M2 Entry"`.
-4. Middleware 2 calls `await next()`. No more middleware in stack, dispatch resolves immediately.
-5. Control returns to Middleware 2 after `next()` -> pushes `"M2 Exit"`.
-6. Middleware 2 completes; control unwinds back to Middleware 1 after `next()` -> pushes `"M1 Exit"`.
-7. **Output Sequence:**
-   ```javascript
-   [
-     "M1 Entry",
-     "M2 Entry",
-     "M2 Exit",
-     "M1 Exit"
-   ]
-   ```
+**Line-by-line explanation:**
+- `type NextFn = () => Promise<void>`: Represents the delegate to the next middleware in line.
+- `type Middleware<TContext>`: Receives the shared `context` and `next`.
+- `dispatch(i)`: The recursive dispatcher. It advances `i` on each `next()` call.
+- `if (i <= index)`: Safety guard preventing double invocation of `next()`.
+- `await fn(context, () => dispatch(i + 1))`: Calls the middleware, passing an arrow function that advances the pointer to `i + 1`.
 
 ---
 
-### Puzzle 4: LRU Cache Access Ordering and Eviction
-
-```typescript
-const cache = new LRUCache<string, number>(2); // Capacity = 2
-
-cache.set("A", 1);
-cache.set("B", 2);
-cache.get("A");   // Read 'A'
-cache.set("C", 3); // Insert 'C'
-
-const resA = cache.get("A");
-const resB = cache.get("B");
-const resC = cache.get("C");
-```
-
-**Step-by-Step Evaluation Trace:**
-1. Insert `"A"`: Cache = `["A"]`.
-2. Insert `"B"`: Cache = `["A", "B"]`.
-3. Read `"A"`: Accessing `"A"` refreshes its LRU position, moving it to the back: Cache = `["B", "A"]`. (Now `"B"` is the oldest/least-recently-used item!).
-4. Insert `"C"`: Capacity is 2. The oldest item (`"B"`) is evicted! Cache = `["A", "C"]`.
-5. `cache.get("A")` -> `1`.
-6. `cache.get("B")` -> `null` (evicted!).
-7. `cache.get("C")` -> `3`.
-8. **Output Values:** `resA = 1`, `resB = null`, `resC = 3`.
+### 4. How it works inside TypeScript
+1. **Context Typing**: `TContext` is carried throughout the chain, ensuring all middleware inspect and mutate the identical strongly-typed context.
+2. **Onion Traversal**: Execution order is inward (before `await next()`) and outward (after `await next()`).
+3. **Short-Circuiting**: Any middleware can stop the pipeline simply by returning without calling `await next()` (e.g., if authentication fails).
 
 ---
 
-### Puzzle 5: Double `next()` Invocation Guard
+### 5. More examples
+
+#### Example 1: Short-circuiting on validation failure
+```typescript
+interface ApiContext {
+  token?: string;
+  status?: number;
+  body?: string;
+}
+
+const authGuard: Middleware<ApiContext> = async (ctx, next) => {
+  if (!ctx.token) {
+    ctx.status = 401;
+    ctx.body = "Unauthorized: Missing Token";
+    return; // Short-circuits: downstream middlewares are NEVER called!
+  }
+  await next();
+};
+```
+
+#### Example 2: Global exception-handling middleware
+```typescript
+const errorHandler: Middleware<ApiContext> = async (ctx, next) => {
+  try {
+    await next();
+  } catch (err: any) {
+    ctx.status = 500;
+    ctx.body = `Internal Error: ${err.message}`;
+  }
+};
+```
+
+---
+
+### 6. Common mistakes
+
+#### Mistake 1: Calling `next()` multiple times in a single middleware
+```typescript
+// WRONG: Calling next twice
+pipeline.use(async (ctx, next) => {
+  await next();
+  await next(); // Crash: downstream handlers execute twice, corrupting state!
+});
+```
+**Why it fails:** Calling `next()` multiple times restarts the downstream pipeline branch, leading to duplicated database queries or header write conflicts. Production dispatchers include an index guard to throw an immediate error.
+
+#### Mistake 2: Forgetting to `await next()`
+```typescript
+// WRONG: Not awaiting next()
+pipeline.use(async (ctx, next) => {
+  next(); // Fire and forget! Out-of-order execution!
+});
+```
+**Why it fails:** If `next()` is not awaited, the outer middleware finishes immediately before downstream async work completes. Timers and error handlers will fail to capture downstream events.
+
+---
+
+### 7. Rules to remember
+1. Always `await next()` to ensure the downstream chain completes before post-processing.
+2. Short-circuit the pipeline by returning early without calling `next()`.
+3. Include an index check (`if (i <= index) throw ...`) to prevent multiple `next()` calls.
+4. Keep the shared context object strongly typed (`Pipeline<TContext>`).
+
+---
+
+### Think first: Prediction puzzle
+What is printed to the console?
 
 ```typescript
-const p = new MiddlewarePipeline<any>();
+const logs: string[] = [];
+const p = new Pipeline<{}>();
 
 p.use(async (ctx, next) => {
+  logs.push("A1");
   await next();
-  await next(); // Attempt second next() invocation
+  logs.push("A2");
 });
 
-p.use(async (ctx, next) => {});
-
-// Question: What happens when p.execute({}) runs?
-```
-
-**Step-by-Step Evaluation Trace:**
-1. The first `await next()` dispatches index 1. Inside `dispatch`, `index` becomes 1.
-2. The second middleware finishes.
-3. The first middleware attempts to call `await next()` again.
-4. `dispatch(1)` is invoked again. The guard `if (i <= index)` evaluates: `1 <= 1` is true!
-5. It throws `new Error("next() called multiple times in single middleware")`.
-6. **Result:** Throws runtime error preventing re-entrant middleware corruption.
-
----
-
-### Puzzle 6: Functional `pipe` Type Transformation
-
-```typescript
-const addSuffix = (s: string) => `${s}_tail`;
-const countChars = (s: string) => s.length;
-const isEven = (n: number) => n % 2 === 0;
-
-const result = pipe("core", addSuffix, countChars, isEven);
-// Question: What is the type and runtime value of 'result'?
-```
-
-**Step-by-Step Evaluation Trace:**
-1. Input: `"core"` (string).
-2. Step 1: `addSuffix("core")` -> `"core_tail"` (string).
-3. Step 2: `countChars("core_tail")` -> `9` (number).
-4. Step 3: `isEven(9)` -> `false` (boolean).
-5. **Output Value:** `false` (type: `boolean`).
-
----
-
-### Puzzle 7: Lazy Evaluator Construction vs Access
-
-```typescript
-let callCount = 0;
-
-const lazyValue = new Lazy(() => {
-  callCount++;
-  return 42;
+p.use(async (ctx, next) => {
+  logs.push("B1");
+  await next();
+  logs.push("B2");
 });
 
-// Step 1: Check callCount
-const countBefore = callCount;
-
-// Step 2: Read lazyValue.value twice
-const v1 = lazyValue.value;
-const v2 = lazyValue.value;
-const countAfter = callCount;
+await p.execute({});
+console.log(logs.join("-"));
 ```
-
-**Step-by-Step Evaluation Trace:**
-1. Constructing `new Lazy(...)` stores the factory function without executing it. `callCount` remains `0`.
-2. First access `lazyValue.value`: checks if instance exists (`undefined`). Executes factory -> `callCount` becomes `1`. Caches `42`. Returns `42`.
-3. Second access `lazyValue.value`: instance is already cached (`42`). Does NOT execute factory. Returns `42`.
-4. **Output Values:** `countBefore = 0`, `v1 = 42`, `v2 = 42`, `countAfter = 1`.
 
 ---
 
-### Puzzle 8: Composite Specification `and` / `or` Precedence
+**Answer:**
+```
+A1-B1-B2-A2
+```
+**Explanation:** This illustrates the classic Onion Model:
+1. First middleware starts: `"A1"`.
+2. First middleware calls `await next()`.
+3. Second middleware starts: `"B1"`.
+4. Second middleware calls `await next()` (reaches end of pipeline).
+5. Second middleware resumes: `"B2"`.
+6. First middleware resumes: `"A2"`.
 
+---
+
+### Practice exercises
+
+#### Exercise 1: Execution timer middleware
+- **Task**: Write a middleware that adds `executionTimeMs` to a context object.
+- **Hint 1**: Record `performance.now()` before and after `await next()`.
+
+#### Exercise 2: Authorization gatekeeper
+- **Task**: Implement a middleware that checks `ctx.role === "admin"`. If false, set `ctx.allowed = false` and return without calling `next()`.
+- **Hint 1**: Do not call `next()` when unauthorized.
+
+#### Exercise 3: Double next invocation assertion
+- **Task**: Test the `Pipeline` class to verify that calling `next()` twice throws `"next() called multiple times"`.
+- **Hint 1**: Wrap `pipeline.execute(...)` in `expect().rejects.toThrow()`.
+
+#### Exercise 4: Context transformer pipeline
+- **Task**: Create a typed pipeline where middleware sequentially appends transformations to an array `ctx.steps: string[]`.
+- **Hint 1**: In each middleware, call `ctx.steps.push("step_name")`.
+
+---
+
+### Exercise solutions
+
+#### Solution 1: Execution timer middleware
 ```typescript
-class ValueSpec extends CompositeSpecification<number> {
-  constructor(private min: number, private max: number) { super(); }
-  isSatisfiedBy(n: number) { return n >= this.min && n <= this.max; }
+interface TimedContext {
+  executionTimeMs?: number;
 }
 
-const specA = new ValueSpec(1, 10);
-const specB = new ValueSpec(20, 30);
-const specC = new ValueSpec(5, 25);
-
-// Composite: (A OR B) AND C
-const composite = specA.or(specB).and(specC);
-
-const test1 = composite.isSatisfiedBy(7);
-const test2 = composite.isSatisfiedBy(22);
-const test3 = composite.isSatisfiedBy(28);
+const timerMiddleware: Middleware<TimedContext> = async (ctx, next) => {
+  const t0 = performance.now();
+  await next();
+  ctx.executionTimeMs = performance.now() - t0;
+};
 ```
 
-**Step-by-Step Evaluation Trace:**
-1. `composite = (A or B) and C`.
-2. For `7`:
-   - `specA(7)` is true ($1 \le 7 \le 10$). `(A or B)` is true.
-   - `specC(7)` is true ($5 \le 7 \le 25$).
-   - `true && true` -> `true`.
-3. For `22`:
-   - `specB(22)` is true ($20 \le 22 \le 30$). `(A or B)` is true.
-   - `specC(22)` is true ($5 \le 22 \le 25$).
-   - `true && true` -> `true`.
-4. For `28`:
-   - `specB(28)` is true. `(A or B)` is true.
-   - `specC(28)` is false ($28 > 25$).
-   - `true && false` -> `false`.
-5. **Output Values:** `test1 = true`, `test2 = true`, `test3 = false`.
-
----
-
-### Puzzle 9: Saga Orchestrator Compensating Step Ordering
-
+#### Solution 2: Authorization gatekeeper
 ```typescript
-const trace: string[] = [];
+interface RoleContext {
+  role: string;
+  allowed?: boolean;
+}
 
-const saga = new SagaOrchestrator<any>()
-  .addStep({
-    execute: async () => { trace.push("Exec 1"); },
-    compensate: async () => { trace.push("Compensate 1"); },
-  })
-  .addStep({
-    execute: async () => { trace.push("Exec 2"); },
-    compensate: async () => { trace.push("Compensate 2"); },
-  })
-  .addStep({
-    execute: async () => { throw new Error("Step 3 failed"); },
-    compensate: async () => { trace.push("Compensate 3"); },
+const adminGuard: Middleware<RoleContext> = async (ctx, next) => {
+  if (ctx.role !== "admin") {
+    ctx.allowed = false;
+    return;
+  }
+  ctx.allowed = true;
+  await next();
+};
+```
+
+#### Solution 3: Double next invocation assertion
+```typescript
+async function testDoubleNext() {
+  const p = new Pipeline<{}>();
+  p.use(async (ctx, next) => {
+    await next();
+    await next(); // should throw
   });
 
-try {
-  await saga.run({});
-} catch (e) {}
+  try {
+    await p.execute({});
+    console.error("Test failed: Should have thrown");
+  } catch (err: any) {
+    console.log(err.message === "next() called multiple times"); // true
+  }
+}
+testDoubleNext();
 ```
 
-**Step-by-Step Evaluation Trace:**
-1. Step 1 executes successfully -> pushes `"Exec 1"`.
-2. Step 2 executes successfully -> pushes `"Exec 2"`.
-3. Step 3 throws `"Step 3 failed"`.
-4. Orchestrator catches failure and triggers compensation on previously executed steps in **reverse order**:
-   - Step 2 is compensated -> pushes `"Compensate 2"`.
-   - Step 1 is compensated -> pushes `"Compensate 1"`.
-5. Notice that Step 3 is NOT compensated because its execution never succeeded.
-6. **Output Trace:**
-   ```javascript
-   [
-     "Exec 1",
-     "Exec 2",
-     "Compensate 2",
-     "Compensate 1"
-   ]
-   ```
-
----
-
-### Puzzle 10: Token Bucket Rate Limiter Instant Burst vs Continuous Refill
-
+#### Solution 4: Context transformer pipeline
 ```typescript
-const limiter = new TokenBucketRateLimiter(2, 1); // Capacity: 2 tokens, 1 token/sec
-
-const b1 = limiter.tryConsume(1);
-const b2 = limiter.tryConsume(1);
-const b3 = limiter.tryConsume(1);
-```
-
-**Step-by-Step Evaluation Trace:**
-1. Limiter initializes with 2 tokens.
-2. `b1`: Consumes 1 token. Remaining tokens: 1. Returns `true`.
-3. `b2`: Consumes 1 token. Remaining tokens: 0. Returns `true`.
-4. `b3`: Needs 1 token, but 0 available and no time has passed. Returns `false`.
-5. **Output Values:** `b1 = true`, `b2 = true`, `b3 = false`.
-
----
-
-### Puzzle 11: Dynamic Factory Unregistered Key Exception
-
-```typescript
-const factory = new ServiceFactory<any>();
-factory.register("json", class JsonParser {});
-
-const p1 = factory.create("json");
-// What happens if we run: factory.create("xml")?
-```
-
-**Step-by-Step Evaluation Trace:**
-1. `"json"` is registered in the internal map. `factory.create("json")` instantiates `JsonParser`.
-2. `"xml"` is not in the registry map.
-3. `factory.create("xml")` checks `if (!Ctor)` and throws:
-   `Error: Unregistered service key: 'xml'`.
-4. **Result:** Throws runtime error with diagnostic message.
-
----
-
-### Puzzle 12: `tryCatch` vs Async Promise Rejection
-
-```typescript
-function asyncThrower(): Promise<string> {
-  return Promise.reject(new Error("Async Error"));
+interface StepContext {
+  steps: string[];
 }
 
-const syncResult = tryCatch(() => {
-  return asyncThrower();
+const p = new Pipeline<StepContext>();
+p.use(async (ctx, next) => {
+  ctx.steps.push("sanitize");
+  await next();
 });
-// Question: What is syncResult?
-```
+p.use(async (ctx, next) => {
+  ctx.steps.push("validate");
+  await next();
+});
 
-**Step-by-Step Evaluation Trace:**
-1. `tryCatch` runs synchronously.
-2. Calling `asyncThrower()` returns a rejected Promise object without throwing synchronously in the try block!
-3. `tryCatch` treats the returned Promise as a successful value!
-4. `syncResult` is `Ok(Promise { <rejected> })`!
-5. This is the classic asynchronous error swallowing bug. Asynchronous functions must be wrapped with `tryCatchAsync`, NOT synchronous `tryCatch`!
+const ctx: StepContext = { steps: [] };
+await p.execute(ctx);
+console.log(ctx.steps); // ["sanitize", "validate"]
+```
 
 ---
 
-### Puzzle 13: Identity Map Instance Equivalence
+### Recall
+1. What is the Onion Model of middleware execution? Execution flows inward through handlers before `await next()`, and then flows outward in reverse order after `await next()`.
+2. How does a middleware short-circuit the pipeline? By returning early without invoking `await next()`.
+3. Why is it essential to guard against multiple `next()` invocations? To avoid re-running downstream side effects and causing race conditions or corrupted responses.
+
+> **If you remember only one thing:**  
+> The Onion Model allows middleware to execute logic both before and after downstream handlers by wrapping the flow around `await next()`.
+
+---
+
+# Checkpoint Challenge 2: Structural & Middleware Architecture (Topics 6-10)
+
+### Challenge Specification
+Construct an API Request Processor featuring:
+1. A **Typed Middleware Pipeline** that calculates execution duration and provides global error recovery.
+2. A **Logging Decorator** wrapping an underlying `UserService`.
+3. An **Adapter** translating an external legacy authentication response format into a domain user format.
+
+### Solution
 
 ```typescript
-class IdentityMap<TId, TEntity> {
-  private entities = new Map<TId, TEntity>();
-  get(id: TId): TEntity | undefined { return this.entities.get(id); }
-  put(id: TId, entity: TEntity): void { this.entities.set(id, entity); }
-}
-
-const map = new IdentityMap<string, { id: string; name: string }>();
-const u1 = { id: "1", name: "Alice" };
-map.put("1", u1);
-
-const fetched1 = map.get("1");
-const fetched2 = map.get("1");
-const isIdentical = fetched1 === fetched2;
-```
-
-**Step-by-Step Evaluation Trace:**
-1. `u1` is stored under key `"1"`.
-2. `fetched1` returns the exact object reference `u1`.
-3. `fetched2` returns the exact object reference `u1`.
-4. Strict reference comparison `fetched1 === fetched2` evaluates to `true`.
-5. **Output Value:** `isIdentical = true`.
-
----
-
-### Puzzle 14: Unit of Work Rollback Leaves Target Clean
-
-```typescript
-class MockUnitOfWork {
-  private staged = new Map<string, string>();
-  private target: Record<string, string> = {};
-
-  stage(k: string, v: string) { this.staged.set(k, v); }
-  commit() {
-    for (const [k, v] of this.staged) this.target[k] = v;
-    this.staged.clear();
-  }
-  rollback() { this.staged.clear(); }
-  getTarget() { return this.target; }
-}
-
-const uow = new MockUnitOfWork();
-uow.stage("key1", "val1");
-uow.rollback();
-const keys = Object.keys(uow.getTarget());
-```
-
-**Step-by-Step Evaluation Trace:**
-1. `uow.stage(...)` records `"key1"` into the private `staged` map.
-2. `uow.rollback()` empties `staged`.
-3. Nothing was ever written to `this.target`.
-4. `Object.keys(uow.getTarget())` is empty.
-5. **Output Value:** `keys = []`.
-
----
-
-### Puzzle 15: Circuit Breaker Half-Open Recovery
-
-```typescript
-class SimpleBreaker {
-  public state: "CLOSED" | "OPEN" | "HALF_OPEN" = "CLOSED";
-  public failureCount: number = 0;
-
-  recordFailure() {
-    this.failureCount++;
-    if (this.failureCount >= 2) this.state = "OPEN";
-  }
-
-  recordSuccess() {
-    this.failureCount = 0;
-    this.state = "CLOSED";
-  }
-}
-
-const cb = new SimpleBreaker();
-cb.recordFailure();
-const s1 = cb.state;
-cb.recordFailure();
-const s2 = cb.state;
-cb.recordSuccess();
-const s3 = cb.state;
-```
-
-**Step-by-Step Evaluation Trace:**
-1. First failure: `failureCount = 1` ($< 2$). `state` remains `"CLOSED"`.
-2. Second failure: `failureCount = 2` ($\ge 2$). `state` transitions to `"OPEN"`.
-3. Success occurs: resets `failureCount = 0`, `state` transitions back to `"CLOSED"`.
-4. **Output Values:** `s1 = "CLOSED"`, `s2 = "OPEN"`, `s3 = "CLOSED"`.
-
-
----
-
-## 5. Four Complete Runnable Production Projects with Test Assertions
-
-Every project below is a fully functional, self-contained TypeScript engine demonstrating production enterprise design patterns and reusable architecture. All class properties are explicitly declared for strict Node.js compatibility (`--experimental-strip-types`).
-
----
-
-### Project 1: Type-State Sequential Pipeline & HTTP Request Step-Builder
-
-#### Architectural Overview
-```
-+-------------------------------------------------------------------------+
-|                  Type-State HTTP Request Step-Builder                   |
-+-------------------------------------------------------------------------+
-|  [HttpRequestBuilder<TUrl, TMethod>]                                    |
-|         │                                                               |
-|  State 1: withUrl(url) ──► transitions TUrl to HasUrl                   |
-|         │                                                               |
-|  State 2: withMethod(method) ──► transitions TMethod to HasMethod       |
-|         │                                                               |
-|  State 3: execute(): Response ──► ONLY callable on <HasUrl, HasMethod>  |
-+-------------------------------------------------------------------------+
-```
-
-#### Complete Implementation & Verification Suite
-```typescript
-import assert from "node:assert";
-
-export interface NoUrl {}
-export interface HasUrl {}
-export interface NoMethod {}
-export interface HasMethod {}
-
-export interface HttpResponse {
-  statusCode: number;
-  url: string;
-  method: string;
-  headers: Record<string, string>;
-  body?: any;
-}
-
-export class HttpRequestStepBuilder<TUrl = NoUrl, TMethod = NoMethod> {
-  private url?: string;
-  private method?: string;
-  private headers: Record<string, string>;
-  private body?: any;
-
-  constructor() {
-    this.headers = {};
-  }
-
-  public withUrl(url: string): HttpRequestStepBuilder<HasUrl, TMethod> {
-    const next = new HttpRequestStepBuilder<HasUrl, TMethod>();
-    next.url = url;
-    next.method = this.method;
-    next.headers = { ...this.headers };
-    next.body = this.body;
-    return next;
-  }
-
-  public withMethod(
-    method: "GET" | "POST" | "PUT" | "DELETE"
-  ): HttpRequestStepBuilder<TUrl, HasMethod> {
-    const next = new HttpRequestStepBuilder<TUrl, HasMethod>();
-    next.url = this.url;
-    next.method = method;
-    next.headers = { ...this.headers };
-    next.body = this.body;
-    return next;
-  }
-
-  public withHeader(key: string, value: string): this {
-    this.headers[key] = value;
-    return this;
-  }
-
-  public withBody(body: any): this {
-    this.body = body;
-    return this;
-  }
-
-  public execute(this: HttpRequestStepBuilder<HasUrl, HasMethod>): HttpResponse {
-    return {
-      statusCode: 200,
-      url: this.url!,
-      method: this.method!,
-      headers: this.headers,
-      body: this.body,
-    };
-  }
-}
-
-// Verification Assertions
-const builder = new HttpRequestStepBuilder()
-  .withUrl("https://api.gateway.internal/v1/orders")
-  .withMethod("POST")
-  .withHeader("Authorization", "Bearer tok_sec_99")
-  .withBody({ orderId: "ord_101", amount: 450 });
-
-const response = builder.execute();
-
-assert.strictEqual(response.statusCode, 200);
-assert.strictEqual(response.url, "https://api.gateway.internal/v1/orders");
-assert.strictEqual(response.method, "POST");
-assert.strictEqual(response.headers["Authorization"], "Bearer tok_sec_99");
-assert.deepStrictEqual(response.body, { orderId: "ord_101", amount: 450 });
-
-console.log("Project 1 (Type-State Step-Builder) passed all assertions.");
-```
-
----
-
-### Project 2: Generic Repository & Unit of Work with Transaction Rollback
-
-#### Architectural Overview
-```
-+-------------------------------------------------------------------------+
-|                  Generic Repository & Unit of Work                      |
-+-------------------------------------------------------------------------+
-|  [Domain Entity: User]                                                  |
-|         │                                                               |
-|  [GenericRepository<T, TId>] ──► findById(), find(), add(), remove()   |
-|         │                                                               |
-|  [UnitOfWork]                                                           |
-|    ├── registerNew(entity)                                              |
-|    ├── registerDirty(entity)                                            |
-|    ├── registerDeleted(entity)                                          |
-|    ├── commit(): Promise<void>                                          |
-|    └── rollback(): void                                                 |
-+-------------------------------------------------------------------------+
-```
-
-#### Complete Implementation & Verification Suite
-```typescript
-import assert from "node:assert";
-
-export interface IEntity<TId> {
-  id: TId;
-}
-
-export interface Specification<T> {
-  isSatisfiedBy(candidate: T): boolean;
-}
-
-export class UnitOfWork<T extends IEntity<TId>, TId> {
-  private inserted: Map<TId, T>;
-  private updated: Map<TId, T>;
-  private deleted: Set<TId>;
-  private primaryStore: Map<TId, T>;
-
-  constructor(primaryStore: Map<TId, T>) {
-    this.primaryStore = primaryStore;
-    this.inserted = new Map();
-    this.updated = new Map();
-    this.deleted = new Set();
-  }
-
-  public registerNew(entity: T): void {
-    this.inserted.set(entity.id, entity);
-  }
-
-  public registerDirty(entity: T): void {
-    if (!this.inserted.has(entity.id)) {
-      this.updated.set(entity.id, entity);
-    }
-  }
-
-  public registerDeleted(id: TId): void {
-    if (this.inserted.has(id)) {
-      this.inserted.delete(id);
-    } else {
-      this.deleted.add(id);
-    }
-  }
-
-  public commit(): void {
-    for (const [id, entity] of this.inserted) {
-      this.primaryStore.set(id, entity);
-    }
-    for (const [id, entity] of this.updated) {
-      this.primaryStore.set(id, entity);
-    }
-    for (const id of this.deleted) {
-      this.primaryStore.delete(id);
-    }
-    this.clearStaging();
-  }
-
-  public rollback(): void {
-    this.clearStaging();
-  }
-
-  private clearStaging(): void {
-    this.inserted.clear();
-    this.updated.clear();
-    this.deleted.clear();
-  }
-}
-
-export class GenericRepository<T extends IEntity<TId>, TId> {
-  private store: Map<TId, T>;
-  private unitOfWork: UnitOfWork<T, TId>;
-
-  constructor() {
-    this.store = new Map();
-    this.unitOfWork = new UnitOfWork(this.store);
-  }
-
-  public getUnitOfWork(): UnitOfWork<T, TId> {
-    return this.unitOfWork;
-  }
-
-  public async findById(id: TId): Promise<T | null> {
-    const item = this.store.get(id);
-    return item ? { ...item } : null;
-  }
-
-  public async find(spec: Specification<T>): Promise<T[]> {
-    const matches: T[] = [];
-    for (const item of this.store.values()) {
-      if (spec.isSatisfiedBy(item)) {
-        matches.push({ ...item });
-      }
-    }
-    return matches;
-  }
-
-  public add(entity: T): void {
-    this.unitOfWork.registerNew(entity);
-  }
-
-  public update(entity: T): void {
-    this.unitOfWork.registerDirty(entity);
-  }
-
-  public delete(id: TId): void {
-    this.unitOfWork.registerDeleted(id);
-  }
-}
-
-// Verification Assertions
-interface UserAccount extends IEntity<string> {
+// 1. Domain Types & Adapter
+interface DomainUser {
   id: string;
-  email: string;
-  isActive: boolean;
-  score: number;
+  username: string;
 }
 
-const repo = new GenericRepository<UserAccount, string>();
-const uow = repo.getUnitOfWork();
+interface LegacyAuthResponse {
+  user_identifier: string;
+  user_login_name: string;
+  is_valid: boolean;
+}
 
-// 1. Stage changes
-repo.add({ id: "usr_1", email: "alice@test.com", isActive: true, score: 95 });
-repo.add({ id: "usr_2", email: "bob@test.com", isActive: false, score: 60 });
-
-// Verify store is un-mutated before commit
-let initialCheck = await repo.findById("usr_1");
-assert.strictEqual(initialCheck, null);
-
-// 2. Commit transaction
-uow.commit();
-
-const alice = await repo.findById("usr_1");
-assert.ok(alice);
-assert.strictEqual(alice.email, "alice@test.com");
-
-// 3. Test Specification Query
-class ActiveHighScoreSpec implements Specification<UserAccount> {
-  public isSatisfiedBy(u: UserAccount): boolean {
-    return u.isActive && u.score > 80;
+class LegacyAuthAdapter {
+  static toDomainUser(response: LegacyAuthResponse): DomainUser {
+    if (!response.is_valid) {
+      throw new Error("Invalid legacy session");
+    }
+    return {
+      id: response.user_identifier,
+      username: response.user_login_name,
+    };
   }
 }
 
-const activeHighScorers = await repo.find(new ActiveHighScoreSpec());
-assert.strictEqual(activeHighScorers.length, 1);
-assert.strictEqual(activeHighScorers[0].id, "usr_1");
+// 2. Service Interface & Compositional Decorator
+interface UserService {
+  getUser(id: string): Promise<DomainUser>;
+}
 
-// 4. Test Rollback
-repo.add({ id: "usr_3", email: "charlie@test.com", isActive: true, score: 90 });
-uow.rollback(); // Discard staging
-
-const charlie = await repo.findById("usr_3");
-assert.strictEqual(charlie, null); // Rollback succeeded!
-
-console.log("Project 2 (Generic Repository & Unit of Work) passed all assertions.");
-```
-
----
-
-### Project 3: Type-Safe Middleware Chain of Responsibility Pipeline
-
-#### Architectural Overview
-```
-+-------------------------------------------------------------------------+
-|                  Type-Safe Middleware Onion Pipeline                    |
-+-------------------------------------------------------------------------+
-|  [RequestContext] ──► { requestId: string, user?: User, timings: [] }    |
-|         │                                                               |
-|  [Middleware 1: Timing] ──► Entry timer -> await next() -> Exit duration|
-|         │                                                               |
-|  [Middleware 2: Auth] ──► Attaches authenticated user to Context        |
-|         │                                                               |
-|  [Middleware 3: Handler] ──► Generates business response                |
-+-------------------------------------------------------------------------+
-```
-
-#### Complete Implementation & Verification Suite
-```typescript
-import assert from "node:assert";
-
-export type NextFunction = () => Promise<void>;
-export type Middleware<TCtx> = (context: TCtx, next: NextFunction) => Promise<void>;
-
-export class TypeSafePipeline<TCtx> {
-  private stack: Middleware<TCtx>[];
-
-  constructor() {
-    this.stack = [];
+class BaseUserService implements UserService {
+  async getUser(id: string): Promise<DomainUser> {
+    // Simulating external retrieval + adapter
+    const rawLegacyResponse: LegacyAuthResponse = {
+      user_identifier: id,
+      user_login_name: `alex_${id}`,
+      is_valid: true,
+    };
+    return LegacyAuthAdapter.toDomainUser(rawLegacyResponse);
   }
+}
 
-  public use(middleware: Middleware<TCtx>): this {
-    this.stack.push(middleware);
+class LoggingUserServiceDecorator implements UserService {
+  constructor(private wrappee: UserService) {}
+
+  async getUser(id: string): Promise<DomainUser> {
+    console.log(`[ServiceLog] Fetching user: ${id}`);
+    const result = await this.wrappee.getUser(id);
+    console.log(`[ServiceLog] Found user: ${result.username}`);
+    return result;
+  }
+}
+
+// 3. Middleware Pipeline (Onion Model)
+interface HttpContext {
+  userId: string;
+  user?: DomainUser;
+  durationMs?: number;
+  error?: string;
+}
+
+type NextFn = () => Promise<void>;
+type HttpMiddleware = (ctx: HttpContext, next: NextFn) => Promise<void>;
+
+class HttpPipeline {
+  private middlewares: HttpMiddleware[] = [];
+
+  use(m: HttpMiddleware): this {
+    this.middlewares.push(m);
     return this;
   }
 
-  public async execute(context: TCtx): Promise<void> {
-    let prevIndex = -1;
-
-    const dispatch = async (index: number): Promise<void> => {
-      if (index <= prevIndex) {
-        throw new Error("next() called multiple times in single middleware");
-      }
-      prevIndex = index;
-
-      const fn = this.stack[index];
-      if (!fn) return;
-
-      await fn(context, () => dispatch(index + 1));
+  async run(ctx: HttpContext): Promise<void> {
+    let index = -1;
+    const dispatch = async (i: number): Promise<void> => {
+      if (i <= index) throw new Error("next() called multiple times");
+      index = i;
+      if (i >= this.middlewares.length) return;
+      await this.middlewares[i](ctx, () => dispatch(i + 1));
     };
-
     await dispatch(0);
   }
 }
 
-// Verification Assertions
-interface PipelineContext {
-  reqId: string;
-  userRole?: string;
-  auditTrail: string[];
-}
+// 4. Verification Execution
+async function runCheckpoint2() {
+  const userService = new LoggingUserServiceDecorator(new BaseUserService());
+  const pipeline = new HttpPipeline();
 
-const pipeline = new TypeSafePipeline<PipelineContext>();
+  // Middleware 1: Performance Timer
+  pipeline.use(async (ctx, next) => {
+    const t0 = performance.now();
+    await next();
+    ctx.durationMs = performance.now() - t0;
+  });
 
-pipeline.use(async (ctx, next) => {
-  ctx.auditTrail.push("Logger:Entry");
-  await next();
-  ctx.auditTrail.push("Logger:Exit");
-});
-
-pipeline.use(async (ctx, next) => {
-  ctx.auditTrail.push("Auth:Authenticate");
-  ctx.userRole = "admin";
-  await next();
-  ctx.auditTrail.push("Auth:Completed");
-});
-
-pipeline.use(async (ctx) => {
-  ctx.auditTrail.push(`Handler:Action[${ctx.userRole}]`);
-});
-
-const testContext: PipelineContext = {
-  reqId: "req_xyz",
-  auditTrail: [],
-};
-
-await pipeline.execute(testContext);
-
-assert.deepStrictEqual(testContext.auditTrail, [
-  "Logger:Entry",
-  "Auth:Authenticate",
-  "Handler:Action[admin]",
-  "Auth:Completed",
-  "Logger:Exit",
-]);
-
-console.log("Project 3 (Type-Safe Middleware Pipeline) passed all assertions.");
-```
-
----
-
-### Project 4: Railway-Oriented Result/Either Monad & Error Recovery Engine
-
-#### Architectural Overview
-```
-+-------------------------------------------------------------------------+
-|                  Railway-Oriented Result Monad Engine                   |
-+-------------------------------------------------------------------------+
-|  Input ──► [Step 1: validateUser] ──► Ok(user) or Err(ValidationError)  |
-|                  │                                                      |
-|             (on Ok only)                                                |
-|                  ▼                                                      |
-|           [Step 2: chargeCard]   ──► Ok(tx) or Err(PaymentError)        |
-|                  │                                                      |
-|             (on Ok only)                                                |
-|                  ▼                                                      |
-|           [Step 3: sendReceipt]  ──► Ok(emailId) or Err(EmailError)     |
-|                  │                                                      |
-|         (match success/error)                                           |
-+-------------------------------------------------------------------------+
-```
-
-#### Complete Implementation & Verification Suite
-```typescript
-import assert from "node:assert";
-
-export type Result<T, E> = Success<T, E> | Failure<T, E>;
-
-export class Success<T, E> {
-  public readonly isSuccess: true = true;
-  public readonly isFailure: false = false;
-  public readonly value: T;
-
-  constructor(value: T) {
-    this.value = value;
-  }
-
-  public map<U>(fn: (val: T) => U): Result<U, E> {
-    return new Success<U, E>(fn(this.value));
-  }
-
-  public flatMap<U>(fn: (val: T) => Result<U, E>): Result<U, E> {
-    return fn(this.value);
-  }
-
-  public match<U>(branches: { onSuccess: (v: T) => U; onFailure: (e: E) => U }): U {
-    return branches.onSuccess(this.value);
-  }
-
-  public unwrap(): T {
-    return this.value;
-  }
-}
-
-export class Failure<T, E> {
-  public readonly isSuccess: false = false;
-  public readonly isFailure: true = true;
-  public readonly error: E;
-
-  constructor(error: E) {
-    this.error = error;
-  }
-
-  public map<U>(_fn: (val: T) => U): Result<U, E> {
-    return new Failure<U, E>(this.error);
-  }
-
-  public flatMap<U>(_fn: (val: T) => Result<U, E>): Result<U, E> {
-    return new Failure<U, E>(this.error);
-  }
-
-  public match<U>(branches: { onSuccess: (v: T) => U; onFailure: (e: E) => U }): U {
-    return branches.onFailure(this.error);
-  }
-
-  public unwrap(): never {
-    throw this.error instanceof Error ? this.error : new Error(String(this.error));
-  }
-}
-
-export function ok<T, E = never>(val: T): Result<T, E> {
-  return new Success<T, E>(val);
-}
-
-export function err<E, T = never>(e: E): Result<T, E> {
-  return new Failure<T, E>(e);
-}
-
-export async function tryCatchAsync<T, E = Error>(
-  fn: () => Promise<T>
-): Promise<Result<T, E>> {
-  try {
-    const val = await fn();
-    return ok(val);
-  } catch (error) {
-    return err(error as E);
-  }
-}
-
-// Verification Assertions
-interface CheckoutOrder {
-  orderId: string;
-  amount: number;
-}
-
-interface PaymentReceipt {
-  receiptId: string;
-  orderId: string;
-}
-
-function validateOrder(raw: any): Result<CheckoutOrder, string> {
-  if (!raw.orderId) return err("Invalid orderId");
-  if (raw.amount <= 0) return err("Amount must be positive");
-  return ok({ orderId: raw.orderId, amount: raw.amount });
-}
-
-function processPayment(order: CheckoutOrder): Result<PaymentReceipt, string> {
-  if (order.amount > 1000) return err("Credit limit exceeded");
-  return ok({ receiptId: `rcpt_${order.orderId}`, orderId: order.orderId });
-}
-
-// Happy path
-const goodOrder = validateOrder({ orderId: "ord_1", amount: 150 })
-  .flatMap(processPayment)
-  .map((rcpt) => rcpt.receiptId.toUpperCase());
-
-assert.strictEqual(goodOrder.isSuccess, true);
-assert.strictEqual(goodOrder.unwrap(), "RCPT_ORD_1");
-
-// Failure on validation step
-const badValidation = validateOrder({ orderId: "", amount: 150 })
-  .flatMap(processPayment);
-
-assert.strictEqual(badValidation.isFailure, true);
-const errMsg1 = badValidation.match({
-  onSuccess: () => "Should not succeed",
-  onFailure: (e) => e,
-});
-assert.strictEqual(errMsg1, "Invalid orderId");
-
-// Failure on payment step
-const badPayment = validateOrder({ orderId: "ord_2", amount: 5000 })
-  .flatMap(processPayment);
-
-assert.strictEqual(badPayment.isFailure, true);
-const errMsg2 = badPayment.match({
-  onSuccess: () => "Should not succeed",
-  onFailure: (e) => e,
-});
-assert.strictEqual(errMsg2, "Credit limit exceeded");
-
-console.log("Project 4 (Railway-Oriented Result Monad) passed all assertions.");
-```
-
-
----
-
-## 6. Enterprise Best Practices: 20 DOs and DON'Ts
-
-| # | Rule | Bad Practice (DON'T) | Best Practice (DO) | Architectural Impact |
-|---|------|----------------------|--------------------|----------------------|
-| 1 | **Compile-Time Step Verification** | Throwing runtime errors if required builder properties are missing | Use phantom type states (`Builder<HasUrl, HasMethod>`) | Enforces valid builder progression at compile time before `.build()` is callable. |
-| 2 | **Explicit Error Handling** | Throwing untyped exceptions across business boundaries | Return `Result<T, E>` monads | Guarantees that errors are part of the type signature and must be handled by callers. |
-| 3 | **Avoid Telescoping Constructors** | Creating constructors with 7+ arguments and boolean flags | Implement Step-Builder or Options configuration objects | Eliminates positional parameter bugs and improves self-documenting code. |
-| 4 | **Middleware Re-entrancy Protection** | Allowing arbitrary multiple calls to `next()` in middleware | Guard with `if (index <= prevIndex) throw ...` | Prevents cascading duplicate pipeline execution and corrupted responses. |
-| 5 | **Identity Map Caching** | Re-fetching entities from storage repeatedly in a transaction | Cache entity instances in an Identity Map | Prevents inconsistent concurrent mutations and redundant I/O roundtrips. |
-| 6 | **Rollback Safety** | Mutating production storage directly during multi-step transactions | Stage changes in a Unit of Work and commit atomically | Guarantees zero partial-state contamination when intermediate steps fail. |
-| 7 | **Dynamic Factory Type Safety** | Hardcoding large `switch(type)` statements in factories | Use a generic registry mapping keys to constructors | Fulfills OCP; new subclasses register themselves without modifying the factory. |
-| 8 | **Specification Pattern Over Raw Queries** | Inlining complex SQL / Mongo filter logic into services | Encapsulate rules into reusable `Specification<T>` classes | Enables rule composition (`specA.and(specB)`) across both in-memory and database queries. |
-| 9 | **Hardened Singleton Encapsulation** | Relying on convention not to call `new Singleton()` | Make constructor `private` and throw if an instance exists | Prevents accidental duplicate instantiations via reflection. |
-| 10 | **Explicit Class Properties** | Using parameter properties `constructor(public x: string)` | Declare explicit class fields | Ensures compatibility with Node.js `--experimental-strip-types` and modern tooling. |
-| 11 | **LRU Eviction Order Refresh** | Only updating LRU position on writes | Refresh ordering on both `get()` and `set()` | Accurately retains frequently read entries, preventing premature eviction. |
-| 12 | **Avoid Async Swallowing in `tryCatch`** | Passing an async Promise to synchronous `tryCatch` | Use dedicated `tryCatchAsync` awaiting the Promise | Prevents unhandled rejected promises from escaping as successful `Ok(Promise)`. |
-| 13 | **Token Bucket Refill Precision** | Using coarse interval timers for rate limit refills | Calculate elapsed time proportionally on consumption: `now - lastRefill` | Guarantees exact token allocation without timer drift or memory leaks. |
-| 14 | **Saga Compensation Inversion** | Compensating saga steps in forward execution order | Compensate previously executed steps in **strict reverse order** | Accurately unwinds nested distributed transactions. |
-| 15 | **Avoid Memory Leaks in Event Observers** | Subscribing without retaining an unsubscribe token | Return an `Unsubscribe` closure from `subscribe()` | Prevents retained closures and `MaxListenersExceededWarning`. |
-| 16 | **Prefer Composition over Class Trees** | Creating deep 5-tier inheritance hierarchies | Compose independent Strategy and Decorator objects | Eliminates Fragile Base Class problems and compile-time rigidity. |
-| 17 | **Immutable Value Objects** | Providing public setters on Value Objects | Declare properties `public readonly` and freeze in constructor | Guarantees that value equality holds indefinitely without side effects. |
-| 18 | **Dependency Injection Over Service Locator** | Pulling dependencies out of a global locator map | Inject abstractions via constructor parameters | Makes component requirements transparent and enables straightforward unit testing. |
-| 19 | **Circuit Breaker Fast-Failure** | Continuously hitting unresponsive external APIs | Trip to `OPEN` state after repeated consecutive failures | Protects downstream capacity and returns immediate failure to clients. |
-| 20 | **Export Monad & Pattern Types** | Burying `Result` or `Builder` return types inside function bodies | Export named type aliases (`UserResult = Result<User, AuthError>`) | Improves IDE hover tooltips, developer ergonomics, and generated declaration files. |
-
----
-
-## 7. Real-World Case Study: Enterprise E-Commerce Checkout Engine
-
-### Problem Context
-An international e-commerce platform processes millions of dollars in orders daily. The checkout process involves:
-1. Validating shopping cart inventory.
-2. Applying dynamic tiered and regional discount strategies.
-3. Calculating tax via third-party tax engines.
-4. Charging the payment gateway with automated retry.
-5. Emitting transactional domain events.
-Any failure at steps 3 or 4 must immediately rollback reserved inventory and release locks.
-
-### Architectural Solution
-We synthesize the complete suite of Enterprise Patterns:
-- **Type-State Step-Builder**: `CheckoutContextBuilder` guarantees cart, address, and payment method exist before execution.
-- **Strategy Pattern**: `DiscountStrategy` and `TaxStrategy` allow dynamic runtime policy injection.
-- **Chain of Responsibility**: A modular pipeline coordinates validation, tax computation, and payment execution.
-- **Repository & Unit of Work**: Ensures all database modifications commit atomically or rollback cleanly.
-- **Result Monad**: Every step yields a typed `Result<T, CheckoutError>`, eliminating unhandled exceptions.
-
-```typescript
-// Architectural Sketch of Checkout Synthesis
-export interface CartItem { sku: string; price: number; quantity: number; }
-export interface CustomerAddress { country: string; zip: string; }
-export interface PaymentDetails { token: string; provider: "stripe" | "paypal"; }
-
-export class CheckoutProcessor {
-  constructor(
-    private discountStrategy: DiscountStrategy,
-    private taxStrategy: TaxStrategy,
-    private unitOfWork: UnitOfWork<any, string>
-  ) {}
-
-  public async processCheckout(
-    cart: CartItem[],
-    address: CustomerAddress,
-    payment: PaymentDetails
-  ): Promise<Result<{ orderId: string; totalPaid: number }, string>> {
-    // 1. Calculate raw total
-    const subtotal = cart.reduce((sum, item) => sum + item.price * item.quantity, 0);
-
-    // 2. Apply discount strategy
-    const discountedTotal = this.discountStrategy.calculate(subtotal);
-
-    // 3. Apply tax strategy
-    const taxAmount = this.taxStrategy.calculate(discountedTotal);
-    const finalAmount = discountedTotal + taxAmount;
-
-    // 4. Atomic transaction staging
+  // Middleware 2: Global Error Guard
+  pipeline.use(async (ctx, next) => {
     try {
-      const orderId = `ORD-${Date.now()}`;
-      this.unitOfWork.registerNew({ id: orderId, amount: finalAmount });
-      this.unitOfWork.commit();
-      return ok({ orderId, totalPaid: finalAmount });
-    } catch (err) {
-      this.unitOfWork.rollback();
-      return err("Checkout transaction failed and was rolled back");
+      await next();
+    } catch (err: any) {
+      ctx.error = err.message;
+    }
+  });
+
+  // Middleware 3: Controller Handler
+  pipeline.use(async (ctx, next) => {
+    ctx.user = await userService.getUser(ctx.userId);
+    await next();
+  });
+
+  const ctx: HttpContext = { userId: "usr_99" };
+  await pipeline.run(ctx);
+
+  console.log("Pipeline completed:", {
+    user: ctx.user,
+    durationMs: ctx.durationMs !== undefined,
+    error: ctx.error,
+  });
+}
+runCheckpoint2();
+```
+
+
+---
+
+# Topic 11: Strictly-Typed Observer Pattern & Type-Safe EventEmitter
+
+### 1. What is it?
+The **Observer Pattern** defines a one-to-many subscription model between an emitter (subject) and listeners (observers). In modern TypeScript, a **Strictly-Typed EventEmitter** maps specific event names to their exact payload types via an interface map, ensuring compile-time validation for emitted arguments and handler signatures.
+
+### 2. Why does it exist?
+Node.js's standard `EventEmitter` accepts `string` for event names and `...args: any[]` for listener parameters:
+```typescript
+// Untyped EventEmitter anti-pattern
+emitter.on("userCreated", (user) => {
+  // 'user' is implicitly 'any'! No type checking, no IDE auto-completion!
+  console.log(user.nonExistentField);
+});
+emitter.emit("userCreated", 12345); // Emits invalid payload with ZERO compiler warning!
+```
+A Strictly-Typed EventEmitter prevents typos in event names and enforces the exact payload shape expected by listeners.
+
+### 3. Basic example
+
+```typescript
+// 1. Define the Event Map interface
+interface AppEventMap {
+  "user:created": { id: string; email: string };
+  "user:deleted": { id: string; reason: string };
+  "order:placed": { orderId: string; total: number };
+}
+
+type Listener<T> = (payload: T) => void;
+
+// 2. Strongly-typed EventEmitter
+class TypedEventEmitter<TEvents extends Record<string, any>> {
+  private listeners: {
+    [K in keyof TEvents]?: Set<Listener<TEvents[K]>>;
+  } = {};
+
+  on<K extends keyof TEvents>(event: K, listener: Listener<TEvents[K]>): () => void {
+    if (!this.listeners[event]) {
+      this.listeners[event] = new Set();
+    }
+    this.listeners[event]!.add(listener);
+
+    // Return an unsubscribe function
+    return () => {
+      this.listeners[event]?.delete(listener);
+    };
+  }
+
+  emit<K extends keyof TEvents>(event: K, payload: TEvents[K]): void {
+    const handlers = this.listeners[event];
+    if (handlers) {
+      for (const handler of handlers) {
+        handler(payload);
+      }
+    }
+  }
+}
+
+// 3. Usage
+const bus = new TypedEventEmitter<AppEventMap>();
+
+const unsubscribe = bus.on("user:created", (payload) => {
+  // payload is automatically inferred as { id: string; email: string }
+  console.log(`User created: ${payload.id}, ${payload.email}`);
+});
+
+bus.emit("user:created", { id: "u_1", email: "user@example.com" });
+// bus.emit("user:created", { id: "u_1" }); // COMPILE ERROR: Property 'email' is missing!
+// bus.emit("invalid:event", {}); // COMPILE ERROR: Argument of type '"invalid:event"' is not assignable!
+
+unsubscribe(); // Cleanly removes the listener
+```
+
+**Line-by-line explanation:**
+- `interface AppEventMap`: Defines the registry of valid events and their required payload shapes.
+- `class TypedEventEmitter<TEvents extends Record<string, any>>`: Constrained to an event dictionary type.
+- `private listeners: { [K in keyof TEvents]?: Set<Listener<TEvents[K]>> }`: Mapped type storing sets of listeners per event key.
+- `on<K extends keyof TEvents>(event: K, listener: Listener<TEvents[K]>)`: Restricts `event` to valid keys of `TEvents` and infers listener argument type `TEvents[K]`.
+- `return () => { ... }`: Provides an unsubscribe cleanup callback.
+- `emit<K extends keyof TEvents>(event: K, payload: TEvents[K])`: Enforces that the payload matches `TEvents[K]`.
+
+---
+
+### 4. How it works inside TypeScript
+1. **Mapped Type Indexing**: `TEvents[K]` looks up the indexed value type associated with key `K`.
+2. **Key Constraints**: `<K extends keyof TEvents>` restricts string arguments strictly to declared event names.
+3. **Automatic Inference**: The listener parameter `(payload)` has its type inferred immediately from the event name without requiring manual type annotations.
+
+---
+
+### 5. More examples
+
+#### Example 1: One-time listener (`once`)
+```typescript
+class AdvancedEventEmitter<TEvents extends Record<string, any>> extends TypedEventEmitter<TEvents> {
+  once<K extends keyof TEvents>(event: K, listener: Listener<TEvents[K]>): void {
+    const unsubscribe = this.on(event, (payload) => {
+      unsubscribe();
+      listener(payload);
+    });
+  }
+}
+```
+
+#### Example 2: Wildcard / Global Event Observer
+```typescript
+type WildcardListener<TEvents> = <K extends keyof TEvents>(event: K, payload: TEvents[K]) => void;
+
+class WildcardEmitter<TEvents extends Record<string, any>> extends TypedEventEmitter<TEvents> {
+  private wildcards = new Set<WildcardListener<TEvents>>();
+
+  onAny(listener: WildcardListener<TEvents>): () => void {
+    this.wildcards.add(listener);
+    return () => this.wildcards.delete(listener);
+  }
+
+  override emit<K extends keyof TEvents>(event: K, payload: TEvents[K]): void {
+    super.emit(event, payload);
+    for (const wildcard of this.wildcards) {
+      wildcard(event, payload);
     }
   }
 }
@@ -2698,93 +3645,1125 @@ export class CheckoutProcessor {
 
 ---
 
-## 8. Practice Drills (75 Drills across 5 Progression Tiers)
+### 6. Common mistakes
 
-### Tier 1: Creational Patterns & Generic Factories (Drills 1–15)
-1. Implement a Type-State Builder for a Database Connection string enforcing Host and Database before `.connect()`.
-2. Implement a Step-Builder for constructing HTTP Headers with fluent chaining.
-3. Build a Generic Factory that maps string keys to service constructors.
-4. Implement a reflection-proof Singleton using a Symbol instance property and `Object.freeze()`.
-5. Write an Abstract Factory creating UI components (Buttons, Inputs) for Web and Desktop.
-6. Create an immutable Value Object `ColorRGB` with `equals()` comparison.
-7. Implement an object pool reusing expensive database connection wrappers.
-8. Create a Lazy Evaluator that defers object construction until the first property read.
-9. Implement a Cloneable interface using the Curiously Recurring Template Pattern.
-10. Build a dynamic plugin registry where plugins register themselves at initialization.
-11. Implement a prototype-based object cloning factory using `structuredClone`.
-12. Build an options builder with default fallback values merged via object spread.
-13. Create an abstract constructor type and test dynamic instantiation via `new Ctor()`.
-14. Build a Type-Safe Configuration Factory validating environment variables.
-15. Implement a Flyweight factory sharing immutable character formatting objects.
+#### Mistake 1: Permitting unconstrained string keys
+```typescript
+// WRONG: Falling back to string indexing
+class LeakyEmitter {
+  emit(event: string, data: any) {} // Zero type safety!
+}
+```
+**Why it fails:** If any string is allowed, typos like `"user_created"` instead of `"user:created"` will fail silently at runtime.
 
-### Tier 2: Structural Patterns & Decoupled Architecture (Drills 16–30)
-16. Implement the Generic Repository Pattern with in-memory storage.
-17. Implement the Unit of Work pattern staging new, dirty, and deleted entities.
-18. Build an Identity Map that caches entity references by ID during a request lifecycle.
-19. Implement the Specification Pattern with `and()`, `or()`, and `not()` combinators.
-20. Implement a Type-Safe Dynamic Adapter converting snake_case payloads to camelCase.
-21. Implement a Decorator wrapping an asynchronous repository with execution time logging.
-22. Build a Facade hiding the complexity of a 3-step media compression pipeline.
-23. Implement the Composite Pattern representing a nested folder and file structure.
-24. Create a Type-Safe Proxy that intercepts property writes and logs mutations.
-25. Implement a caching Decorator that caches repository `findById` calls with TTL.
-26. Create an Adapter bridging a legacy callback-based API to Promise-based syntax.
-27. Implement a Composite Specification combining 3 independent business criteria.
-28. Build a Virtual Proxy that loads entity relations lazily upon first property access.
-29. Implement an in-memory transactional key-value store with rollback support.
-30. Design a Hexagonal Architecture Port and Adapter for an SMS notification service.
-
-### Tier 3: Behavioral Patterns & Event Pipelines (Drills 31–45)
-31. Implement the Strategy Pattern with three compression strategies (Gzip, Brotli, None).
-32. Build an Asynchronous Middleware Chain of Responsibility pipeline with `next()`.
-33. Implement re-entrancy protection in a middleware pipeline preventing double `next()` calls.
-34. Build a strongly-typed EventEmitter mapping event names to payload interfaces.
-35. Implement the Command Pattern with `execute()` and `undo()` for a text buffer.
-36. Build a Command History manager supporting multi-level undo and redo.
-37. Implement the State Pattern for a Media Player (Playing, Paused, Stopped).
-38. Implement the Observer Pattern returning an explicit `Unsubscribe` closure.
-39. Build a Token Bucket Rate Limiter with continuous mathematical refill.
-40. Implement a Saga Orchestrator executing forward steps and compensating in reverse order.
-41. Implement the Memento Pattern saving and restoring entity snapshots.
-42. Build a Mediator coordinating interactions between a Form, Button, and ErrorDisplay.
-43. Implement the Template Method Pattern with an abstract data extraction pipeline.
-44. Build a Circuit Breaker transitioning between CLOSED, OPEN, and HALF-OPEN states.
-45. Implement an exponential backoff retry utility with randomized jitter.
-
-### Tier 4: Railway-Oriented Programming & Functional Monads (Drills 46–60)
-46. Implement the `Result<T, E>` monad with `Ok` and `Err` classes.
-47. Implement `Result.map()` transforming successful values.
-48. Implement `Result.flatMap()` binding sequential operations returning Results.
-49. Implement `Result.match()` pattern matching on success and failure branches.
-50. Implement `tryCatch()` wrapping throwing synchronous functions into Results.
-51. Implement `tryCatchAsync()` wrapping Promise rejections into Results.
-52. Implement the `Option<T>` monad with `Some` and `None` branches.
-53. Implement `pipe()` supporting 4 sequential function applications with full type safety.
-54. Implement `compose()` evaluating functions in right-to-left mathematical order.
-55. Implement a Type-Safe `curry()` function for binary functions.
-56. Implement a Type-Safe `memoize()` function caching results by serialized arguments.
-57. Build a validation pipeline returning an array of all validation error strings.
-58. Chain 3 business operations using `flatMap()` and assert early failure short-circuiting.
-59. Implement an `Either<L, R>` monad and compare its ergonomics with `Result<T, E>`.
-60. Build an asynchronous Promise Pool throttling concurrency to a maximum of $N$ workers.
-
-### Tier 5: Enterprise Framework Architecture & Synthesis (Drills 61–75)
-61. Build an end-to-end E-Commerce Checkout engine synthesizing Builder, Strategy, and Unit of Work.
-62. Construct a full-featured In-Memory CQRS Command Bus and Query Bus.
-63. Implement an Outbox Pattern worker staging domain events alongside database transactions.
-64. Build a lightweight Inversion of Control (IoC) Container with Transient and Singleton lifecycles.
-65. Implement circular dependency detection in a generic IoC Container.
-66. Build a multi-tenant repository where every query is automatically scoped to a `tenantId`.
-67. Implement a feature-flag evaluation engine with contextual user targeting.
-68. Build a Least-Recently-Used (LRU) Cache with capacity eviction and TTL expiration.
-69. Implement a Graceful Shutdown manager listening for `SIGTERM` and cleaning up open handles.
-70. Build an In-Memory Distributed Lock / Mutex for serializing asynchronous workflows.
-71. Construct an Event Store supporting stream append and optimistic version checking.
-72. Implement an asynchronous Batch Processor chunking arrays into parallel batches.
-73. Design a Clean Architecture boundary model strictly separating Domain, Use Case, and Adapter types.
-74. Build a Type-Safe HTTP Client with request and response interceptor pipelines.
-75. Design a complete Microservices Contract Gateway with typed routing and payload validation.
-
+#### Mistake 2: Storing listeners in a plain array without deduplication
+```typescript
+// WRONG: Using arrays causes duplicate execution on duplicate subscriptions
+private listeners: Record<string, Function[]> = {};
+on(event: string, fn: Function) {
+  this.listeners[event].push(fn); // Adding the same function twice executes it twice!
+}
+```
+**Why it fails:** Using `Set<Listener>` guarantees reference identity and prevents duplicate listener registrations and memory leaks.
 
 ---
 
+### 7. Rules to remember
+1. Always define an `EventMap` interface mapping event names to payload types.
+2. Constrain emitter methods with `<K extends keyof TEvents>`.
+3. Use `Set<Listener>` to store handlers for $O(1)$ removal and duplicate prevention.
+4. Return an unsubscribe function from `.on()` for clean lifecycle management.
+
+---
+
+### Think first: Prediction puzzle
+What does the following snippet log?
+
+```typescript
+interface Events {
+  ping: number;
+}
+
+const emitter = new TypedEventEmitter<Events>();
+let total = 0;
+
+const unsub = emitter.on("ping", (val) => { total += val; });
+emitter.emit("ping", 10);
+unsub();
+emitter.emit("ping", 20);
+
+console.log(total);
+```
+
+---
+
+**Answer:**
+```
+10
+```
+**Explanation:** The first `emit("ping", 10)` invokes the handler, adding 10 to `total`. Then `unsub()` removes the listener. The second `emit("ping", 20)` has no listeners registered, so `total` remains `10`.
+
+---
+
+### Practice exercises
+
+#### Exercise 1: Asynchronous Event Emitter
+- **Task**: Create an emitter where listeners can be async functions (`(payload: T) => Promise<void>`), and `emitSerial` awaits each listener sequentially.
+- **Hint 1**: Type listeners as `(payload: T) => Promise<void> | void`.
+- **Hint 2**: Use `for (const h of handlers) await h(payload)`.
+
+#### Exercise 2: Strongly-typed event counting
+- **Task**: Add a method `listenerCount<K extends keyof TEvents>(event: K): number` returning how many listeners are subscribed.
+- **Hint 1**: Return `this.listeners[event]?.size ?? 0`.
+
+#### Exercise 3: Remove all listeners for an event
+- **Task**: Implement `removeAllListeners<K extends keyof TEvents>(event?: K): void` that clears listeners for a specific event or all events if none specified.
+- **Hint 1**: If event provided, `delete this.listeners[event]`; else `this.listeners = {}`.
+
+#### Exercise 4: Event forwarding / proxying
+- **Task**: Write a function `forwardEvents(source, target, events)` that subscribes to an array of event names on `source` and emits them on `target`.
+- **Hint 1**: Iterate over the events array and bind `source.on(ev, data => target.emit(ev, data))`.
+
+---
+
+### Exercise solutions
+
+#### Solution 1: Asynchronous Event Emitter
+```typescript
+type AsyncListener<T> = (payload: T) => Promise<void> | void;
+
+class AsyncTypedEmitter<TEvents extends Record<string, any>> {
+  private listeners: { [K in keyof TEvents]?: Set<AsyncListener<TEvents[K]>> } = {};
+
+  on<K extends keyof TEvents>(event: K, listener: AsyncListener<TEvents[K]>): () => void {
+    if (!this.listeners[event]) this.listeners[event] = new Set();
+    this.listeners[event]!.add(listener);
+    return () => this.listeners[event]?.delete(listener);
+  }
+
+  async emitSerial<K extends keyof TEvents>(event: K, payload: TEvents[K]): Promise<void> {
+    const handlers = this.listeners[event];
+    if (handlers) {
+      for (const h of handlers) {
+        await h(payload);
+      }
+    }
+  }
+}
+```
+
+#### Solution 2: Strongly-typed event counting
+```typescript
+class CountedEmitter<TEvents extends Record<string, any>> extends TypedEventEmitter<TEvents> {
+  private counts = new Map<keyof TEvents, number>();
+
+  listenerCount<K extends keyof TEvents>(event: K): number {
+    return (this as any).listeners[event]?.size ?? 0;
+  }
+}
+```
+
+#### Solution 3: Remove all listeners for an event
+```typescript
+class ClearableEmitter<TEvents extends Record<string, any>> {
+  private listeners: { [K in keyof TEvents]?: Set<Listener<TEvents[K]>> } = {};
+
+  removeAllListeners<K extends keyof TEvents>(event?: K): void {
+    if (event) {
+      delete this.listeners[event];
+    } else {
+      this.listeners = {};
+    }
+  }
+}
+```
+
+#### Solution 4: Event forwarding / proxying
+```typescript
+function forwardEvents<T extends Record<string, any>>(
+  source: TypedEventEmitter<T>,
+  target: TypedEventEmitter<T>,
+  events: Array<keyof T>
+): () => void {
+  const unsubs = events.map((ev) => source.on(ev, (data) => target.emit(ev, data)));
+  return () => unsubs.forEach((unsub) => unsub());
+}
+```
+
+---
+
+### Recall
+1. Why does an `EventMap` interface make event emitters safer? It ties every event name string directly to its required payload type at compile time.
+2. What should `.on()` return to simplify cleanup? An unsubscribe callback function.
+3. How do you disallow unknown event strings? By constraining the event parameter with `<K extends keyof TEvents>`.
+
+> **If you remember only one thing:**  
+> A typed event emitter uses `<K extends keyof TEvents>` to provide full auto-completion and compile-time payload checking for pub/sub architectures.
+
+---
+
+# Topic 12: Strategy Pattern with Generic Handler Registries
+
+### 1. What is it?
+The **Strategy Pattern** defines a family of interchangeable algorithms, encapsulates each one inside a separate class or function, and makes them swappable at runtime. In TypeScript, combining the Strategy Pattern with a **Generic Handler Registry** creates a type-safe dispatch mechanism that routes tasks to the appropriate strategy without conditional branching.
+
+### 2. Why does it exist?
+Without the Strategy pattern, algorithms are scattered across nested `if` or `switch` statements:
+```typescript
+// Anti-pattern: Monolithic conditional algorithm
+function calculateDiscount(type: string, price: number) {
+  if (type === "vip") return price * 0.8;
+  if (type === "seasonal") return price * 0.9;
+  if (type === "employee") return price * 0.5;
+  throw new Error("Unknown discount");
+}
+```
+Every new discount type requires modifying this function, risking regressions. With the Strategy pattern, each algorithm is isolated in its own class, and strategies are registered dynamically.
+
+### 3. Basic example
+
+```typescript
+// 1. Strategy Interface
+interface DiscountStrategy {
+  calculate(price: number): number;
+}
+
+// 2. Concrete Strategies
+class VipDiscount implements DiscountStrategy {
+  calculate(price: number): number {
+    return price * 0.8; // 20% off
+  }
+}
+
+class SeasonalDiscount implements DiscountStrategy {
+  calculate(price: number): number {
+    return price * 0.9; // 10% off
+  }
+}
+
+class StandardDiscount implements DiscountStrategy {
+  calculate(price: number): number {
+    return price; // No discount
+  }
+}
+
+// 3. Strategy Context with Registry
+class DiscountContext {
+  private strategies = new Map<string, DiscountStrategy>();
+
+  register(tier: string, strategy: DiscountStrategy): void {
+    this.strategies.set(tier, strategy);
+  }
+
+  applyDiscount(tier: string, price: number): number {
+    const strategy = this.strategies.get(tier) ?? new StandardDiscount();
+    return strategy.calculate(price);
+  }
+}
+
+// Usage
+const context = new DiscountContext();
+context.register("vip", new VipDiscount());
+context.register("seasonal", new SeasonalDiscount());
+
+console.log(context.applyDiscount("vip", 100));      // 80
+console.log(context.applyDiscount("unknown", 100));  // 100 (standard fallback)
+```
+
+**Line-by-line explanation:**
+- `interface DiscountStrategy`: Declares the unified method signature `calculate(price: number): number`.
+- `class VipDiscount`, `SeasonalDiscount`, `StandardDiscount`: Independent implementations of the discount algorithm.
+- `class DiscountContext`: Holds the strategy map and executes the chosen strategy.
+- Adding a new discount tier requires only writing a new class implementing `DiscountStrategy` and registering it.
+
+---
+
+### 4. How it works inside TypeScript
+1. **Polymorphic Invocations**: The context interacts with strategies purely through the `DiscountStrategy` interface.
+2. **Open/Closed Principle**: New algorithms are introduced by adding new classes without touching the context class.
+3. **Pluggable Architecture**: Strategies can be swapped at runtime based on user roles, geographical region, or business hours.
+
+---
+
+### 5. More examples
+
+#### Example 1: Generic Strategy Registry with discriminated payloads
+```typescript
+interface StrategyPayloadMap {
+  credit_card: { cardNumber: string; cvv: string };
+  paypal: { email: string };
+  crypto: { walletAddress: string };
+}
+
+interface PaymentStrategy<T> {
+  pay(amount: number, details: T): Promise<boolean>;
+}
+
+class PaymentDispatcher {
+  private registry = new Map<keyof StrategyPayloadMap, PaymentStrategy<any>>();
+
+  register<K extends keyof StrategyPayloadMap>(key: K, strategy: PaymentStrategy<StrategyPayloadMap[K]>): void {
+    this.registry.set(key, strategy);
+  }
+
+  async execute<K extends keyof StrategyPayloadMap>(
+    key: K,
+    amount: number,
+    details: StrategyPayloadMap[K]
+  ): Promise<boolean> {
+    const strategy = this.registry.get(key);
+    if (!strategy) throw new Error(`Strategy not registered: ${String(key)}`);
+    return strategy.pay(amount, details);
+  }
+}
+```
+
+#### Example 2: Functional Strategy Pattern using first-class functions
+```typescript
+type SortStrategy<T> = (a: T, b: T) => number;
+
+class Sorter<T> {
+  constructor(private strategy: SortStrategy<T>) {}
+
+  setStrategy(strategy: SortStrategy<T>): void {
+    this.strategy = strategy;
+  }
+
+  sort(items: T[]): T[] {
+    return [...items].sort(this.strategy);
+  }
+}
+
+const byAscending: SortStrategy<number> = (a, b) => a - b;
+const byDescending: SortStrategy<number> = (a, b) => b - a;
+
+const sorter = new Sorter(byAscending);
+console.log(sorter.sort([3, 1, 4])); // [1, 3, 4]
+sorter.setStrategy(byDescending);
+console.log(sorter.sort([3, 1, 4])); // [4, 3, 1]
+```
+
+---
+
+### 6. Common mistakes
+
+#### Mistake 1: Passing unneeded context state to strategies
+```typescript
+// WRONG: Exposing entire context object to strategy
+interface Strategy {
+  execute(context: EntireApplicationGodObject): void; // Leaks unnecessary internals!
+}
+```
+**Why it fails:** Strategies should receive only the specific inputs they need to compute their result (`amount`, `price`, `userRole`). Passing the entire context creates tight coupling.
+
+#### Mistake 2: Missing fallback or validation for unregistered strategies
+```typescript
+// WRONG: Calling method on potentially undefined strategy
+execute(tier: string, price: number) {
+  return this.strategies.get(tier).calculate(price); // TypeError if tier not found!
+}
+```
+**Why it fails:** Always provide a sensible fallback strategy or throw a clear descriptive error if the requested strategy key is not registered.
+
+---
+
+### 7. Rules to remember
+1. Encapsulate each algorithm inside a class or function implementing a common interface.
+2. Strategies should only take the parameters required to execute their specific calculation.
+3. Use generic registries (`Map<K, Strategy<T>>`) for type-safe parameter dispatch.
+4. Favor lightweight functional strategies (first-class functions) when algorithms have no internal state.
+
+---
+
+### Think first: Prediction puzzle
+What does the code log?
+
+```typescript
+type Formatter = (text: string) => string;
+
+class TextContext {
+  constructor(private strategy: Formatter) {}
+  format(str: string) { return this.strategy(str); }
+}
+
+const lower: Formatter = (s) => s.toLowerCase();
+const ctx = new TextContext(lower);
+
+console.log(ctx.format("HeLLo"));
+```
+
+---
+
+**Answer:**
+```
+hello
+```
+**Explanation:** The `TextContext` delegates formatting to the `lower` strategy, which transforms `"HeLLo"` to `"hello"`.
+
+---
+
+### Practice exercises
+
+#### Exercise 1: Tax calculation strategy
+- **Task**: Implement a `TaxStrategy` interface with `calculateTax(subtotal: number): number`. Create `UsTax` (7%) and `EuVatTax` (20%).
+- **Hint 1**: `UsTax` returns `subtotal * 0.07`.
+
+#### Exercise 2: Dynamic compression strategy
+- **Task**: Create an interface `CompressionStrategy` with `compress(data: string): string`. Implement `GzipStrategy` (prefix with `"[gzip]"`) and `ZipStrategy` (prefix with `"[zip]"`).
+- **Hint 1**: Simple string prefixes for mock compression.
+
+#### Exercise 3: Runtime strategy switcher
+- **Task**: Create a `DownloadManager` that switches between `FastDownloadStrategy` and `LowBandwidthDownloadStrategy` based on an input boolean flag.
+- **Hint 1**: `setStrategy(flag ? fast : low)`.
+
+#### Exercise 4: Discriminated strategy dispatcher
+- **Task**: Implement a notification dispatcher where `"sms"` requires `{ phone: string }` and `"email"` requires `{ emailAddress: string }`.
+- **Hint 1**: Use the generic `StrategyPayloadMap` pattern from Example 1.
+
+---
+
+### Exercise solutions
+
+#### Solution 1: Tax calculation strategy
+```typescript
+interface TaxStrategy {
+  calculateTax(subtotal: number): number;
+}
+
+class UsTax implements TaxStrategy {
+  calculateTax(subtotal: number): number { return subtotal * 0.07; }
+}
+
+class EuVatTax implements TaxStrategy {
+  calculateTax(subtotal: number): number { return subtotal * 0.20; }
+}
+```
+
+#### Solution 2: Dynamic compression strategy
+```typescript
+interface CompressionStrategy {
+  compress(data: string): string;
+}
+
+class GzipStrategy implements CompressionStrategy {
+  compress(data: string): string { return `[gzip]${data}`; }
+}
+
+class ZipStrategy implements CompressionStrategy {
+  compress(data: string): string { return `[zip]${data}`; }
+}
+```
+
+#### Solution 3: Runtime strategy switcher
+```typescript
+interface DownloadStrategy { download(url: string): string; }
+
+class FastDownload implements DownloadStrategy {
+  download(url: string) { return `Fast: ${url}`; }
+}
+
+class LowBandwidthDownload implements DownloadStrategy {
+  download(url: string) { return `LowBandwidth: ${url}`; }
+}
+
+class DownloadManager {
+  private strategy: DownloadStrategy = new FastDownload();
+
+  setLowBandwidthMode(enabled: boolean): void {
+    this.strategy = enabled ? new LowBandwidthDownload() : new FastDownload();
+  }
+
+  fetch(url: string): string {
+    return this.strategy.download(url);
+  }
+}
+```
+
+#### Solution 4: Discriminated strategy dispatcher
+```typescript
+interface NotificationMap {
+  sms: { phone: string; message: string };
+  email: { emailAddress: string; subject: string; body: string };
+}
+
+interface NotificationStrategy<T> {
+  send(payload: T): Promise<void>;
+}
+
+class NotificationCenter {
+  private handlers = new Map<keyof NotificationMap, NotificationStrategy<any>>();
+
+  register<K extends keyof NotificationMap>(k: K, h: NotificationStrategy<NotificationMap[K]>): void {
+    this.handlers.set(k, h);
+  }
+
+  async dispatch<K extends keyof NotificationMap>(k: K, payload: NotificationMap[K]): Promise<void> {
+    const h = this.handlers.get(k);
+    if (!h) throw new Error("Missing handler");
+    await h.send(payload);
+  }
+}
+```
+
+---
+
+### Recall
+1. What is the core benefit of the Strategy pattern? It allows algorithms to vary independently from the clients that use them, eliminating conditional branching.
+2. How does TypeScript enable type-safe strategy registration? By using generic dictionaries keyed by literal string maps (`StrategyPayloadMap[K]`).
+3. When should functional strategies be used instead of class-based strategies? When the algorithm is stateless and requires only a single function signature.
+
+> **If you remember only one thing:**  
+> The Strategy pattern replaces messy `switch` statements with modular, interchangeable algorithm objects adhering to a common interface.
+
+---
+
+# Topic 13: Railway-Oriented Programming: The `Result<T, E>` Monad
+
+### 1. What is it?
+**Railway-Oriented Programming (ROP)** is a functional error handling pattern that models computations as two parallel tracks: a **Success track** (carrying `T`) and a **Failure track** (carrying `E`). The **`Result<T, E>`** type represents either an `Ok(value: T)` or an `Err(error: E)`.
+
+### 2. Why does it exist?
+In standard JavaScript and TypeScript, runtime exceptions thrown via `throw new Error()` are untyped:
+```typescript
+// Anti-pattern: Untyped throw
+async function fetchUser(id: string): Promise<User> {
+  if (!id) throw new ValidationError("Missing ID"); // TypeScript return signature says nothing about this error!
+  return db.load(id);
+}
+```
+The caller has no idea from the function signature what errors can be thrown, leading to unhandled crashes. With `Result<T, E>`, errors become explicit return values enforced by the compiler.
+
+### 3. Basic example
+
+```typescript
+// 1. Result Data Structures
+type Result<T, E = Error> = Ok<T, E> | Err<T, E>;
+
+class Ok<T, E> {
+  readonly isOk = true;
+  readonly isErr = false;
+  constructor(readonly value: T) {}
+
+  map<U>(fn: (val: T) => U): Result<U, E> {
+    return new Ok<U, E>(fn(this.value));
+  }
+
+  flatMap<U>(fn: (val: T) => Result<U, E>): Result<U, E> {
+    return fn(this.value);
+  }
+}
+
+class Err<T, E> {
+  readonly isOk = false;
+  readonly isErr = true;
+  constructor(readonly error: E) {}
+
+  map<U>(_fn: (val: T) => U): Result<U, E> {
+    return new Err<U, E>(this.error);
+  }
+
+  flatMap<U>(_fn: (val: T) => Result<U, E>): Result<U, E> {
+    return new Err<U, E>(this.error);
+  }
+}
+
+function ok<T, E = Error>(value: T): Result<T, E> {
+  return new Ok<T, E>(value);
+}
+
+function err<T = never, E = Error>(error: E): Result<T, E> {
+  return new Err<T, E>(error);
+}
+
+// 2. Chained Pipeline Usage
+function parsePositiveNumber(str: string): Result<number, string> {
+  const n = Number(str);
+  if (isNaN(n)) return err("Not a valid number");
+  if (n <= 0) return err("Number must be positive");
+  return ok(n);
+}
+
+function computeSquareRoot(val: number): Result<number, string> {
+  return ok(Math.sqrt(val));
+}
+
+// Seamless chaining without try/catch:
+const successResult = parsePositiveNumber("16").flatMap(computeSquareRoot);
+if (successResult.isOk) {
+  console.log(`Square root: ${successResult.value}`); // 4
+}
+
+const failedResult = parsePositiveNumber("-5").flatMap(computeSquareRoot);
+if (failedResult.isErr) {
+  console.log(`Failed: ${failedResult.error}`); // "Number must be positive"
+}
+```
+
+**Line-by-line explanation:**
+- `type Result<T, E> = Ok<T, E> | Err<T, E>`: A discriminated union with discriminator `isOk: true | false`.
+- `class Ok`: Implements `map` (transforms the inner value) and `flatMap` (chains another `Result`-returning function).
+- `class Err`: Short-circuits both `map` and `flatMap`, propagating the error downstream without invoking the callbacks.
+- `flatMap(computeSquareRoot)`: If `parsePositiveNumber` returns an `Err`, `computeSquareRoot` is never called.
+
+---
+
+### 4. How it works inside TypeScript
+1. **Discriminated Union Narrowing**: Checking `if (res.isOk)` narrows `res` to `Ok<T, E>`, making `res.value` available. Checking `if (res.isErr)` narrows to `Err<T, E>`, making `res.error` available.
+2. **Short-Circuit Semantics**: `Err.flatMap` immediately returns itself, skipping all subsequent computations on the track.
+3. **Explicit Type Signatures**: Any function returning `Result<T, E>` forces callers to handle failure cases before accessing the data.
+
+---
+
+### 5. More examples
+
+#### Example 1: Wrapping throwing code with `Result.tryCatch`
+```typescript
+function tryCatch<T, E = Error>(fn: () => T): Result<T, E> {
+  try {
+    return ok(fn());
+  } catch (caught) {
+    return err(caught as E);
+  }
+}
+
+const jsonResult = tryCatch(() => JSON.parse('{"valid": true}'));
+```
+
+#### Example 2: Railway pipeline with multiple stages
+```typescript
+interface RawOrder {
+  id: string;
+  total: number;
+}
+
+function validateOrder(order: RawOrder): Result<RawOrder, string> {
+  if (order.total <= 0) return err("Total must be positive");
+  return ok(order);
+}
+
+function applyTax(order: RawOrder): Result<RawOrder & { totalWithTax: number }, string> {
+  return ok({ ...order, totalWithTax: order.total * 1.1 });
+}
+
+const processed = ok<RawOrder, string>({ id: "ord_1", total: 100 })
+  .flatMap(validateOrder)
+  .flatMap(applyTax);
+```
+
+---
+
+### 6. Common mistakes
+
+#### Mistake 1: Accessing `.value` without checking `.isOk`
+```typescript
+// WRONG: Accessing value directly
+const res = parsePositiveNumber("abc");
+console.log(res.value); // Compile error: Property 'value' does not exist on type 'Err<number, string>'!
+```
+**Why it fails:** TypeScript protects you. You must check `if (res.isOk)` first to narrow the union before accessing `res.value`.
+
+#### Mistake 2: Throwing an exception inside a `map` callback
+```typescript
+// WRONG: Throwing inside map converts clean ROP back into runtime crashes
+res.map((val) => {
+  if (!val) throw new Error("Empty"); // Defeats ROP!
+});
+```
+**Why it fails:** In Railway-Oriented Programming, functions should return `Result` and chain with `flatMap`, rather than throwing unhandled exceptions.
+
+---
+
+### 7. Rules to remember
+1. Use `map` to transform `T` into `U` when the transformation cannot fail.
+2. Use `flatMap` (bind) when the transformation itself returns a `Result<U, E>`.
+3. Discriminate using `if (res.isOk)` or `if (res.isErr)`.
+4. Wrap third-party throwing libraries with a `tryCatch()` utility.
+
+---
+
+### Think first: Prediction puzzle
+What does the following chain log?
+
+```typescript
+const res = ok(10)
+  .map((n) => n * 2)
+  .flatMap((n) => err<number, string>("Failed at step 2"))
+  .map((n) => n + 100);
+
+if (res.isErr) {
+  console.log(res.error);
+}
+```
+
+---
+
+**Answer:**
+```
+Failed at step 2
+```
+**Explanation:**
+1. `ok(10).map(n => n * 2)` produces `Ok(20)`.
+2. `.flatMap(...)` returns `Err("Failed at step 2")`.
+3. The subsequent `.map(n => n + 100)` is short-circuited by `Err` and ignored.
+4. The final result is `Err("Failed at step 2")`.
+
+---
+
+### Practice exercises
+
+#### Exercise 1: Safe integer parser
+- **Task**: Write `safeParseInt(str: string): Result<number, string>` returning an error if the string is not an integer.
+- **Hint 1**: Test `Number.isInteger(Number(str))`.
+
+#### Exercise 2: `unwrapOr` fallback utility
+- **Task**: Add an `unwrapOr(fallback: T): T` method to `Result<T, E>` that returns `this.value` if `Ok`, or `fallback` if `Err`.
+- **Hint 1**: `Ok` returns `this.value`; `Err` returns `fallback`.
+
+#### Exercise 3: Async Result Promise wrapper (`ResultAsync`)
+- **Task**: Write a helper `tryCatchAsync<T>(fn: () => Promise<T>): Promise<Result<T, Error>>`.
+- **Hint 1**: `try { return ok(await fn()); } catch (e) { return err(e as Error); }`.
+
+#### Exercise 4: Combining multiple Results (`Result.all`)
+- **Task**: Implement `combineResults<T, E>(results: Result<T, E>[]): Result<T[], E>` that fails on the first `Err` or succeeds with an array of all `T`.
+- **Hint 1**: Iterate through array; return early on first `.isErr`.
+
+---
+
+### Exercise solutions
+
+#### Solution 1: Safe integer parser
+```typescript
+function safeParseInt(str: string): Result<number, string> {
+  const n = Number(str);
+  if (!Number.isInteger(n)) return err(`"${str}" is not an integer`);
+  return ok(n);
+}
+```
+
+#### Solution 2: `unwrapOr` fallback utility
+```typescript
+function unwrapOr<T, E>(res: Result<T, E>, fallback: T): T {
+  return res.isOk ? res.value : fallback;
+}
+
+const val = unwrapOr(err("fail"), 42); // 42
+```
+
+#### Solution 3: Async Result Promise wrapper (`ResultAsync`)
+```typescript
+async function tryCatchAsync<T>(fn: () => Promise<T>): Promise<Result<T, Error>> {
+  try {
+    const val = await fn();
+    return ok(val);
+  } catch (error) {
+    return err(error instanceof Error ? error : new Error(String(error)));
+  }
+}
+```
+
+#### Solution 4: Combining multiple Results (`Result.all`)
+```typescript
+function combineResults<T, E>(results: Result<T, E>[]): Result<T[], E> {
+  const accumulated: T[] = [];
+  for (const r of results) {
+    if (r.isErr) return err(r.error);
+    accumulated.push(r.value);
+  }
+  return ok(accumulated);
+}
+```
+
+---
+
+### Recall
+1. What are the two tracks in Railway-Oriented Programming? The Success track (`Ok<T>`) and the Failure track (`Err<E>`).
+2. What is the difference between `map` and `flatMap`? `map` transforms the inner value with a pure function; `flatMap` chains a function that returns another `Result`.
+3. Why is `Result<T, E>` superior to `throw` in domain logic? Errors are explicit in function signatures and verified at compile time.
+
+> **If you remember only one thing:**  
+> The `Result<T, E>` monad replaces untyped runtime exceptions with explicit, compiler-checked Success and Failure return types.
+
+---
+
+# Topic 14: Functional Composition: Type-Safe `pipe` and `compose` Utilities
+
+### 1. What is it?
+**Functional Composition** combines multiple unary (single-argument) functions into a single pipeline. **`pipe`** executes functions from left-to-right, while **`compose`** executes functions from right-to-left. A strictly-typed implementation uses TypeScript function overloads to ensure that the return type of function $N$ matches the input parameter type of function $N+1$.
+
+### 2. Why does it exist?
+Nesting function calls leads to unreadable "pyramid of code" structures:
+```typescript
+// Anti-pattern: Deep nesting (inside-out reading)
+const result = formatOutput(addTax(applyDiscount(sanitizeInput(rawInput))));
+```
+You must read the code from the inside out to understand the execution order. With `pipe`, execution flows linearly from top to bottom:
+```typescript
+const result = pipe(rawInput, sanitizeInput, applyDiscount, addTax, formatOutput);
+```
+
+### 3. Basic example
+
+```typescript
+// Strongly typed pipe implementation using function overloads
+function pipe<A>(a: A): A;
+function pipe<A, B>(a: A, ab: (a: A) => B): B;
+function pipe<A, B, C>(a: A, ab: (a: A) => B, bc: (b: B) => C): C;
+function pipe<A, B, C, D>(a: A, ab: (a: A) => B, bc: (b: B) => C, cd: (c: C) => D): D;
+function pipe(value: any, ...fns: Function[]): any {
+  return fns.reduce((acc, fn) => fn(acc), value);
+}
+
+// Pipeline transformation functions
+const trim = (s: string): string => s.trim();
+const toLength = (s: string): number => s.length;
+const isEven = (n: number): boolean => n % 2 === 0;
+
+// Type-safe execution:
+const result = pipe(
+  "   hello world   ",
+  trim,      // string -> string ("hello world")
+  toLength,  // string -> number (11)
+  isEven     // number -> boolean (false)
+);
+
+console.log(result); // false (boolean)
+```
+
+**Line-by-line explanation:**
+- `function pipe<A, B, C>(a: A, ab: (a: A) => B, bc: (b: B) => C): C`: Declares an overload where the output of `ab` (`B`) is guaranteed to match the input of `bc` (`B`).
+- `fns.reduce((acc, fn) => fn(acc), value)`: Executes each function sequentially, passing the previous output as the next input.
+- `pipe("   hello world   ", trim, toLength, isEven)`: TypeScript verifies each step and infers the final type as `boolean`.
+
+---
+
+### 4. How it works inside TypeScript
+1. **Overload Resolution**: TypeScript checks the number of function arguments passed to `pipe` and picks the overload matching that argument count.
+2. **Generic Parameter Propagation**: The compiler infers type `A` from the first argument, checks `(a: A) => B` to infer `B`, checks `(b: B) => C` to infer `C`, and assigns the final return type.
+3. **Type Mismatch Diagnostics**: If function 2 returns a `number` but function 3 expects a `string`, TypeScript raises an immediate type error on function 3.
+
+---
+
+### 5. More examples
+
+#### Example 1: Type-safe `compose` (Right-to-Left)
+```typescript
+function compose<A, B, C>(bc: (b: B) => C, ab: (a: A) => B): (a: A) => C {
+  return (a: A) => bc(ab(a));
+}
+
+const double = (x: number) => x * 2;
+const addOne = (x: number) => x + 1;
+
+// First adds one, then doubles: (5 + 1) * 2 = 12
+const calculate = compose(double, addOne);
+console.log(calculate(5)); // 12
+```
+
+#### Example 2: Async pipeline (`pipeAsync`)
+```typescript
+async function pipeAsync<A, B, C>(
+  initial: A,
+  fn1: (a: A) => Promise<B> | B,
+  fn2: (b: B) => Promise<C> | C
+): Promise<C> {
+  const step1 = await fn1(initial);
+  return await fn2(step1);
+}
+```
+
+---
+
+### 6. Common mistakes
+
+#### Mistake 1: Implementing `pipe` with `(...fns: any[]) => any` without overloads
+```typescript
+// WRONG: Untyped pipe loses all static guarantees
+function brokenPipe(value: any, ...fns: ((x: any) => any)[]) {
+  return fns.reduce((v, f) => f(v), value);
+}
+// Any incompatible function passes compilation silently and crashes at runtime!
+```
+**Why it fails:** TypeScript cannot infer type connections across a rest parameter array `...fns: Function[]`. You MUST use overloaded signatures or tuple generics to link the input/output types.
+
+#### Mistake 2: Mixing unary and binary functions in `pipe`
+```typescript
+// WRONG: Passing a function that requires 2 arguments into pipe
+const multiply = (x: number, y: number) => x * y;
+// pipe(5, multiply) // Error: multiply expects 2 arguments!
+```
+**Why it fails:** Pipeline functions must be unary (accept exactly one argument). Use currying (`(y: number) => (x: number) => x * y`) to adapt multi-argument functions.
+
+---
+
+### 7. Rules to remember
+1. `pipe` evaluates from left-to-right (first argument $\to$ last function).
+2. `compose` evaluates from right-to-left (standard mathematical $f(g(x))$ order).
+3. Every function in a pipeline must be unary (single parameter).
+4. Use function overloads up to 8-10 arguments to ensure seamless compile-time type inference.
+
+---
+
+### Think first: Prediction puzzle
+What does this pipe expression output?
+
+```typescript
+const add5 = (x: number) => x + 5;
+const stringify = (x: number) => `value: ${x}`;
+const shout = (s: string) => `${s}!`;
+
+const res = pipe(10, add5, stringify, shout);
+console.log(res);
+```
+
+---
+
+**Answer:**
+```
+value: 15!
+```
+**Execution trace:**
+1. Initial value: `10`.
+2. `add5(10)` $\to$ `15`.
+3. `stringify(15)` $\to$ `"value: 15"`.
+4. `shout("value: 15")` $\to$ `"value: 15!"`.
+
+---
+
+### Practice exercises
+
+#### Exercise 1: Curried multiplier for `pipe`
+- **Task**: Write a curried function `multiplyBy(factor: number): (val: number) => number` and use it inside `pipe`.
+- **Hint 1**: Return an arrow function `(val) => val * factor`.
+
+#### Exercise 2: String sanitization pipeline
+- **Task**: Use `pipe` to sanitize user input: strip whitespace, convert to lower case, and prefix with `"@"` to create a handle.
+- **Hint 1**: Functions: `s => s.trim()`, `s => s.toLowerCase()`, `s => `@${s}``.
+
+#### Exercise 3: Array mapping pipeline stage
+- **Task**: Write a generic pipeline step `mapArray<T, U>(fn: (item: T) => U): (arr: T[]) => U[]`.
+- **Hint 1**: Return `(arr) => arr.map(fn)`.
+
+#### Exercise 4: Async `pipe` with error handling
+- **Task**: Write an async pipe step that wraps an async function with fallback recovery if it rejects.
+- **Hint 1**: Wrap in `try/catch` returning a fallback value on error.
+
+---
+
+### Exercise solutions
+
+#### Solution 1: Curried multiplier for `pipe`
+```typescript
+const multiplyBy = (factor: number) => (val: number) => val * factor;
+
+const calc = pipe(10, multiplyBy(3), add5); // (10 * 3) + 5 = 35
+console.log(calc); // 35
+```
+
+#### Solution 2: String sanitization pipeline
+```typescript
+const toHandle = (input: string) =>
+  pipe(
+    input,
+    (s: string) => s.trim(),
+    (s: string) => s.toLowerCase(),
+    (s: string) => `@${s}`
+  );
+
+console.log(toHandle("   AliceCooper   ")); // "@alicecooper"
+```
+
+#### Solution 3: Array mapping pipeline stage
+```typescript
+const mapArray = <T, U>(fn: (item: T) => U) => (arr: T[]): U[] => arr.map(fn);
+
+const numbers = [1, 2, 3];
+const doubled = pipe(numbers, mapArray((n: number) => n * 2));
+console.log(doubled); // [2, 4, 6]
+```
+
+#### Solution 4: Async `pipe` with error handling
+```typescript
+const withDefault = <T>(fallback: T) => async (promiseFn: () => Promise<T>): Promise<T> => {
+  try {
+    return await promiseFn();
+  } catch {
+    return fallback;
+  }
+};
+```
+
+---
+
+### Recall
+1. What is the execution order of `pipe` vs `compose`? `pipe` executes left-to-right (top-to-bottom); `compose` executes right-to-left (inside-out).
+2. Why must pipeline functions be unary? Because each step receives only the single output produced by the previous step.
+3. How does TypeScript ensure type safety between steps? Through overloaded generic signatures linking the return type of step $N$ to the argument of step $N+1$.
+
+> **If you remember only one thing:**  
+> `pipe` chains unary functions from left to right, eliminating pyramid nesting while preserving complete static type safety across every step.
+
+---
+
+# Checkpoint Challenge 3: Enterprise Architecture & Pipeline Synthesis (Topics 11-14)
+
+### Challenge Specification
+Construct an enterprise Data Ingestion and Event Dispatch Engine that synthesizes:
+1. A **Railway-Oriented Result Monad** to validate incoming sensor payloads.
+2. A **Type-Safe Event Emitter** to broadcast validated sensor readings.
+3. A **Functional Pipeline (`pipe`)** to normalize raw telemetry data.
+4. A **Strategy Pattern** to route processed readings to specific archival sinks.
+
+### Solution
+
+```typescript
+// 1. Result Data Types
+type Result<T, E = string> = { isOk: true; value: T } | { isOk: false; error: E };
+const ok = <T>(value: T): Result<T, never> => ({ isOk: true, value });
+const err = <E>(error: E): Result<never, E> => ({ isOk: false, error });
+
+// 2. Telemetry Types & Functional Normalization Pipeline
+interface RawSensorData {
+  device: string;
+  rawTemperature: string;
+  rawPressure: string;
+}
+
+interface NormalizedTelemetry {
+  deviceId: string;
+  temperatureC: number;
+  pressureKPa: number;
+}
+
+function normalizeTelemetry(raw: RawSensorData): Result<NormalizedTelemetry, string> {
+  const temp = parseFloat(raw.rawTemperature);
+  const pressure = parseFloat(raw.rawPressure);
+
+  if (isNaN(temp)) return err("Invalid temperature reading");
+  if (isNaN(pressure)) return err("Invalid pressure reading");
+
+  return ok({
+    deviceId: raw.device.trim().toUpperCase(),
+    temperatureC: Math.round(temp * 10) / 10,
+    pressureKPa: Math.round(pressure * 10) / 10,
+  });
+}
+
+// 3. Strictly-Typed Event Emitter
+interface TelemetryEventMap {
+  "telemetry:received": NormalizedTelemetry;
+  "telemetry:alert": { deviceId: string; reason: string };
+}
+
+class TelemetryEventBus {
+  private handlers: {
+    [K in keyof TelemetryEventMap]?: Set<(data: TelemetryEventMap[K]) => void>;
+  } = {};
+
+  on<K extends keyof TelemetryEventMap>(
+    event: K,
+    listener: (data: TelemetryEventMap[K]) => void
+  ): () => void {
+    if (!this.handlers[event]) this.handlers[event] = new Set();
+    this.handlers[event]!.add(listener);
+    return () => this.handlers[event]?.delete(listener);
+  }
+
+  emit<K extends keyof TelemetryEventMap>(event: K, data: TelemetryEventMap[K]): void {
+    this.handlers[event]?.forEach((h) => h(data));
+  }
+}
+
+// 4. Strategy Pattern for Storage Sinks
+interface IngestionStrategy {
+  save(data: NormalizedTelemetry): Promise<void>;
+}
+
+class CloudArchiveStrategy implements IngestionStrategy {
+  async save(data: NormalizedTelemetry): Promise<void> {
+    console.log(`[CloudStorage] Archived device ${data.deviceId}: ${data.temperatureC}°C`);
+  }
+}
+
+class AlertConsoleStrategy implements IngestionStrategy {
+  async save(data: NormalizedTelemetry): Promise<void> {
+    if (data.temperatureC > 50) {
+      console.warn(`[ALERT] High temperature warning for ${data.deviceId}: ${data.temperatureC}°C`);
+    }
+  }
+}
+
+// 5. Synthesis Ingestion Coordinator
+class TelemetryIngestionCoordinator {
+  private sinks: IngestionStrategy[] = [];
+
+  constructor(private bus: TelemetryEventBus) {}
+
+  addSink(sink: IngestionStrategy): void {
+    this.sinks.push(sink);
+  }
+
+  async processRawInput(raw: RawSensorData): Promise<Result<NormalizedTelemetry, string>> {
+    const result = normalizeTelemetry(raw);
+
+    if (!result.isOk) {
+      return result; // Propagate failure
+    }
+
+    const telemetry = result.value;
+
+    // Broadcast on EventBus
+    this.bus.emit("telemetry:received", telemetry);
+    if (telemetry.temperatureC > 50) {
+      this.bus.emit("telemetry:alert", {
+        deviceId: telemetry.deviceId,
+        reason: `Exceeded threshold: ${telemetry.temperatureC}°C`,
+      });
+    }
+
+    // Dispatch through strategies
+    for (const sink of this.sinks) {
+      await sink.save(telemetry);
+    }
+
+    return ok(telemetry);
+  }
+}
+
+// 6. Verification Execution
+async function runCheckpoint3() {
+  const bus = new TelemetryEventBus();
+  const coordinator = new TelemetryIngestionCoordinator(bus);
+
+  coordinator.addSink(new CloudArchiveStrategy());
+  coordinator.addSink(new AlertConsoleStrategy());
+
+  bus.on("telemetry:alert", (alert) => {
+    console.log(`[EventBus Alert Subscribed] ${alert.deviceId}: ${alert.reason}`);
+  });
+
+  console.log("--- Test 1: Valid Normal Ingestion ---");
+  const res1 = await coordinator.processRawInput({
+    device: "  sensor_alpha  ",
+    rawTemperature: "24.56",
+    rawPressure: "101.325",
+  });
+  console.log("Test 1 Result:", res1.isOk ? res1.value : res1.error);
+
+  console.log("\n--- Test 2: Overheat Ingestion Triggering Alert ---");
+  const res2 = await coordinator.processRawInput({
+    device: "sensor_beta",
+    rawTemperature: "58.2",
+    rawPressure: "99.1",
+  });
+  console.log("Test 2 Result:", res2.isOk ? res2.value : res2.error);
+
+  console.log("\n--- Test 3: Malformed Payload Triggering ROP Failure ---");
+  const res3 = await coordinator.processRawInput({
+    device: "sensor_gamma",
+    rawTemperature: "corrupted_nan",
+    rawPressure: "100.0",
+  });
+  console.log("Test 3 Result:", res3.isOk ? res3.value : res3.error);
+}
+runCheckpoint3();
+```
