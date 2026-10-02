@@ -1,141 +1,1892 @@
-# Module TS-04: Mapped Types, Modifiers, & Type-Level Metaprogramming
-
-> **Track**: TypeScript Production Engineering Masterclass (TS 5.x)  
-> **Prerequisites**: [TS-00](file:///C:/Users/ayush/OneDrive/Desktop/js-learning/TS-00-QUEUE-AND-INDEX.md), [TS-01](file:///C:/Users/ayush/OneDrive/Desktop/js-learning/TS-01-TYPE-ARCHITECTURE-AND-STRUCTURAL-SUBTYPING.md), [TS-02](file:///C:/Users/ayush/OneDrive/Desktop/js-learning/TS-02-GENERICS-AND-TYPE-OPERATORS.md), [TS-03](file:///C:/Users/ayush/OneDrive/Desktop/js-learning/TS-03-CONDITIONAL-TYPES-AND-INFERENCE.md)  
-> **Target Audience**: Principal Engineers, Framework Authors, Full-Stack Architects  
-> **Universal Specification**: Complete Technical Treatise, 90 Real-World Interview Q&As with Runnable Code, 15 Prediction Puzzles with Step-by-Step Traces, 4 Complete Runnable Production Projects with Test Assertions, 20 DOs & DON'Ts, Real-World Enterprise Case Study, 75 Practice Drills (5 Tiers).
-
----
-
 # Module TS-04: Mapped Types, Modifiers & Metaprogramming
 
-> **Guiding Invariant**: Complete mastery requires zero gaps. In this module, we explore Type-Level Metaprogramming over object schemas: Homomorphic vs Non-Homomorphic Mapped Types, modifier algebra (`+readonly`, `-readonly`, `+?`, `-?`), Key Remapping via `as`, filtering with `never`, deep recursive immutability, and dynamic DTO transformation pipelines.
+Welcome to TypeScript Mapped Types, Modifiers, and Metaprogramming. This module teaches how to iterate over object property keys, transform object shapes, add or remove modifiers, and generate dynamic data types at compile time.
 
 ---
 
-## 🏛️ Section 01: The Genesis of Mapped Types: DRY Principle at the Type Level
+# Topic 1: What Are Mapped Types? (`[K in keyof T]: T[K]`)
 
-In enterprise codebases, domain models exist in multiple operational states:
-1. **Creation DTO**: Optional identifiers, generated timestamps absent.
-2. **Update DTO**: All fields optional (partial update / PATCH).
-3. **Database Entity**: All fields required, strictly typed identifiers.
-4. **Audit Snapshot**: All fields recursively immutable (`readonly`).
+### 1. What is it?
+A mapped type is a type that builds a new object type by iterating over the property keys of an existing type.
 
-Without mapped types, engineers were forced to manually copy and synchronize 4 to 5 interface variants per entity. When an entity added a field, engineers frequently forgot to update secondary interfaces, causing silent runtime bugs.
-
-Anders Hejlsberg introduced **Mapped Types** in TypeScript 2.1 to enable programmatic iteration over property keys:
+Just as `Array.prototype.map()` in JavaScript loops over each element of an array to create a new array, a mapped type loops over each property in an object type to create a new object type:
 ```typescript
 type Mapped<T> = {
   [K in keyof T]: T[K];
 };
 ```
-Just as `Array.prototype.map()` transforms every element of an array, a Mapped Type transforms every property of an object type according to a functional projection rule.
 
+### 2. Why does it exist?
+In real applications, you often need multiple variations of the same model:
+- An entity model where all properties are required.
+- An update payload (DTO) where all properties are optional.
+- A frozen snapshot where all properties are `readonly`.
+
+Without mapped types, you would have to write and maintain three or four duplicate interfaces for every single model. If an entity changes, secondary interfaces fall out of sync, causing bugs. Mapped types allow you to derive new variations from a single source of truth automatically.
+
+### 3. Basic example
+
+```typescript
+type User = {
+  id: string;
+  name: string;
+  age: number;
+};
+
+// Create a mapped type that wraps every property value in a function
+type PropertyGetters<T> = {
+  [K in keyof T]: () => T[K];
+};
+
+type UserGetters = PropertyGetters<User>;
 ```
-[ Input Object Type T ]
-          |
-    keyof T: "id" | "name" | "email"
-          |
-   Iterate [K in keyof T]
-   Transform Value: T[K] -> NewType
-          |
-[ Output Transformed Object Type ]
+
+**Line-by-line explanation:**
+- `type PropertyGetters<T> = {`: Declares a generic mapped type with type parameter `T`.
+- `[K in keyof T]:`: Loops over every key `K` in `keyof T` (for `User`, this is `"id" | "name" | "age"`).
+- `() => T[K];`: Sets the value type for property `K` to a function returning `T[K]`.
+- `type UserGetters = PropertyGetters<User>;`: Produces:
+  ```typescript
+  {
+    id: () => string;
+    name: () => string;
+    age: () => number;
+  }
+  ```
+
+---
+
+### 4. How it works inside TypeScript
+1. **Key Extraction**: The compiler evaluates `keyof T` to obtain the union of property names.
+2. **Property Iteration**: The `[K in ...]` syntax acts as a type-level `for...in` loop over each property key.
+3. **Value Transformation**: For each key `K`, the compiler evaluates the expression on the right side of the colon (`:`) and assigns it as the new property value type.
+4. **Object Construction**: The compiler emits a new object type containing all iterated properties.
+
+---
+
+### 5. Think first
+
+What is the resulting shape of `Result` in the code below? Decide first.
+
+```typescript
+type Point = { x: number; y: number };
+
+type Stringify<T> = {
+  [K in keyof T]: string;
+};
+
+type Result = Stringify<Point>;
 ```
 
 ---
 
-## 📐 Section 02: Homomorphic vs Non-Homomorphic Mapped Types
+**Answer and Reason:**
 
-The TypeScript compiler treats mapped types differently depending on whether they are **homomorphic** or **non-homomorphic**.
-
-### 2.1 Homomorphic Mapped Types
-A mapped type is **homomorphic** if it operates directly over a type variable of the form:
-`[K in keyof T]` (or `[K in keyof T as ...]`).
-
-#### Preserved Behaviors:
-1. **Modifier Inheritance**: If property `x` was `readonly` or optional (`?`) in $T$, it remains `readonly` or optional in the mapped output (unless explicitly stripped with `-readonly` or `-?`).
-2. **Array and Tuple Preservation**: If $T$ is a tuple (e.g. `[string, number]`), a homomorphic mapped type returns a new **tuple** with the same length, rather than collapsing into an object with numeric keys!
+The resulting type is:
 
 ```typescript
-type DoubleNumberValues<T> = {
-  [K in keyof T]: T[K] extends number ? string : T[K];
-};
-
-type TupleIn = readonly [number, boolean];
-type TupleOut = DoubleNumberValues<TupleIn>;
-// Inferred as: readonly [string, boolean] (Array/Tuple structure & readonly preserved!)
+{
+  x: string;
+  y: string;
+}
 ```
 
-### 2.2 Non-Homomorphic Mapped Types
-A mapped type is **non-homomorphic** if it iterates over a type that is not a direct `keyof T` expression:
-`[K in "id" | "name"]` or `[K in PropertyKey]`.
+**Reason**: `keyof Point` is `"x" | "y"`. For every key, `Stringify` sets the value type to `string`. The resulting object has properties `x: string` and `y: string`.
 
-#### Behaviors:
-1. **Modifier Stripping**: It does **not** inherit property modifiers (`readonly` or `?`) from any base type.
-2. **Array Degradation**: Applying a non-homomorphic mapped type to an array produces an object dictionary, losing array and tuple mechanics.
+---
+
+### 6. Try it yourself
+Create an object type `Config = { theme: string; port: number }`. Write a mapped type `Nullable<T> = { [K in keyof T]: T[K] | null }`. Apply it to `Config` and create a valid object.
+
+---
+
+### 7. More examples
+
+#### Example A: The Identity Mapped Type (Easy)
 
 ```typescript
-type RecordNonHomomorphic<Keys extends string, Val> = {
-  [K in Keys]: Val;
+type Clone<T> = {
+  [K in keyof T]: T[K];
 };
+
+type UserClone = Clone<User>;
+// Produces an identical copy of User.
+```
+
+**Line-by-line explanation:**
+- Reads each key `K` and assigns its exact existing type `T[K]`.
+
+#### Example B: Boolean Flags for Every Property (Medium)
+
+```typescript
+type DirtyFlags<T> = {
+  [K in keyof T]: boolean;
+};
+
+type UserDirtyFlags = DirtyFlags<User>;
+// { id: boolean; name: boolean; age: boolean }
 ```
 
 ---
 
-## ➕ Section 03: Property Modifier Algebra: `+` and `-`
+### 8. Common mistakes
 
-Mapped types support explicit additive (`+`) and subtractive (`-`) property modifiers for both `readonly` and optionality (`?`).
+#### Mistake 1: Trying to use mapped type syntax inside an `interface`
 
-| Syntax | Formal Meaning | Standard Utility Equivalent |
-|---|---|---|
-| `+?` (or `?`) | Adds optional modifier to all properties | `Partial<T>` |
-| `-?` | Removes optional modifier (forces required) | `Required<T>` |
-| `+readonly` (or `readonly`) | Adds `readonly` modifier to all properties | `Readonly<T>` |
-| `-readonly` | Removes `readonly` modifier (makes mutable) | `Mutable<T>` |
-
+**Wrong code:**
 ```typescript
-// 1. Partial: Makes every property optional
-type CustomPartial<T> = {
-  [K in keyof T]+?: T[K];
+interface BadMapped<T> {
+  // [K in keyof T]: T[K]; // Syntax Error!
+}
+```
+
+**Why it happens:**
+Mapped types can only be declared using type aliases (`type Mapped<T> = { ... }`), never inside `interface` declarations.
+
+---
+
+### 9. Rules to remember
+1. Mapped types iterate over property keys using `[K in keyof T]`.
+2. Mapped types must be declared with `type`, not `interface`.
+3. The right side of the colon specifies the new type for each property.
+
+---
+
+### 10. Exercises
+
+#### Question 1 (Predict the compile result)
+What is the resulting type of `Output`?
+```typescript
+type Original = { a: number; b: boolean };
+type Wrap<T> = { [K in keyof T]: [T[K]] };
+type Output = Wrap<Original>;
+```
+
+#### Question 2 (Find and fix the bug)
+Fix the syntax error in the mapped type below:
+```typescript
+interface MakeOptional<T> {
+  [K in keyof T]?: T[K];
+}
+```
+
+#### Question 3 (Write code from scratch)
+Write a mapped type `PromiseBox<T>` that wraps every property value of an object in a `Promise`. Test it on `{ id: string; count: number }`.
+
+#### Question 4 (Explain in your own words)
+Why does TypeScript require mapped types to be defined as `type` aliases instead of `interface` declarations?
+
+---
+
+### Solutions
+
+#### Solution to Question 1
+**Hint 1**: Wrap each property type in a 1-element tuple.
+
+**Answer**:
+`Output` is `{ a: [number]; b: [boolean] }`.
+
+#### Solution to Question 2
+**Hint 1**: Change `interface` to `type MakeOptional<T> = { ... }`.
+
+**Answer**:
+```typescript
+type MakeOptional<T> = {
+  [K in keyof T]?: T[K];
+};
+```
+
+#### Solution to Question 3
+**Hint 1**: Wrap `T[K]` with `Promise<T[K]>`.
+
+**Answer**:
+```typescript
+type PromiseBox<T> = {
+  [K in keyof T]: Promise<T[K]>;
 };
 
-// 2. Required: Strips optionality from every property
-type CustomRequired<T> = {
+type Result = PromiseBox<{ id: string; count: number }>;
+// { id: Promise<string>; count: Promise<number> }
+```
+
+#### Solution to Question 4
+**Hint 1**: Interfaces in TypeScript are open and support declaration merging.
+
+**Answer**:
+Interfaces can be reopened and extended through declaration merging. Mapped types perform an immediate computational loop over a fixed set of keys, which conflicts with the open, mergeable nature of interfaces. Therefore, mapped types are restricted to type aliases.
+
+---
+
+### 11. Recall
+
+1. What syntax loops over keys in a mapped type?
+2. Can a mapped type be declared using an `interface`?
+3. What does `T[K]` represent inside a mapped type?
+
+**If you remember only one thing:**
+Mapped types loop over an object's keys to transform property values into a new object type.
+
+---
+
+# Topic 2: Homomorphic vs Non-Homomorphic Mapped Types
+
+### 1. What is it?
+A mapped type is **homomorphic** if it operates directly over `keyof T` (for example, `[K in keyof T]`).
+
+A mapped type is **non-homomorphic** if it iterates over an arbitrary union of keys that is not directly tied to a type parameter's `keyof` (for example, `[K in "a" | "b"]`).
+
+### 2. Why does it exist?
+When you transform an object, you often want to preserve its original modifiers:
+- If a property was `readonly`, it should remain `readonly`.
+- If a property was optional (`?`), it should remain optional.
+- If the input was an array or tuple (`[string, number]`), the result should remain a tuple, not an object with numeric keys.
+
+Homomorphic mapped types automatically preserve these modifiers and array/tuple structures. Non-homomorphic mapped types create a plain, bare dictionary without inheriting modifiers.
+
+### 3. Basic example
+
+```typescript
+type User = {
+  readonly id: string;
+  name?: string;
+};
+
+// 1. Homomorphic: iterates directly over keyof T
+type HomomorphicCopy<T> = {
+  [K in keyof T]: T[K];
+};
+
+type UserCopy = HomomorphicCopy<User>;
+// Preserves: readonly id: string; name?: string;
+
+// 2. Non-Homomorphic: iterates over a hardcoded union
+type NonHomomorphicCopy<Keys extends keyof any> = {
+  [K in Keys]: string;
+};
+
+type BareDict = NonHomomorphicCopy<"id" | "name">;
+// Strips modifiers: id: string; name: string; (Not readonly, not optional!)
+```
+
+**Line-by-line explanation:**
+- `HomomorphicCopy`: Because the syntax uses `[K in keyof T]`, TypeScript recognizes the link to `T`. It copies the `readonly` modifier on `id` and the optional `?` modifier on `name`.
+- `NonHomomorphicCopy`: Iterates over keys independently of a source object. Modifiers are not inherited.
+
+---
+
+### 4. How it works inside TypeScript
+1. **Modifier Inheritance**: In homomorphic mapped types, the compiler automatically copies `readonly` and `?` attributes from `T` to the new properties.
+2. **Tuple Preservation**: When applied to a tuple `[string, number]`, a homomorphic mapped type returns a tuple `[NewA, NewB]`. A non-homomorphic mapped type would degrade into an object with string keys `{"0": ..., "1": ...}`.
+
+---
+
+### 5. Think first
+
+What happens when we pass a tuple `[number, string]` to a homomorphic mapped type? Does it return a tuple or an object? Decide first.
+
+```typescript
+type Wrap<T> = {
+  [K in keyof T]: Promise<T[K]>;
+};
+
+type Result = Wrap<[number, string]>;
+```
+
+---
+
+**Answer and Reason:**
+
+The resulting type is:
+
+```typescript
+[Promise<number>, Promise<string>]
+```
+
+**Reason**: Because `Wrap` is homomorphic (`[K in keyof T]`), TypeScript preserves the tuple structure. It maps each tuple element to `Promise<T[K]>` and returns a 2-element tuple.
+
+---
+
+### 6. Try it yourself
+Create an interface `ReadonlyPoint = { readonly x: number; readonly y: number }`. Apply `HomomorphicCopy` to it and verify that the properties on the result remain `readonly`.
+
+---
+
+### 7. More examples
+
+#### Example A: Mapping Over Tuples Preserves Length (Medium)
+
+```typescript
+type StringifyList<T> = {
+  [K in keyof T]: string;
+};
+
+type TupleOut = StringifyList<[1, 2, 3]>;
+// Inferred as: [string, string, string]
+```
+
+**Line-by-line explanation:**
+- Preserves the fixed 3-element tuple length.
+
+---
+
+### 8. Common mistakes
+
+#### Mistake 1: Expecting a non-homomorphic mapped type to preserve optionality
+
+**Wrong assumption:**
+```typescript
+type PickKeys<Keys extends string> = { [K in Keys]: number };
+// If you pass keys from an optional interface, optionality is lost!
+```
+
+**Why it happens:**
+Only `[K in keyof T]` has access to the original property descriptors.
+
+---
+
+### 9. Rules to remember
+1. Homomorphic mapped types use `[K in keyof T]`.
+2. Homomorphic mapped types preserve `readonly`, optional (`?`), and tuple structures.
+3. Non-homomorphic mapped types do not inherit modifiers.
+
+---
+
+### 10. Exercises
+
+#### Question 1 (Predict the compile result)
+Is `type M<T> = { [K in keyof T]: boolean }` homomorphic or non-homomorphic?
+
+#### Question 2 (Find and fix the bug)
+The mapped type below is non-homomorphic and loses tuple mechanics. Rewrite it as homomorphic:
+```typescript
+type Convert<T, Keys extends keyof T> = { [K in Keys]: string };
+```
+
+#### Question 3 (Write code from scratch)
+Declare a tuple `type Coords = readonly [number, number]`. Write a homomorphic mapped type that turns all elements into `string`. Verify that the result remains `readonly`.
+
+#### Question 4 (Explain in your own words)
+Why is it beneficial that homomorphic mapped types preserve tuple structures?
+
+---
+
+### Solutions
+
+#### Solution to Question 1
+**Hint 1**: Does it iterate directly over `keyof T`?
+
+**Answer**:
+It is homomorphic because it uses `[K in keyof T]`.
+
+#### Solution to Question 2
+**Hint 1**: Iterate directly over `keyof T`.
+
+**Answer**:
+```typescript
+type Convert<T> = { [K in keyof T]: string };
+```
+
+#### Solution to Question 3
+**Hint 1**: Use `{ [K in keyof T]: string }`.
+
+**Answer**:
+```typescript
+type Coords = readonly [number, number];
+type ToString<T> = { [K in keyof T]: string };
+type Result = ToString<Coords>; // readonly [string, string]
+```
+
+#### Solution to Question 4
+**Hint 1**: What happens to array methods and fixed lengths if a tuple becomes a plain object?
+
+**Answer**:
+If tuples were converted into plain objects with numeric keys, you would lose tuple length checking, positional destructuring, and array methods. Preserving tuples allows mapped types to work seamlessly on function parameter lists and fixed data arrays.
+
+---
+
+### 11. Recall
+
+1. What makes a mapped type homomorphic?
+2. Do homomorphic mapped types preserve `readonly` modifiers?
+3. What happens when a homomorphic mapped type is applied to a tuple?
+
+**If you remember only one thing:**
+Homomorphic mapped types (`[K in keyof T]`) automatically preserve property modifiers and tuple structures from the input type.
+
+---
+
+# Topic 3: Making Properties Optional or Required with `+?` and `-?` (`Partial<T>` and `Required<T>`)
+
+### 1. What is it?
+Mapped types support modifier algebra:
+- `+?` (or simply `?`): Adds the optional modifier to all properties.
+- `-?`: Removes the optional modifier, forcing every property to be required.
+
+TypeScript provides two standard utility types built using this syntax:
+- `Partial<T>`: Makes all properties optional.
+- `Required<T>`: Makes all properties required.
+
+### 2. Why does it exist?
+When creating or updating entities, requirements differ:
+- When updating a user via a PATCH API, the client can send any subset of fields. All properties should be optional (`Partial<User>`).
+- When validating a completed profile, all optional fields must have been filled in. All properties should be required (`Required<User>`).
+
+Modifier algebra lets you toggle optionality without writing new interfaces.
+
+### 3. Basic example
+
+```typescript
+type User = {
+  id: string;
+  name: string;
+  age?: number;
+};
+
+// 1. Partial: Makes all properties optional
+type UpdateUserDto = Partial<User>;
+// { id?: string; name?: string; age?: number }
+
+// 2. Required: Strips all '?' modifiers, making all properties required
+type CompleteUser = Required<User>;
+// { id: string; name: string; age: number }
+```
+
+**Line-by-line explanation:**
+- `Partial<User>`: Adds `?` to `id` and `name`. `age` was already optional and remains optional.
+- `Required<User>`: Strips `?` from `age` using `-?`. Every property is now strictly required.
+
+---
+
+### 4. How it works inside TypeScript
+Here are the official definitions from `lib.d.ts`:
+
+```typescript
+// Official TypeScript source code:
+type Partial<T> = {
+  [P in keyof T]?: T[P];
+};
+
+type Required<T> = {
+  [P in keyof T]-?: T[P];
+};
+```
+
+**The `-?` Modifier**:
+The minus sign `-` explicitly deletes the `?` token from each property descriptor during mapping.
+
+---
+
+### 5. Think first
+
+What happens if you assign `{ id: "1" }` to a variable of type `Required<User>`? Decide first.
+
+```typescript
+type User = { id: string; name?: string };
+const user: Required<User> = { id: "1" };
+```
+
+---
+
+**Answer and Reason:**
+
+This code fails to compile:
+
+```
+Property 'name' is missing in type '{ id: string; }' but required in type 'Required<User>'.
+```
+
+**Reason**: `Required<User>` stripped the `?` from `name`. Both `id` and `name` must be provided.
+
+---
+
+### 6. Try it yourself
+Create an interface `Settings = { volume?: number; theme?: string }`. Use `Required<Settings>` to create an object where both properties must be specified.
+
+---
+
+### 7. More examples
+
+#### Example A: Patch Update Function (Medium)
+
+```typescript
+type Profile = {
+  id: string;
+  bio: string;
+  avatarUrl: string;
+};
+
+function updateProfile(id: string, updates: Partial<Profile>) {
+  console.log("Updating", id, "with", updates);
+}
+
+// Any subset of fields is valid:
+updateProfile("usr_1", { bio: "Hello world" });
+updateProfile("usr_2", { avatarUrl: "https://example.com/pic.png" });
+```
+
+---
+
+### 8. Common mistakes
+
+#### Mistake 1: Confusing optional properties with `undefined` values
+
+**Wrong assumption:**
+Assuming `Partial<T>` allows `{ name: undefined }` when `exactOptionalPropertyTypes: true` is enabled.
+
+**Reality:**
+With `exactOptionalPropertyTypes` enabled, an optional property means the property can be omitted, not that it can be assigned `undefined`.
+
+---
+
+### 9. Rules to remember
+1. `?` or `+?` adds optionality to all properties (`Partial<T>`).
+2. `-?` removes optionality, making all properties required (`Required<T>`).
+3. Modifiers operate across all iterated keys.
+
+---
+
+### 10. Exercises
+
+#### Question 1 (Predict the compile result)
+Will the following code compile?
+```typescript
+type Entity = { title?: string };
+const e: Required<Entity> = {};
+```
+
+#### Question 2 (Find and fix the bug)
+Write `MyRequired<T>` from scratch using modifier algebra:
+```typescript
+type MyRequired<T> = {
+  [K in keyof T]+?: T[K]; // Bug: This makes it optional!
+};
+```
+
+#### Question 3 (Write code from scratch)
+Create a type `Article = { title: string; body: string; tags?: string[] }`. Use `Partial` to declare a variable that only specifies `title`.
+
+#### Question 4 (Explain in your own words)
+How does the `-?` token differ from simply omitting the `?` token in a mapped type?
+
+---
+
+### Solutions
+
+#### Solution to Question 1
+**Hint 1**: Is `title` required on `Required<Entity>`?
+
+**Answer**:
+No, it fails. `Required<Entity>` requires `title` to be present.
+
+#### Solution to Question 2
+**Hint 1**: Replace `+?` with `-?`.
+
+**Answer**:
+```typescript
+type MyRequired<T> = {
   [K in keyof T]-?: T[K];
 };
+```
 
-// 3. Readonly: Freezes every property at compile time
-type CustomReadonly<T> = {
-  +readonly [K in keyof T]: T[K];
+#### Solution to Question 3
+**Hint 1**: `const draft: Partial<Article> = { title: "Draft" };`.
+
+**Answer**:
+```typescript
+type Article = { title: string; body: string; tags?: string[] };
+const draft: Partial<Article> = {
+  title: "My First Post",
+};
+```
+
+#### Solution to Question 4
+**Hint 1**: Think about homomorphic inheritance of modifiers.
+
+**Answer**:
+In a homomorphic mapped type, omitting the `?` token inherits the existing optionality of the input type (optional properties stay optional). Using `-?` explicitly strips the optional modifier, converting previously optional properties into required properties.
+
+---
+
+### 11. Recall
+
+1. What syntax removes optionality in a mapped type?
+2. What built-in utility makes all properties optional?
+3. What built-in utility makes all properties required?
+
+**If you remember only one thing:**
+Use `+?` (`Partial`) to make properties optional, and `-?` (`Required`) to force properties to be required.
+
+---
+
+# Topic 4: Making Properties Immutable or Mutable with `+readonly` and `-readonly` (`Readonly<T>`)
+
+### 1. What is it?
+Just like optionality, `readonly` modifiers support additive and subtractive algebra:
+- `+readonly` (or `readonly`): Marks every property as read-only.
+- `-readonly`: Removes the `readonly` modifier, making every property mutable.
+
+TypeScript provides the built-in utility `Readonly<T>`, and you can write a `Mutable<T>` utility using `-readonly`.
+
+### 2. Why does it exist?
+In JavaScript, objects passed to functions can be mutated by reference, causing unexpected side effects.
+
+Marking types with `Readonly<T>` ensures that callers cannot reassign properties after creation. Conversely, when you need to clone or initialize an object that was originally marked readonly, `-readonly` lets you strip the restriction cleanly.
+
+### 3. Basic example
+
+```typescript
+type Config = {
+  endpoint: string;
+  port: number;
 };
 
-// 4. Mutable: Unfreezes every property at compile time
+// 1. Readonly: Freezes properties at compile time
+type LockedConfig = Readonly<Config>;
+
+const config: LockedConfig = { endpoint: "/api", port: 8080 };
+// config.port = 9000; // Compile Error: Cannot assign to 'port' because it is a read-only property.
+
+// 2. Mutable: Strips readonly
+type Mutable<T> = {
+  -readonly [K in keyof T]: T[K];
+};
+
+type UnlockedConfig = Mutable<LockedConfig>;
+const editable: UnlockedConfig = { endpoint: "/api", port: 8080 };
+editable.port = 9000; // Allowed!
+```
+
+**Line-by-line explanation:**
+- `Readonly<Config>`: Applies `readonly` to every property of `Config`. Reassigning `config.port` triggers a compile error.
+- `Mutable<T>`: Uses `-readonly` to delete the `readonly` flag from each property, allowing reassignments.
+
+---
+
+### 4. How it works inside TypeScript
+Here is the official definition of `Readonly<T>` from `lib.d.ts`:
+
+```typescript
+type Readonly<T> = {
+  readonly [P in keyof T]: T[P];
+};
+```
+
+**The `-readonly` modifier**:
+The `-readonly` syntax instructs the compiler's type checker to clear the `ReadOnly` bit flag on each property symbol.
+
+---
+
+### 5. Think first
+
+What happens when we attempt to modify an array marked with `Readonly<number[]>`? Decide first.
+
+```typescript
+const numbers: Readonly<number[]> = [1, 2, 3];
+numbers.push(4);
+```
+
+---
+
+**Answer and Reason:**
+
+This code fails to compile:
+
+```
+Property 'push' does not exist on type 'readonly number[]'.
+```
+
+**Reason**: `Readonly` on an array removes all mutating methods (`push`, `pop`, `splice`).
+
+---
+
+### 6. Try it yourself
+Define an interface `Point = { readonly x: number; readonly y: number }`. Write a mapped type `MutablePoint = Mutable<Point>` that removes `readonly`. Create an instance and reassign its `x` property.
+
+---
+
+### 7. More examples
+
+#### Example A: Deep Immutability Caveat (Medium)
+
+```typescript
+type Nested = {
+  user: {
+    name: string;
+  };
+};
+
+const data: Readonly<Nested> = {
+  user: { name: "Alex" },
+};
+
+// data.user = { name: "Jordan" }; // Error: user is readonly!
+data.user.name = "Jordan"; // Allowed! Nested object is NOT readonly!
+```
+
+**Line-by-line explanation:**
+- Standard `Readonly<T>` is **shallow**. It only protects top-level properties. We will cover `DeepReadonly` in Topic 13.
+
+---
+
+### 8. Common mistakes
+
+#### Mistake 1: Expecting `Readonly<T>` to freeze objects at runtime
+
+**Wrong assumption:**
+Thinking `Readonly<T>` calls `Object.freeze()` automatically.
+
+**Reality:**
+TypeScript types are completely erased at compile time. At runtime, the object is a regular, mutable JavaScript object unless you explicitly call `Object.freeze()`.
+
+---
+
+### 9. Rules to remember
+1. `readonly` or `+readonly` marks properties read-only (`Readonly<T>`).
+2. `-readonly` strips the read-only flag, restoring mutability.
+3. Standard `Readonly<T>` is shallow; nested objects remain mutable.
+4. `Readonly` checks exist only during compilation.
+
+---
+
+### 10. Exercises
+
+#### Question 1 (Predict the compile result)
+Will the following code compile?
+```typescript
+type Data = { id: string };
+const d: Readonly<Data> = { id: "1" };
+d.id = "2";
+```
+
+#### Question 2 (Find and fix the bug)
+Write a `Mutable<T>` utility that removes `readonly` from all properties:
+```typescript
+type Mutable<T> = {
+  [K in keyof T]: T[K]; // Bug: Homomorphic mapped type inherits readonly!
+};
+```
+
+#### Question 3 (Write code from scratch)
+Create an interface `Settings = { readonly theme: string; readonly volume: number }`. Write a function `updateSettings(s: Mutable<Settings>)` that mutates `s.volume = 50`.
+
+#### Question 4 (Explain in your own words)
+Why does `[K in keyof T]: T[K]` without `-readonly` fail to make an object mutable?
+
+---
+
+### Solutions
+
+#### Solution to Question 1
+**Hint 1**: Is `id` read-only?
+
+**Answer**:
+No, it fails. `d.id` cannot be reassigned because it is `readonly`.
+
+#### Solution to Question 2
+**Hint 1**: Add `-readonly` before `[K in keyof T]`.
+
+**Answer**:
+```typescript
 type Mutable<T> = {
   -readonly [K in keyof T]: T[K];
 };
 ```
 
+#### Solution to Question 3
+**Hint 1**: Use `-readonly` in `Mutable<T>`.
+
+**Answer**:
+```typescript
+type Settings = { readonly theme: string; readonly volume: number };
+type Mutable<T> = { -readonly [K in keyof T]: T[K] };
+
+function updateSettings(s: Mutable<Settings>) {
+  s.volume = 50;
+}
+```
+
+#### Solution to Question 4
+**Hint 1**: Remember homomorphic inheritance of modifiers from Topic 2.
+
+**Answer**:
+Because `[K in keyof T]` is a homomorphic mapped type, it automatically copies all existing modifiers from `T` to the new type. If a property was `readonly` in `T`, it remains `readonly` unless explicitly removed with `-readonly`.
+
 ---
 
-## 🔀 Section 04: Key Remapping via `as` (TypeScript 4.1)
+### 11. Recall
 
-TypeScript 4.1 introduced the `as` clause in mapped types, allowing developers to:
-1. Rename keys using template literal types.
-2. Filter keys out of the object by remapping them to `never`.
+1. What modifier makes a property read-only?
+2. What modifier removes read-only restrictions?
+3. Is built-in `Readonly<T>` shallow or deep?
 
-### 4.1 Renaming Keys (Getter / Setter Generation)
+**If you remember only one thing:**
+Use `+readonly` to lock properties and `-readonly` to unlock them.
+
+---
+
+# Topic 5: Constructing Dictionary Types with `Record<K, T>`
+
+### 1. What is it?
+`Record<K, T>` is a built-in utility type that constructs an object type whose property keys are `K` and whose property values are `T`:
 ```typescript
-interface Person {
-  name: string;
-  age: number;
+type Record<K extends keyof any, T> = {
+  [P in K]: T;
+};
+```
+
+### 2. Why does it exist?
+In JavaScript, objects are frequently used as key-value dictionaries or lookup maps (for example, mapping user IDs to user objects, or error codes to error messages).
+
+`Record<K, T>` allows you to define these dictionary types cleanly in one line, while strictly controlling which keys are allowed and what values they hold.
+
+### 3. Basic example
+
+```typescript
+type Page = "home" | "about" | "contact";
+
+interface PageInfo {
+  title: string;
 }
 
-// Automatically synthesize a Getters interface:
-type Getters<T> = {
+// Create a record mapping every Page to PageInfo:
+const nav: Record<Page, PageInfo> = {
+  home: { title: "Home" },
+  about: { title: "About Us" },
+  contact: { title: "Contact" },
+};
+```
+
+**Line-by-line explanation:**
+- `Record<Page, PageInfo>`: Creates an object type requiring every key in `Page` (`"home"`, `"about"`, `"contact"`), with each value typed as `PageInfo`.
+- If any page is missing, or if an unknown page is added, TypeScript reports a compile error.
+
+---
+
+### 4. How it works inside TypeScript
+Here is the official definition from `lib.d.ts`:
+
+```typescript
+type Record<K extends keyof any, T> = {
+  [P in K]: T;
+};
+```
+
+**Key constraints (`keyof any`)**:
+`keyof any` is defined as `string | number | symbol` (all valid JavaScript object key types). `K` must be assignable to `string | number | symbol`.
+
+---
+
+### 5. Think first
+
+What happens if you omit `"contact"` from `nav` in the code below? Decide first.
+
+```typescript
+type Page = "home" | "about" | "contact";
+
+const nav: Record<Page, string> = {
+  home: "/home",
+  about: "/about",
+};
+```
+
+---
+
+**Answer and Reason:**
+
+This code fails to compile:
+
+```
+Property 'contact' is missing in type '{ home: string; about: string; }' but required in type 'Record<Page, string>'.
+```
+
+**Reason**: `Record<Page, string>` requires **all** keys in the union `Page` to be present.
+
+---
+
+### 6. Try it yourself
+Create a dictionary `RolePermissions = Record<"admin" | "guest", string[]>`. Assign permissions `["read", "write"]` for admin and `["read"]` for guest.
+
+---
+
+### 7. More examples
+
+#### Example A: Dynamic String Key Dictionaries (Easy)
+
+```typescript
+type Cache = Record<string, unknown>;
+
+const cache: Cache = {
+  token: "abc123",
+  count: 42,
+};
+```
+
+**Line-by-line explanation:**
+- `Record<string, unknown>` allows any string key with unknown values.
+
+---
+
+### 8. Common mistakes
+
+#### Mistake 1: Using `boolean` as a Record key
+
+**Wrong code:**
+```typescript
+type Bad = Record<boolean, string>; // Error!
+```
+
+**Why it happens:**
+JavaScript object keys can only be `string`, `number`, or `symbol`. Booleans are not valid key types.
+
+---
+
+### 9. Rules to remember
+1. `Record<K, T>` creates an object type with keys `K` and values `T`.
+2. `K` must be assignable to `string | number | symbol`.
+3. If `K` is a union of literals, all keys in the union are strictly required.
+
+---
+
+### 10. Exercises
+
+#### Question 1 (Predict the compile result)
+Will the following code compile?
+```typescript
+type Status = "ready" | "error";
+const msg: Record<Status, string> = {
+  ready: "All set",
+};
+```
+
+#### Question 2 (Find and fix the bug)
+Fix the error in this type definition:
+```typescript
+type ScoreMap = Record<object, number>;
+```
+
+#### Question 3 (Write code from scratch)
+Create a type `HttpStatusCodes` mapping `"OK" | "NOT_FOUND"` to `number`. Create a valid object conforming to it.
+
+#### Question 4 (Explain in your own words)
+Why is `Record<"a" | "b", number>` safer than `{ [key: string]: number }`?
+
+---
+
+### Solutions
+
+#### Solution to Question 1
+**Hint 1**: Is `"error"` present in the object?
+
+**Answer**:
+No, it fails. Property `error` is missing.
+
+#### Solution to Question 2
+**Hint 1**: Object keys must be `string`, `number`, or `symbol`.
+
+**Answer**:
+```typescript
+type ScoreMap = Record<string, number>;
+```
+
+#### Solution to Question 3
+**Hint 1**: Use `Record<"OK" | "NOT_FOUND", number>`.
+
+**Answer**:
+```typescript
+type HttpStatusCodes = Record<"OK" | "NOT_FOUND", number>;
+
+const codes: HttpStatusCodes = {
+  OK: 200,
+  NOT_FOUND: 404,
+};
+```
+
+#### Solution to Question 4
+**Hint 1**: Does `{ [key: string]: number }` check if specific keys exist?
+
+**Answer**:
+`{ [key: string]: number }` allows arbitrary keys and cannot guarantee that any specific key is present. In contrast, `Record<"a" | "b", number>` strictly enforces that both `"a"` and `"b"` are present, catching typos and missing properties at compile time.
+
+---
+
+### 11. Recall
+
+1. What built-in utility creates a dictionary of keys and values?
+2. What types can be used as keys in `Record`?
+3. If `K` is `"a" | "b"`, can you omit `"b"`?
+
+**If you remember only one thing:**
+`Record<K, T>` constructs a strongly typed dictionary where every key in `K` must be present with value type `T`.
+
+---
+
+# Checkpoint Challenge: Topics 1 to 5
+
+### Challenge Scenario
+Build a type-safe form state manager:
+
+1. Define a form entity interface:
+   ```typescript
+   interface UserForm {
+     username: string;
+     email: string;
+     age?: number;
+   }
+   ```
+2. Using `Required`, create a type `ValidatedForm` where all fields must be filled in.
+3. Using `Partial`, create a type `FormDirtyState` that tracks which fields have been touched.
+4. Using `Record`, create an error dictionary `FormErrors` mapping each key of `UserForm` to `string | null`.
+5. Using `Readonly`, create an immutable snapshot type `FormSnapshot`.
+
+### Challenge Solution
+
+```typescript
+interface UserForm {
+  username: string;
+  email: string;
+  age?: number;
+}
+
+// 2. All fields required:
+type ValidatedForm = Required<UserForm>;
+// { username: string; email: string; age: number }
+
+// 3. Form dirty flags (all optional booleans):
+type FormDirtyState = Partial<Record<keyof UserForm, boolean>>;
+
+// 4. Error dictionary:
+type FormErrors = Record<keyof UserForm, string | null>;
+
+// 5. Immutable snapshot:
+type FormSnapshot = Readonly<UserForm>;
+
+const errors: FormErrors = {
+  username: null,
+  email: "Invalid email address",
+  age: null,
+};
+```
+
+---
+
+# Topic 6: Selecting Properties with `Pick<T, K>`
+
+### 1. What is it?
+`Pick<T, K>` is a built-in utility type that constructs a new type by picking a specific set of properties `K` from an existing type `T`:
+```typescript
+type Pick<T, K extends keyof T> = {
+  [P in K]: T[P];
+};
+```
+
+### 2. Why does it exist?
+Often, a component or function only needs a small subset of a large object.
+
+For example, a user profile card might only need `name` and `avatarUrl` from a 20-field `User` database model. Instead of creating a brand-new interface from scratch, `Pick<User, "name" | "avatarUrl">` extracts exactly what you need while staying in sync with the master model.
+
+### 3. Basic example
+
+```typescript
+type User = {
+  id: string;
+  name: string;
+  email: string;
+  role: string;
+  createdAt: number;
+};
+
+// Pick only 'id' and 'name'
+type UserPreview = Pick<User, "id" | "name">;
+// Inferred as: { id: string; name: string }
+
+const preview: UserPreview = {
+  id: "usr_1",
+  name: "Alex",
+};
+```
+
+**Line-by-line explanation:**
+- `Pick<User, "id" | "name">`: Evaluates `[P in "id" | "name"]: User[P]`.
+- Produces an object containing only `id: string` and `name: string`.
+- Modifiers (like `readonly` or `?`) on the picked properties are preserved because `Pick` is a homomorphic mapped type.
+
+---
+
+### 4. How it works inside TypeScript
+1. **Key Constraint**: `K extends keyof T` guarantees that you can only pick keys that actually exist on `T`.
+2. **Homomorphic Mapping**: The compiler iterates over `P in K` and looks up `T[P]`.
+3. **Typo Prevention**: Writing `Pick<User, "nonExistent">` triggers an immediate compile error.
+
+---
+
+### 5. Think first
+
+What happens if you try to pick a key that does not exist on `T`? Decide first.
+
+```typescript
+type User = { name: string };
+type BadPick = Pick<User, "name" | "salary">;
+```
+
+---
+
+**Answer and Reason:**
+
+This code fails to compile:
+
+```
+Type '"salary"' does not satisfy the constraint 'keyof User'.
+  Type '"salary"' is not assignable to type '"name"'.
+```
+
+**Reason**: `K extends keyof T` prevents picking keys that do not exist on `User`.
+
+---
+
+### 6. Try it yourself
+Create a type `Article = { id: string; title: string; content: string; views: number }`. Use `Pick` to create a `ArticleSummary` type with only `id` and `title`.
+
+---
+
+### 7. More examples
+
+#### Example A: Preserving Property Modifiers (Medium)
+
+```typescript
+type Account = {
+  readonly id: string;
+  nickname?: string;
+};
+
+type Picked = Pick<Account, "id" | "nickname">;
+// Inferred as: { readonly id: string; nickname?: string }
+```
+
+**Line-by-line explanation:**
+- `Pick` preserves `readonly` on `id` and optionality `?` on `nickname`.
+
+---
+
+### 8. Common mistakes
+
+#### Mistake 1: Confusing `Pick` and `Extract`
+
+**Wrong assumption:**
+```typescript
+// Trying to pick properties from an object using Extract:
+type Bad = Extract<User, "id">; // Evaluates to never!
+```
+
+**Why it happens:**
+- `Pick` works on **object types** to select properties.
+- `Extract` works on **unions** to filter matching members.
+
+---
+
+### 9. Rules to remember
+1. `Pick<T, K>` constructs a type with only keys `K` from `T`.
+2. `K` must be assignable to `keyof T`.
+3. Picked properties retain their original modifiers (`readonly`, `?`).
+
+---
+
+### 10. Exercises
+
+#### Question 1 (Predict the compile result)
+What is the resulting type of `Sub`?
+```typescript
+type Point = { x: number; y: number; z: number };
+type Sub = Pick<Point, "x" | "y">;
+```
+
+#### Question 2 (Find and fix the bug)
+Fix the typo caught by `Pick`:
+```typescript
+type Settings = { volume: number; mute: boolean };
+type VolumeOnly = Pick<Settings, "volumme">;
+```
+
+#### Question 3 (Write code from scratch)
+Write the `MyPick<T, K>` utility from scratch without using TypeScript's built-in `Pick`.
+
+#### Question 4 (Explain in your own words)
+Why is `Pick<User, "id" | "name">` better than declaring a separate interface `UserPreview { id: string; name: string }`?
+
+---
+
+### Solutions
+
+#### Solution to Question 1
+**Hint 1**: Pick `x` and `y`.
+
+**Answer**:
+The type is `{ x: number; y: number }`.
+
+#### Solution to Question 2
+**Hint 1**: Fix the spelling of `volumme`.
+
+**Answer**:
+```typescript
+type VolumeOnly = Pick<Settings, "volume">;
+```
+
+#### Solution to Question 3
+**Hint 1**: `[P in K]: T[P]`.
+
+**Answer**:
+```typescript
+type MyPick<T, K extends keyof T> = {
+  [P in K]: T[P];
+};
+```
+
+#### Solution to Question 4
+**Hint 1**: What happens if the type of `id` in `User` changes from `string` to `number` in the future?
+
+**Answer**:
+If `id` changes in `User`, `Pick<User, "id" | "name">` updates automatically. A manually declared interface would not update, leading to type desynchronization and potential runtime bugs.
+
+---
+
+### 11. Recall
+
+1. What built-in utility selects properties from an object type?
+2. What constraint does `Pick` place on its second argument `K`?
+3. Does `Pick` preserve `readonly` modifiers?
+
+**If you remember only one thing:**
+Use `Pick<T, K>` to extract a subset of properties from an object type while preserving modifiers.
+
+---
+
+# Topic 7: Omitting Properties with `Omit<T, K>`
+
+### 1. What is it?
+`Omit<T, K>` is a built-in utility type that constructs an object type by picking all properties from `T` and then removing `K`:
+```typescript
+type Omit<T, K extends keyof any> = Pick<T, Exclude<keyof T, K>>;
+```
+
+### 2. Why does it exist?
+While `Pick` is ideal when you want a *small* subset of properties, `Omit` is ideal when you want *almost all* properties except one or two.
+
+For example, when creating a new database record, the database generates `id` and `createdAt`. The creation payload should contain every field of the entity *except* `id` and `createdAt`. `Omit<User, "id" | "createdAt">` defines this cleanly.
+
+### 3. Basic example
+
+```typescript
+type User = {
+  id: string;
+  name: string;
+  email: string;
+  createdAt: number;
+};
+
+// Remove id and createdAt:
+type CreateUserDto = Omit<User, "id" | "createdAt">;
+// Inferred as: { name: string; email: string }
+
+const newUser: CreateUserDto = {
+  name: "Morgan",
+  email: "morgan@example.com",
+};
+```
+
+**Line-by-line explanation:**
+- `keyof User`: `"id" | "name" | "email" | "createdAt"`.
+- `Exclude<keyof User, "id" | "createdAt">`: Removes `"id"` and `"createdAt"`, leaving `"name" | "email"`.
+- `Pick<User, "name" | "email">`: Picks the remaining properties.
+
+---
+
+### 4. How it works inside TypeScript
+Here is the official definition from `lib.d.ts`:
+
+```typescript
+type Omit<T, K extends keyof any> = Pick<T, Exclude<keyof T, K>>;
+```
+
+**Composition of Utilities**:
+`Omit` combines `Pick` and `Exclude`:
+1. `Exclude<keyof T, K>` removes `K` from the keys union.
+2. `Pick<T, ...>` picks the remaining keys.
+
+---
+
+### 5. Think first
+
+Notice that `K` in `Omit<T, K extends keyof any>` is `keyof any`, NOT `keyof T`. What does this mean if you omit a key that does not exist? Decide first.
+
+```typescript
+type User = { name: string };
+type Result = Omit<User, "salary">;
+```
+
+---
+
+**Answer and Reason:**
+
+This code compiles without error!
+
+**Reason**: `K` is constrained to `keyof any` (`string | number | symbol`), not strictly `keyof T`. Omitting a key that does not exist is safely ignored, returning `User` unchanged.
+
+---
+
+### 6. Try it yourself
+Create an interface `Post = { id: string; title: string; views: number; published: boolean }`. Use `Omit` to create `DraftPost` that removes `id` and `views`.
+
+---
+
+### 7. More examples
+
+#### Example A: Replacing a Property Type (Medium)
+
+```typescript
+type Base = { id: string; count: number };
+
+// Replace count: number with count: string
+type StringCount = Omit<Base, "count"> & { count: string };
+
+const item: StringCount = {
+  id: "1",
+  count: "five", // Type is string!
+};
+```
+
+**Line-by-line explanation:**
+- Omits the original property first to prevent an impossible intersection (`number & string -> never`).
+
+---
+
+### 8. Common mistakes
+
+#### Mistake 1: Trying to replace a property without omitting it first
+
+**Wrong code:**
+```typescript
+type Base = { id: string; count: number };
+type BadOverride = Base & { count: string };
+// BadOverride.count is number & string -> never!
+```
+
+**Why it happens:**
+Intersecting without `Omit` produces `never` for conflicting primitive property types.
+
+---
+
+### 9. Rules to remember
+1. `Omit<T, K>` creates an object type with keys `K` removed.
+2. Implemented as `Pick<T, Exclude<keyof T, K>>`.
+3. Use `Omit` before overriding existing property types.
+
+---
+
+### 10. Exercises
+
+#### Question 1 (Predict the compile result)
+What is the resulting type of `Clean`?
+```typescript
+type Raw = { a: number; b: string; c: boolean };
+type Clean = Omit<Raw, "b" | "c">;
+```
+
+#### Question 2 (Find and fix the bug)
+The code below results in `never` for `port`. Fix it using `Omit`:
+```typescript
+type ServerConfig = { host: string; port: number };
+type StringPortConfig = ServerConfig & { port: string };
+```
+
+#### Question 3 (Write code from scratch)
+Write your own `MyOmit<T, K>` utility from scratch using `Pick` and `Exclude`.
+
+#### Question 4 (Explain in your own words)
+Why is `Omit` useful when writing DTOs (Data Transfer Objects) for database insertion?
+
+---
+
+### Solutions
+
+#### Solution to Question 1
+**Hint 1**: Remove `b` and `c`.
+
+**Answer**:
+The type is `{ a: number }`.
+
+#### Solution to Question 2
+**Hint 1**: Omit `"port"` before intersecting.
+
+**Answer**:
+```typescript
+type ServerConfig = { host: string; port: number };
+type StringPortConfig = Omit<ServerConfig, "port"> & { port: string };
+```
+
+#### Solution to Question 3
+**Hint 1**: `Pick<T, Exclude<keyof T, K>>`.
+
+**Answer**:
+```typescript
+type MyOmit<T, K extends keyof any> = Pick<T, Exclude<keyof T, K>>;
+```
+
+#### Solution to Question 4
+**Hint 1**: What fields does the database generate automatically?
+
+**Answer**:
+Database entities typically include auto-generated fields (like primary keys and timestamps) that do not exist yet when creating a new record. `Omit` allows you to derive creation DTOs by stripping those auto-generated fields while retaining the rest of the entity schema.
+
+---
+
+### 11. Recall
+
+1. What built-in utility type removes properties from an object type?
+2. What two utility types are combined to create `Omit`?
+3. How do you safely override a property type on an existing interface?
+
+**If you remember only one thing:**
+Use `Omit<T, K>` to strip unwanted properties from an object type.
+
+---
+
+# Topic 8: Key Remapping with `as` (TypeScript 4.1)
+
+### 1. What is it?
+Introduced in TypeScript 4.1, **Key Remapping** lets you transform or filter property names in a mapped type using the `as` clause:
+```typescript
+type Mapped<T> = {
+  [K in keyof T as NewKey]: T[K];
+};
+```
+
+### 2. Why does it exist?
+Before TypeScript 4.1, a mapped type could only produce objects with the *exact same* property names as the input type.
+
+You could not rename keys, prefix them (like `get${Key}`), or filter keys out based on their names. Key remapping allows you to programmatically rewrite property keys during mapping.
+
+### 3. Basic example
+
+```typescript
+type User = {
+  name: string;
+  age: number;
+};
+
+// Prefix every property name with "user_"
+type PrefixedUser = {
+  [K in keyof User as `user_${string & K}`]: User[K];
+};
+
+// Resulting type:
+// { user_name: string; user_age: number }
+```
+
+**Line-by-line explanation:**
+- `[K in keyof User as \`user_\${string & K}\`]:`:
+  - `K` iterates over `"name" | "age"`.
+  - `string & K` ensures `K` is treated as a string (since symbols are not valid in template literals).
+  - The `as` clause remaps the key to `"user_name"` and `"user_age"`.
+- Values (`User[K]`) remain unchanged.
+
+---
+
+### 4. How it works inside TypeScript
+1. **Key Generation**: For each key `K` in `keyof T`, the compiler evaluates the expression after `as`.
+2. **New Key Assignment**: The result of the `as` expression becomes the new property name on the output object.
+3. **Value Lookup**: The right side (`T[K]`) still uses the original key `K` to look up the original property value type.
+
+---
+
+### 5. Think first
+
+What is the resulting type of `Result` in the code below? Decide first.
+
+```typescript
+type Point = { x: number; y: number };
+
+type UppercasePoint = {
+  [K in keyof Point as Uppercase<string & K>]: Point[K];
+};
+```
+
+---
+
+**Answer and Reason:**
+
+The resulting type is:
+
+```typescript
+{
+  X: number;
+  Y: number;
+}
+```
+
+**Reason**: `Uppercase<string & K>` turns `"x"` into `"X"`, and `"y"` into `"Y"`. The values remain `number`.
+
+---
+
+### 6. Try it yourself
+Create an object type `Settings = { volume: number; theme: string }`. Write a mapped type that prefixes every key with `"app_"`.
+
+---
+
+### 7. More examples
+
+#### Example A: Capitalize Helper (Medium)
+
+```typescript
+type Person = { name: string; email: string };
+
+type Getters = {
+  [K in keyof Person as `get${Capitalize<string & K>}`]: () => Person[K];
+};
+// { getName: () => string; getEmail: () => string }
+```
+
+**Line-by-line explanation:**
+- Combines key remapping with `Capitalize` and function wrapping.
+
+---
+
+### 8. Common mistakes
+
+#### Mistake 1: Forgetting `string & K` when using template literals
+
+**Wrong code:**
+```typescript
+type Prefixed<T> = {
+  // [K in keyof T as `data_${K}`]: T[K]; // Error!
+};
+```
+
+**Why it happens:**
+`keyof T` can include `symbol` or `number`. Template literals only accept `string | number | boolean | null | undefined | bigint`. Intersecting with `string` (`string & K`) guarantees that non-string keys are safely handled.
+
+---
+
+### 9. Rules to remember
+1. `as` remaps property names in a mapped type.
+2. Syntax: `[K in keyof T as NewKey]: ValueType`.
+3. Use `string & K` when passing keys into template literal types.
+
+---
+
+### 10. Exercises
+
+#### Question 1 (Predict the compile result)
+What are the property names of `Result`?
+```typescript
+type Actions = { login: boolean; logout: boolean };
+type Result = {
+  [K in keyof Actions as `on_${string & K}`]: Actions[K];
+};
+```
+
+#### Question 2 (Find and fix the bug)
+Fix the error in the remapped type:
+```typescript
+type CapitalizedKeys<T> = {
+  [K in keyof T as Capitalize<K>]: T[K];
+};
+```
+
+#### Question 3 (Write code from scratch)
+Write a mapped type `AddSuffix<T, Suffix extends string>` that appends `Suffix` to every key in `T`.
+
+#### Question 4 (Explain in your own words)
+How does key remapping with `as` preserve the original value lookup `T[K]` while changing the property name?
+
+---
+
+### Solutions
+
+#### Solution to Question 1
+**Hint 1**: Prefix with `"on_"`.
+
+**Answer**:
+The property names are `"on_login"` and `"on_logout"`.
+
+#### Solution to Question 2
+**Hint 1**: Intersect `K` with `string`: `Capitalize<string & K>`.
+
+**Answer**:
+```typescript
+type CapitalizedKeys<T> = {
+  [K in keyof T as Capitalize<string & K>]: T[K];
+};
+```
+
+#### Solution to Question 3
+**Hint 1**: Use template literal `${string & K}${Suffix}`.
+
+**Answer**:
+```typescript
+type AddSuffix<T, Suffix extends string> = {
+  [K in keyof T as `${string & K}${Suffix}`]: T[K];
+};
+```
+
+#### Solution to Question 4
+**Hint 1**: Look at the variable before `as` versus after `as`.
+
+**Answer**:
+The variable `K` before the `as` keyword still references the original key from `keyof T`. This allows `T[K]` on the right side to look up the original property value, while the expression after `as` defines the new name under which that value will be stored.
+
+---
+
+### 11. Recall
+
+1. What keyword enables key remapping in a mapped type?
+2. Which TypeScript version introduced key remapping?
+3. Why do we write `string & K` inside template literals?
+
+**If you remember only one thing:**
+Use `[K in keyof T as NewKey]` to rename properties while mapping over an object type.
+
+---
+
+# Topic 9: Filtering Object Keys Using `as ... ? Key : never`
+
+### 1. What is it?
+In key remapping, if the expression after `as` evaluates to `never`, TypeScript completely **omits that key** from the resulting object type:
+```typescript
+[K in keyof T as Condition ? K : never]: T[K];
+```
+
+### 2. Why does it exist?
+Before key remapping, filtering object properties by value type (for example, "keep only properties whose values are functions" or "remove all string properties") required complex workarounds using `Pick` and conditional types.
+
+Returning `never` in an `as` clause filters out unwanted properties directly in a single, clean mapped type.
+
+### 3. Basic example
+
+```typescript
+type User = {
+  id: string;
+  name: string;
+  age: number;
+  roles: string[];
+};
+
+// Filter out all properties that are NOT strings:
+type OnlyStrings<T> = {
+  [K in keyof T as T[K] extends string ? K : never]: T[K];
+};
+
+type StringFields = OnlyStrings<User>;
+// Inferred as: { id: string; name: string }
+```
+
+**Line-by-line explanation:**
+- `T[K] extends string ? K : never`:
+  - For `id`: `string extends string` is true $\to$ keep key `id`.
+  - For `name`: `string extends string` is true $\to$ keep key `name`.
+  - For `age`: `number extends string` is false $\to$ returns `never`. Key `age` is dropped!
+  - For `roles`: `string[] extends string` is false $\to$ returns `never`. Key `roles` is dropped!
+- Resulting type has only `id` and `name`.
+
+---
+
+### 4. How it works inside TypeScript
+1. **Key Filtering Rule**: If the remapped key evaluates to `never`, the compiler does not create that property on the output object.
+2. **Conditional Remapping**: You can use any conditional type logic inside the `as` clause.
+3. **Type-Safe Extraction**: Preserves exact property value types on all remaining properties.
+
+---
+
+### 5. Think first
+
+What is the resulting type of `Methods` in the code below? Decide first.
+
+```typescript
+type Service = {
+  id: string;
+  start: () => void;
+  stop: () => void;
+};
+
+type OnlyFunctions<T> = {
+  [K in keyof T as T[K] extends Function ? K : never]: T[K];
+};
+
+type Methods = OnlyFunctions<Service>;
+```
+
+---
+
+**Answer and Reason:**
+
+The resulting type is:
+
+```typescript
+{
+  start: () => void;
+  stop: () => void;
+}
+```
+
+**Reason**: `id` is a string (not a `Function`), so its remapped key evaluates to `never` and is excluded. `start` and `stop` are functions, so they are kept.
+
+---
+
+### 6. Try it yourself
+Create a type `Mixed = { a: number; b: string; c: number; d: boolean }`. Write a mapped type `OnlyNumbers<T>` that keeps only properties of type `number`.
+
+---
+
+### 7. More examples
+
+#### Example A: Filtering by Property Name (Medium)
+
+```typescript
+type EventRecord = {
+  id: string;
+  _internalTimestamp: number;
+  _internalToken: string;
+  name: string;
+};
+
+// Filter out all private properties starting with "_"
+type PublicFields<T> = {
+  [K in keyof T as K extends `_${string}` ? never : K]: T[K];
+};
+
+type PublicOnly = PublicFields<EventRecord>;
+// { id: string; name: string }
+```
+
+**Line-by-line explanation:**
+- Checks if the key starts with `_`. If yes, returns `never` to drop it.
+
+---
+
+### 8. Common mistakes
+
+#### Mistake 1: Returning `never` as the value type instead of the remapped key
+
+**Wrong code:**
+```typescript
+type BadFilter<T> = {
+  [K in keyof T]: T[K] extends string ? T[K] : never;
+};
+// Does NOT omit the key! It produces: { age: never }!
+```
+
+**Why it happens:**
+Returning `never` on the **right side** of the colon creates a property with type `never`. Returning `never` in the `as` clause removes the property completely.
+
+---
+
+### 9. Rules to remember
+1. In an `as` clause, returning `never` completely removes the property from the object.
+2. Returning `never` as the value type keeps the property with type `never`.
+3. Use `as Condition ? K : never` to filter properties cleanly.
+
+---
+
+### 10. Exercises
+
+#### Question 1 (Predict the compile result)
+What properties exist on `Result`?
+```typescript
+type Data = { x: number; y: string };
+type Filter<T> = {
+  [K in keyof T as T[K] extends number ? K : never]: T[K];
+};
+type Result = Filter<Data>;
+```
+
+#### Question 2 (Find and fix the bug)
+The type below leaves unwanted properties with type `never`. Fix it using an `as` clause:
+```typescript
+type KeepBooleans<T> = {
+  [K in keyof T]: T[K] extends boolean ? T[K] : never;
+};
+```
+
+#### Question 3 (Write code from scratch)
+Write a mapped type `OmitByType<T, ValueType>` that removes all properties assignable to `ValueType`. Test it by removing strings from `{ id: string; count: number }`.
+
+#### Question 4 (Explain in your own words)
+Why does returning `never` in the `as` clause delete a property, while returning `never` for the value type preserves the key?
+
+---
+
+### Solutions
+
+#### Solution to Question 1
+**Hint 1**: Only keep properties whose values are numbers.
+
+**Answer**:
+Only property `x: number` exists.
+
+#### Solution to Question 2
+**Hint 1**: Move the conditional check into the `as` clause.
+
+**Answer**:
+```typescript
+type KeepBooleans<T> = {
+  [K in keyof T as T[K] extends boolean ? K : never]: T[K];
+};
+```
+
+#### Solution to Question 3
+**Hint 1**: Check `T[K] extends ValueType ? never : K`.
+
+**Answer**:
+```typescript
+type OmitByType<T, ValueType> = {
+  [K in keyof T as T[K] extends ValueType ? never : K]: T[K];
+};
+
+type Result = OmitByType<{ id: string; count: number }, string>;
+// { count: number }
+```
+
+#### Solution to Question 4
+**Hint 1**: What does each part of a mapped type declaration control?
+
+**Answer**:
+The `as` clause determines the property names (keys) of the new object. If a key evaluates to `never`, no valid key exists, so the compiler omits the property entirely. The right side controls the property's value type, so returning `never` there creates an unassignable property with the original key intact.
+
+---
+
+### 11. Recall
+
+1. What happens when an `as` remapping evaluates to `never`?
+2. How do you remove a property based on its value type?
+3. What is the difference between filtering the key versus setting the value to `never`?
+
+**If you remember only one thing:**
+Return `never` in an `as` clause to omit properties completely from an object type.
+
+---
+
+# Topic 10: Generating Getters and Method Signatures with Template Literal Key Remapping
+
+### 1. What is it?
+You can combine mapped types, key remapping (`as`), and template literal types to generate complete object APIs (such as getter and setter methods) from raw state interfaces.
+
+### 2. Why does it exist?
+In patterns like Vuex, Redux, state stores, and ActiveRecord models, you often define a state object and automatically generate methods like `getName()`, `getAge()`, `setName(val)`, and `setAge(val)`.
+
+Without key remapping, you would have to write duplicate interfaces for all these getters and setters by hand. Key remapping allows you to synthesize complete getter/setter interfaces from a single state shape.
+
+### 3. Basic example
+
+```typescript
+type State = {
+  name: string;
+  age: number;
+};
+
+// Generate getter methods for every property:
+type StateGetters<T> = {
   [K in keyof T as `get${Capitalize<string & K>}`]: () => T[K];
 };
 
-type PersonGetters = Getters<Person>;
+type Getters = StateGetters<State>;
 // Inferred as:
 // {
 //   getName: () => string;
@@ -143,2616 +1894,1127 @@ type PersonGetters = Getters<Person>;
 // }
 ```
 
-### 4.2 Filtering Keys with `as never`
-When a key in an `as` clause evaluates to `never`, the compiler completely **drops** that property from the resulting object type:
+**Line-by-line explanation:**
+- `keyof State`: `"name" | "age"`.
+- `Capitalize<string & K>`: Turns `"name"` into `"Name"`, and `"age"` into `"Age"`.
+- `` `get${...}` ``: Prepends `"get"`, creating `"getName"` and `"getAge"`.
+- `() => T[K]`: Sets the value type to a parameterless function returning `T[K]`.
+
+---
+
+### 4. How it works inside TypeScript
+1. **Intrinsic String Manipulation**: TypeScript provides built-in type helpers for string literals: `Capitalize<S>`, `Uncapitalize<S>`, `Uppercase<S>`, `Lowercase<S>`.
+2. **Template Combination**: The compiler evaluates `` `get${Capitalize<string & K>}` `` into a new string literal type.
+3. **Method Signature**: The method return type or parameter type references `T[K]`, ensuring full type safety.
+
+---
+
+### 5. Think first
+
+What is the resulting signature of `setVolume` in `StateSetters<AudioState>` below? Decide first.
 
 ```typescript
-// Pick only properties whose values are strings:
-type PickByString<T> = {
-  [K in keyof T as T[K] extends string ? K : never]: T[K];
+type AudioState = { volume: number };
+
+type StateSetters<T> = {
+  [K in keyof T as `set${Capitalize<string & K>}`]: (val: T[K]) => void;
 };
 
-interface UserRecord {
+type Setters = StateSetters<AudioState>;
+```
+
+---
+
+**Answer and Reason:**
+
+The resulting signature is:
+
+```typescript
+setVolume: (val: number) => void
+```
+
+**Reason**: The key is remapped to `"setVolume"`. The value is a function taking `val: T["volume"]` (which is `number`) and returning `void`.
+
+---
+
+### 6. Try it yourself
+Create an interface `Point = { x: number; y: number }`. Write a mapped type `PointSetters` that generates `setX(val: number): void` and `setY(val: number): void`.
+
+---
+
+### 7. More examples
+
+#### Example A: Combining Getters and Setters (Medium)
+
+```typescript
+type CompleteStore<T> = {
+  [K in keyof T as `get${Capitalize<string & K>}`]: () => T[K];
+} & {
+  [K in keyof T as `set${Capitalize<string & K>}`]: (value: T[K]) => void;
+};
+
+type UserStore = CompleteStore<{ theme: string }>;
+// {
+//   getTheme: () => string;
+//   setTheme: (value: string) => void;
+// }
+```
+
+---
+
+### 8. Common mistakes
+
+#### Mistake 1: Forgetting to capitalize the first letter
+
+**Wrong code:**
+```typescript
+type Bad<T> = {
+  [K in keyof T as `get${string & K}`]: () => T[K];
+};
+// Produces "getname", not standard camelCase "getName"!
+```
+
+**Correct code:**
+Use `Capitalize<string & K>`:
+```typescript
+type Good<T> = {
+  [K in keyof T as `get${Capitalize<string & K>}`]: () => T[K];
+};
+```
+
+---
+
+### 9. Rules to remember
+1. Use `Capitalize<string & K>` to create camelCase and PascalCase method names.
+2. Method parameters can reference `T[K]` for setters.
+3. Multiple mapped types can be intersected (`&`) to combine getters and setters.
+
+---
+
+### 10. Exercises
+
+#### Question 1 (Predict the compile result)
+What method names exist on `Listeners`?
+```typescript
+type Events = { click: number; hover: string };
+type Listeners<T> = {
+  [K in keyof T as `on${Capitalize<string & K>}`]: (data: T[K]) => void;
+};
+type Res = Listeners<Events>;
+```
+
+#### Question 2 (Find and fix the bug)
+Fix the setter method signature so it accepts the correct property value:
+```typescript
+type Setters<T> = {
+  [K in keyof T as `set${Capitalize<string & K>}`]: (val: any) => void;
+};
+```
+
+#### Question 3 (Write code from scratch)
+Write a mapped type `Resetters<T>` that creates methods `reset${Capitalize<K>}: () => void` for every property in `T`.
+
+#### Question 4 (Explain in your own words)
+Why does `Capitalize<string & K>` require `string & K` rather than just `K`?
+
+---
+
+### Solutions
+
+#### Solution to Question 1
+**Hint 1**: Prepend `"on"` and capitalize.
+
+**Answer**:
+`onClick: (data: number) => void` and `onHover: (data: string) => void`.
+
+#### Solution to Question 2
+**Hint 1**: Replace `any` with `T[K]`.
+
+**Answer**:
+```typescript
+type Setters<T> = {
+  [K in keyof T as `set${Capitalize<string & K>}`]: (val: T[K]) => void;
+};
+```
+
+#### Solution to Question 3
+**Hint 1**: Use `() => void`.
+
+**Answer**:
+```typescript
+type Resetters<T> = {
+  [K in keyof T as `reset${Capitalize<string & K>}`]: () => void;
+};
+```
+
+#### Solution to Question 4
+**Hint 1**: What types can `keyof T` contain in addition to strings?
+
+**Answer**:
+`keyof T` can include `symbol` or `number`. The `Capitalize` helper only accepts string types. Intersecting with `string` (`string & K`) filters out symbols, guaranteeing that only valid string keys are passed to `Capitalize`.
+
+---
+
+### 11. Recall
+
+1. What built-in utility capitalizes the first character of a string literal?
+2. How do you construct `getName` from key `"name"`?
+3. How do you type a setter's argument to match the property's type?
+
+**If you remember only one thing:**
+Combine `as \`get\${Capitalize<string & K>}\`` with `T[K]` to synthesize type-safe getter and setter APIs.
+
+---
+
+# Checkpoint Challenge: Topics 6 to 10
+
+### Challenge Scenario
+Build a reactive model accessor system:
+
+1. Define a model data interface:
+   ```typescript
+   interface UserModel {
+     id: string;
+     name: string;
+     age: number;
+     isVerified: boolean;
+   }
+   ```
+2. Using `Pick`, create a `PublicProfile` with only `name` and `isVerified`.
+3. Using `Omit`, create an `UpdateUserData` that removes `id`.
+4. Using key remapping and filtering (`never`), create a type `NumericFields` that keeps only numeric properties.
+5. Create a mapped type `ModelGetters<T>` that generates getter methods for every property (`getId`, `getName`, `getAge`, `getIsVerified`).
+
+### Challenge Solution
+
+```typescript
+interface UserModel {
   id: string;
   name: string;
   age: number;
-  isActive: boolean;
+  isVerified: boolean;
 }
 
-type OnlyStringProps = PickByString<UserRecord>;
-// Inferred as: { id: string; name: string }
+// 2. Public profile:
+type PublicProfile = Pick<UserModel, "name" | "isVerified">;
+
+// 3. Update DTO:
+type UpdateUserData = Omit<UserModel, "id">;
+
+// 4. Numeric fields only:
+type NumericFields = {
+  [K in keyof UserModel as UserModel[K] extends number ? K : never]: UserModel[K];
+};
+// { age: number }
+
+// 5. Model getters:
+type ModelGetters<T> = {
+  [K in keyof T as `get${Capitalize<string & K>}`]: () => T[K];
+};
+
+type UserGetters = ModelGetters<UserModel>;
+
+const userGetters: UserGetters = {
+  getId: () => "usr_100",
+  getName: () => "Morgan",
+  getAge: () => 29,
+  getIsVerified: () => true,
+};
 ```
 
 ---
 
-## 🧊 Section 05: Deep Immutability & Deep Transformations
+# Topic 11: Transforming Property Value Types Conditionally
 
-Standard utility types like `Readonly<T>` and `Partial<T>` are **shallow**; they do not transform nested objects.
-
-### 5.1 DeepReadonly Implementation
+### 1. What is it?
+You can combine mapped types and conditional types on the **value side** (the right side of the colon) to transform each property's value based on what type it currently is:
 ```typescript
-type DeepReadonly<T> = T extends Function | boolean | number | string | symbol | bigint | null | undefined
-  ? T
-  : T extends readonly (infer E)[]
-  ? readonly DeepReadonly<E>[]
-  : T extends Map<infer K, infer V>
-  ? ReadonlyMap<DeepReadonly<K>, DeepReadonly<V>>
-  : T extends Set<infer M>
-  ? ReadonlySet<DeepReadonly<M>>
-  : { readonly [K in keyof T]: DeepReadonly<T[K]> };
+type Transform<T> = {
+  [K in keyof T]: T[K] extends Function ? boolean : T[K];
+};
 ```
 
-### 5.2 DeepPartial Implementation
+### 2. Why does it exist?
+Often, you need to transform values uniformly across an entire object based on rules:
+- Turn all `Date` objects into ISO timestamp `string`s for serialization.
+- Wrap all functions into async functions that return `Promise`.
+- Replace all nullable values with default fallbacks.
+
+Combining mapped types with conditional types lets you apply targeted transformations across complex schemas in a single pass.
+
+### 3. Basic example
+
 ```typescript
-type DeepPartial<T> = T extends Function | boolean | number | string | symbol | bigint | null | undefined
-  ? T
-  : T extends readonly (infer E)[]
-  ? readonly DeepPartial<E>[]
-  : T extends object
-  ? { [K in keyof T]?: DeepPartial<T[K]> }
-  : T;
+type Entity = {
+  id: string;
+  createdAt: Date;
+  updatedAt: Date;
+  viewCount: number;
+};
+
+// Transform Date properties into strings for JSON serialization:
+type SerializeDates<T> = {
+  [K in keyof T]: T[K] extends Date ? string : T[K];
+};
+
+type SerializedEntity = SerializeDates<Entity>;
+// Inferred as:
+// {
+//   id: string;
+//   createdAt: string;
+//   updatedAt: string;
+//   viewCount: number;
+// }
 ```
 
+**Line-by-line explanation:**
+- `[K in keyof T]:`: Loops over all properties of `Entity`.
+- `T[K] extends Date ? string : T[K]`: Checks each property's value. If it is a `Date`, replace it with `string`. Otherwise, leave it as `T[K]`.
+- `createdAt` and `updatedAt` become `string`; `id` and `viewCount` remain unchanged.
 
 ---
 
+### 4. How it works inside TypeScript
+1. **Property Iteration**: The compiler walks each property in `T`.
+2. **Conditional Value Evaluation**: For each property, the conditional type on the right side evaluates based on `T[K]`.
+3. **Targeted Replacement**: Only matching properties are altered; non-matching properties retain their original types.
+
 ---
 
-## 🚀 Section 06: Advanced Mapped Types: Promisification, Inversion & RPC Modeling
+### 5. Think first
 
-### 6.1 Automatic Promisification of Service Interfaces
-In microservice architectures, synchronous service classes are frequently mirrored by asynchronous RPC clients. Mapped types allow creating the asynchronous interface automatically without code duplication:
+What happens to `active` in `MakeAsync` below? Decide first.
 
 ```typescript
-type PromisifyMethods<T> = {
-  [K in keyof T]: T[K] extends (...args: infer Args) => infer Ret
-    ? Ret extends Promise<any>
-      ? T[K]
-      : (...args: Args) => Promise<Ret>
+type Service = {
+  active: boolean;
+  save: () => void;
+};
+
+type MakeAsync<T> = {
+  [K in keyof T]: T[K] extends (...args: any[]) => infer R
+    ? (...args: any[]) => Promise<R>
     : T[K];
 };
 
-interface LocalCalculationService {
-  computeTax(amount: number): number;
-  getUserTier(userId: string): "gold" | "silver";
-}
-
-type RemoteRpcClient = PromisifyMethods<LocalCalculationService>;
-// Inferred as:
-// {
-//   computeTax: (amount: number) => Promise<number>;
-//   getUserTier: (userId: string) => Promise<"gold" | "silver">;
-// }
-```
-
-### 6.2 Inverting Object Key-Value Pairs
-Converting a lookup map `{ red: "ff0000", blue: "0000ff" }` into `{ ff0000: "red", "0000ff": "blue" }`:
-
-```typescript
-type InvertMap<T extends Record<PropertyKey, PropertyKey>> = {
-  [K in keyof T as T[K]]: K;
-};
-
-const ColorCodes = {
-  crimson: "#DC143C",
-  azure: "#F0FFFF"
-} as const;
-
-type InvertedColors = InvertMap<typeof ColorCodes>;
-// Inferred as:
-// {
-//   readonly "#DC143C": "crimson";
-//   readonly "#F0FFFF": "azure";
-// }
-```
-
-### 6.3 Mapping Event Handlers with Subscriptions
-```typescript
-interface DomainEvents {
-  userRegistered: { userId: string; email: string };
-  orderPlaced: { orderId: string; totalUSD: number };
-}
-
-type Subscriptions<Events> = {
-  [K in keyof Events as `on${Capitalize<string & K>}`]: (
-    handler: (payload: Events[K]) => void
-  ) => () => void; // returns unsubscription lambda
-};
-
-type AppSubscriptions = Subscriptions<DomainEvents>;
-// Inferred as:
-// {
-//   onUserRegistered: (handler: (payload: { userId: string; email: string }) => void) => () => void;
-//   onOrderPlaced: (handler: (payload: { orderId: string; totalUSD: number }) => void) => () => void;
-// }
+type AsyncService = MakeAsync<Service>;
 ```
 
 ---
 
-## 🧩 Section 07: Syntax Deconstruction Boxes
+**Answer and Reason:**
 
-### Syntax Box 1: The `string & K` Intersection Idiom
-`PropertyKey` in TypeScript is a union of `string | number | symbol`.
-String intrinsic utilities like `Capitalize<T>` only accept `string`. Passing an unconstrained `K` results in a compile error:
-`Type 'symbol' is not assignable to type 'string'`.
-Intersecting with string (`Capitalize<string & K>`) filters out symbols and numbers safely:
-```typescript
-type SafePrefix<T> = {
-  [K in keyof T as `set_${string & K}`]: (val: T[K]) => void;
-};
-```
+`active` remains `boolean`.
 
-### Syntax Box 2: Homomorphic Tuple Mapping
-When a homomorphic mapped type is passed a tuple, it preserves the tuple's exact structure, element names, and length:
-```typescript
-type BoxTuple<T extends readonly unknown[]> = {
-  [K in keyof T]: { value: T[K] };
-};
-
-type Boxed = BoxTuple<[name: string, age: number]>;
-// Inferred as: [name: { value: string }, age: { value: number }]
-```
-`;
-};
-
+**Reason**: `boolean` does not extend `(...args: any[]) => any`. The conditional type falls back to `: T[K]`, leaving non-function properties unchanged.
 
 ---
 
+### 6. Try it yourself
+Write a mapped type `UnwrapArrays<T>`: if a property is an array `(infer E)[]`, change it to `E`. Otherwise leave it as `T[K]`. Test it on `{ tags: string[]; count: number }`.
+
 ---
 
-## 💼 Section 08: Comprehensive Senior Engineering Interview Q&As (Part A: Questions 1–45)
+### 7. More examples
 
-### Q1: What is a Mapped Type in TypeScript, and how does it relate to the DRY (Don't Repeat Yourself) principle?
-**Answer:**
-A mapped type is a generic type that builds new object types by iterating over the property keys of another type using the syntax `[K in Keys]: ValueType`.
-It adheres directly to the DRY principle by allowing developers to derive multiple domain DTOs (e.g., partial updates, readonly snapshots, validation schemas) programmatically from a single canonical entity definition, eliminating duplicate interface declarations.
+#### Example A: Replacing Null with Undefined (Medium)
 
 ```typescript
-interface UserEntity {
-  id: string;
-  name: string;
-  email: string;
-}
-
-// Programmatic derivation instead of duplicate code:
-type UpdateUserDto = Partial<UserEntity>;
-type ReadonlyUser = Readonly<UserEntity>;
-```
-
----
-
-### Q2: What is the formal difference between a Homomorphic and a Non-Homomorphic mapped type?
-**Answer:**
-- **Homomorphic Mapped Type**: Uses the exact syntax `[K in keyof T]` (or `[K in keyof T as ...]`). The compiler recognises that the keys belong directly to $T$. It **preserves property modifiers** (`readonly` and `?`) from $T$, and preserves array and tuple structures (including length and labels).
-- **Non-Homomorphic Mapped Type**: Iterates over an independent type or union that is not syntactically a direct `keyof T` expression (e.g. `[K in string]` or `[K in Keys]`). It does not inherit property modifiers, and degrades tuples into generic indexed objects.
-
----
-
-### Q3: How does the `-?` modifier work in `Required<T>`?
-**Answer:**
-The `-` prefix acts as a subtractive modifier. `-?` removes the optionality flag from each property, converting optional properties (`prop?: string`) into mandatory, required properties (`prop: string`).
-
-```typescript
-type CustomRequired<T> = {
-  [K in keyof T]-?: T[K];
-};
-
-interface FormState {
-  username?: string;
-  password?: string;
-}
-
-type ValidatedForm = CustomRequired<FormState>;
-// { username: string; password: string }
-```
-
----
-
-### Q4: How does the `-readonly` modifier work in a `Mutable<T>` utility?
-**Answer:**
-The `-readonly` modifier removes the compile-time immutability flag from all properties, allowing them to be reassigned.
-
-```typescript
-type Mutable<T> = {
-  -readonly [K in keyof T]: T[K];
-};
-
-interface FrozenConfig {
-  readonly host: string;
-  readonly port: number;
-}
-
-type WritableConfig = Mutable<FrozenConfig>;
-// { host: string; port: number }
-```
-
----
-
-### Q5: How does Key Remapping via `as` work in TypeScript 4.1+?
-**Answer:**
-The `as` clause in a mapped type allows re-binding the emitted key name to a new string, number, or symbol. It can rename the key using template literal string manipulations or drop the key entirely by remapping it to `never`.
-
-```typescript
-type EventEmitters<T> = {
-  [K in keyof T as `emit${Capitalize<string & K>}`]: (val: T[K]) => void;
+type NullToUndefined<T> = {
+  [K in keyof T]: T[K] extends null ? undefined : T[K];
 };
 ```
 
 ---
 
-### Q6: Why is `string & K` commonly written inside template literal remapping (`as `on${Capitalize<string & K>}`)`?
-**Answer:**
-Because `keyof T` produces a union of `string | number | symbol`.
-The built-in intrinsic string manipulators (`Capitalize`, `Lowercase`, `Uppercase`, `Uncapitalize`) only accept types that extend `string`.
-Passing a raw `K` causes a compiler error because `symbol` cannot be capitalized. Intersecting with `string` (`string & K`) filters out symbols and numbers, ensuring strict type safety.
+### 8. Common mistakes
 
----
+#### Mistake 1: Forgetting to fall back to `T[K]`
 
-### Q7: How does filtering keys with `as never` work?
-**Answer:**
-When an object key in a mapped type evaluates to `never`, the TypeScript compiler omits that key completely from the generated type.
-This allows implementing filters like `PickByType` or `OmitByType` in a single clean mapped expression:
-
+**Wrong code:**
 ```typescript
-type PickByType<T, ValueType> = {
-  [K in keyof T as T[K] extends ValueType ? K : never]: T[K];
-};
-
-interface Device {
-  id: string;
-  ip: string;
-  port: number;
-  isActive: boolean;
-}
-
-type StringOnly = PickByType<Device, string>; // { id: string; ip: string }
-```
-
----
-
-### Q8: How is the standard `Record<K, T>` implemented in TypeScript?
-**Answer:**
-```typescript
-type CustomRecord<K extends keyof any, T> = {
-  [P in K]: T;
+type Bad<T> = {
+  [K in keyof T]: T[K] extends Date ? string : never;
+  // Non-Date properties become never!
 };
 ```
-Note that `keyof any` evaluates to `string | number | symbol`. Because it does not iterate over `keyof T`, `Record` is a **non-homomorphic** mapped type.
 
----
-
-### Q9: How is the standard `Pick<T, K>` implemented?
-**Answer:**
+**Correct code:**
+Always fall back to `T[K]` if you want to keep non-matching properties:
 ```typescript
-type CustomPick<T, K extends keyof T> = {
-  [P in K]: T[P];
-};
-```
-`Pick` is a homomorphic mapped type because $K$ is constrained to `keyof T`, preserving modifiers.
-
----
-
-### Q10: How is the standard `Omit<T, K>` implemented?
-**Answer:**
-```typescript
-type CustomOmit<T, K extends keyof any> = Pick<T, Exclude<keyof T, K>>;
-```
-Or using modern TypeScript 4.1 key remapping directly:
-```typescript
-type CustomOmitModern<T, K extends keyof any> = {
-  [P in keyof T as P extends K ? never : P]: T[P];
+type Good<T> = {
+  [K in keyof T]: T[K] extends Date ? string : T[K];
 };
 ```
 
 ---
 
-### Q11: Why does mapping a tuple type with a homomorphic mapped type produce another tuple rather than an object?
-**Answer:**
-The TypeScript compiler has special built-in handling for homomorphic mapped types (`[K in keyof T]`). When $T$ is an array or tuple, the compiler recognizes that the keys represent indexed sequence positions, and constructs a new array or tuple with matching length and attributes.
+### 9. Rules to remember
+1. Conditional types on the value side transform specific property types while preserving others.
+2. Always provide `: T[K]` in the false branch to leave non-matching properties intact.
+3. Can be combined with `infer` to unwrap or restructure property values.
+
+---
+
+### 10. Exercises
+
+#### Question 1 (Predict the compile result)
+What is the type of `output.score`?
+```typescript
+type Data = { score: number; label: string };
+type BoxNumbers<T> = {
+  [K in keyof T]: T[K] extends number ? { val: T[K] } : T[K];
+};
+type Res = BoxNumbers<Data>;
+```
+
+#### Question 2 (Find and fix the bug)
+Fix the mapped type below so non-string properties are preserved:
+```typescript
+type TrimStrings<T> = {
+  [K in keyof T]: T[K] extends string ? string : never;
+};
+```
+
+#### Question 3 (Write code from scratch)
+Write a mapped type `PromisifyMethods<T>` that turns all function properties into functions returning `Promise<ReturnType>`. Leave non-functions unchanged.
+
+#### Question 4 (Explain in your own words)
+What is the difference between filtering keys with `as` and transforming values with conditional types?
+
+---
+
+### Solutions
+
+#### Solution to Question 1
+**Hint 1**: `score` is a number.
+
+**Answer**:
+The type of `score` is `{ val: number }`.
+
+#### Solution to Question 2
+**Hint 1**: Replace `: never` with `: T[K]`.
+
+**Answer**:
+```typescript
+type TrimStrings<T> = {
+  [K in keyof T]: T[K] extends string ? string : T[K];
+};
+```
+
+#### Solution to Question 3
+**Hint 1**: `T[K] extends (...args: infer P) => infer R ? (...args: P) => Promise<R> : T[K]`.
+
+**Answer**:
+```typescript
+type PromisifyMethods<T> = {
+  [K in keyof T]: T[K] extends (...args: infer P) => infer R
+    ? (...args: P) => Promise<R>
+    : T[K];
+};
+```
+
+#### Solution to Question 4
+**Hint 1**: Which one removes the property versus changing what the property holds?
+
+**Answer**:
+Filtering keys with `as ... ? K : never` completely adds or removes property names from the object. Transforming values with conditional types keeps all property names intact and modifies the data types stored under those properties.
+
+---
+
+### 11. Recall
+
+1. Where do conditional types go when transforming property values?
+2. What should you return in the false branch to keep properties unchanged?
+3. Can you combine `infer` with mapped type value transformations?
+
+**If you remember only one thing:**
+Use `T[K] extends Pattern ? NewType : T[K]` to conditionally transform property values across an object type.
+
+---
+
+# Topic 12: Preserving Arrays and Tuples in Mapped Types
+
+### 1. What is it?
+When a homomorphic mapped type (`[K in keyof T]`) is applied to an array or tuple, TypeScript does NOT convert it into a plain object dictionary with keys `"0"`, `"1"`.
+
+Instead, TypeScript maps over each element and returns a **new array or tuple** with the same length, elements, and array methods.
+
+### 2. Why does it exist?
+In JavaScript, tuples represent fixed lists of values (like function parameter lists or coordinates).
+
+If mapping over a tuple turned it into `{ "0": string, "1": number }`, you would lose all array methods (`.slice()`, `.map()`) and tuple destructuring (`const [a, b] = val`). Preserving tuples allows mapped types to work naturally on lists and argument tuples.
+
+### 3. Basic example
 
 ```typescript
 type StringifyTuple<T> = {
   [K in keyof T]: string;
 };
 
-type T1 = StringifyTuple<[number, boolean]>;
-// Inferred as: [string, string] (Tuple structure preserved!)
+// Applied to a 2-element tuple:
+type NumberTuple = [10, 20];
+type StringTuple = StringifyTuple<NumberTuple>;
+// Inferred as: [string, string] (Tuple preserved!)
+
+// Applied to an array:
+type StringList = StringifyTuple<number[]>;
+// Inferred as: string[] (Array preserved!)
+```
+
+**Line-by-line explanation:**
+- `StringifyTuple` is a homomorphic mapped type.
+- When passed `[10, 20]`, TypeScript maps over index `0` and index `1`, returning `[string, string]`.
+- Array prototype methods (`length`, `slice`, etc.) are preserved automatically.
+
+---
+
+### 4. How it works inside TypeScript
+1. **Tuple Detection**: The compiler checks if `T` is an array or tuple type.
+2. **Homomorphic Rule**: If the mapped type is homomorphic (`[K in keyof T]`), the compiler invokes specialized tuple mapping logic.
+3. **Element-by-Element Projection**: Each element type at index `0`, `1`, `2` is transformed independently.
+4. **Tuple Tagging**: The resulting type retains the internal `Tuple` and `Array` type flags.
+
+---
+
+### 5. Think first
+
+What happens when we apply `Partial` to a tuple `[string, number]`? Decide first.
+
+```typescript
+type OptionalTuple = Partial<[string, number]>;
 ```
 
 ---
 
-### Q12: How do you implement a `DeepReadonly<T>` type utility?
-**Answer:**
-Recursively traverse nested objects, arrays, Maps, and Sets while preserving primitives and functions:
+**Answer and Reason:**
+
+The resulting type is:
 
 ```typescript
-type DeepReadonly<T> = T extends Function | boolean | number | string | symbol | bigint | null | undefined
-  ? T
-  : T extends readonly (infer E)[]
-  ? readonly DeepReadonly<E>[]
-  : T extends Map<infer K, infer V>
-  ? ReadonlyMap<DeepReadonly<K>, DeepReadonly<V>>
-  : T extends Set<infer M>
-  ? ReadonlySet<DeepReadonly<M>>
-  : { readonly [K in keyof T]: DeepReadonly<T[K]> };
+[(string | undefined)?, (number | undefined)?]
 ```
 
+**Reason**: Because `Partial` is a homomorphic mapped type, it marks each element of the tuple as optional (`?`), preserving the tuple structure.
+
 ---
 
-### Q13: How do you implement a `DeepPartial<T>` type utility?
-**Answer:**
+### 6. Try it yourself
+Write a homomorphic mapped type `PromisifyTuple<T> = { [K in keyof T]: Promise<T[K]> }`. Apply it to `[string, number]`. Verify that the result is `[Promise<string>, Promise<number>]`.
+
+---
+
+### 7. More examples
+
+#### Example A: Mapping Over Rest Elements (Medium)
+
 ```typescript
-type DeepPartial<T> = T extends Function | boolean | number | string | symbol | bigint | null | undefined
-  ? T
-  : T extends readonly (infer E)[]
-  ? readonly DeepPartial<E>[]
-  : T extends object
-  ? { [K in keyof T]?: DeepPartial<T[K]> }
-  : T;
-```
-
----
-
-### Q14: How do you implement a `DeepRequired<T>` type utility?
-**Answer:**
-```typescript
-type DeepRequired<T> = T extends Function | boolean | number | string | symbol | bigint | null | undefined
-  ? T
-  : T extends readonly (infer E)[]
-  ? readonly DeepRequired<E>[]
-  : T extends object
-  ? { [K in keyof T]-?: DeepRequired<T[K]> }
-  : T;
-```
-
----
-
-### Q15: Can a mapped type declare methods using method syntax (`[K in keyof T](): void`)?
-**Answer:**
-**No.** Mapped types can only declare property signatures (`[K in keyof T]: ...`). They cannot declare method shorthand syntax. This is intentional, as property function signatures enforce strict contravariant parameter checking under `strictFunctionTypes`.
-
----
-
-### Q16: How do you automatically generate a Getters and Setters interface from a state interface?
-**Answer:**
-```typescript
-type Accessors<T> = {
-  [K in keyof T as `get${Capitalize<string & K>}`]: () => T[K];
-} & {
-  [K in keyof T as `set${Capitalize<string & K>}`]: (val: T[K]) => void;
+type WrapList<T> = {
+  [K in keyof T]: { item: T[K] };
 };
 
-interface State { count: number; title: string; }
-type StateAccessors = Accessors<State>;
-// {
-//   getCount: () => number;
-//   getTitle: () => string;
-//   setCount: (val: number) => void;
-//   setTitle: (val: string) => void;
-// }
+type RestTuple = [string, ...number[]];
+type Wrapped = WrapList<RestTuple>;
+// Inferred as: [{ item: string }, ...{ item: number }[]]
+```
+
+**Line-by-line explanation:**
+- Preserves the rest element `...number[]` and transforms it to `...{ item: number }[]`.
+
+---
+
+### 8. Common mistakes
+
+#### Mistake 1: Breaking homomorphic structure and losing tuple mechanics
+
+**Wrong code:**
+```typescript
+type NonHomomorphic<T> = {
+  [K in keyof T as string]: boolean;
+};
+// Remapping keys to generic string degrades tuples into plain dictionaries!
 ```
 
 ---
 
-### Q17: How do you extract only the mutable properties of an object?
-**Answer:**
-```typescript
-type MutableKeys<T> = {
-  [K in keyof T]-?: Equals<{ [P in K]: T[P] }, { readonly [P in K]: T[P] }> extends true
-    ? never
-    : K;
-}[keyof T];
+### 9. Rules to remember
+1. Homomorphic mapped types preserve array and tuple structures.
+2. Mapping over `[A, B]` produces a new tuple `[NewA, NewB]`.
+3. Readonly modifiers on tuples are preserved.
 
-type PickMutable<T> = Pick<T, MutableKeys<T>>;
+---
+
+### 10. Exercises
+
+#### Question 1 (Predict the compile result)
+What is the resulting type of `R`?
+```typescript
+type BoxTuple<T> = { [K in keyof T]: [T[K]] };
+type R = BoxTuple<[number, boolean]>;
+```
+
+#### Question 2 (Find and fix the bug)
+Explain why the type below degrades a tuple into an object:
+```typescript
+type BadMap<Keys extends keyof any> = { [K in Keys]: string };
+type Degraded = BadMap<keyof [number, string]>;
+```
+
+#### Question 3 (Write code from scratch)
+Write a homomorphic mapped type `AwaitedTuple<T>` that unwraps every Promise in a tuple using `Awaited<T[K]>`.
+
+#### Question 4 (Explain in your own words)
+Why does TypeScript treat tuples specially in homomorphic mapped types?
+
+---
+
+### Solutions
+
+#### Solution to Question 1
+**Hint 1**: Wrap each element in a tuple.
+
+**Answer**:
+The type is `[[number], [boolean]]`.
+
+#### Solution to Question 2
+**Hint 1**: The mapped type is non-homomorphic because it does not use `[K in keyof T]`.
+
+**Answer**:
+`BadMap` iterates over a generic `Keys` parameter without linking directly to `keyof T`. Because it is non-homomorphic, the compiler cannot detect the tuple structure and falls back to a plain object dictionary.
+
+#### Solution to Question 3
+**Hint 1**: Use `[K in keyof T]: Awaited<T[K]>`.
+
+**Answer**:
+```typescript
+type AwaitedTuple<T> = {
+  [K in keyof T]: Awaited<T[K]>;
+};
+
+type Result = AwaitedTuple<[Promise<string>, Promise<number>]>;
+// [string, number]
+```
+
+#### Solution to Question 4
+**Hint 1**: Think about tuple destructuring and function argument lists.
+
+**Answer**:
+Tuples are arrays with specific positions and lengths. Preserving them in mapped types ensures that mapped function arguments (`Parameters<F>`) and tuple data can still be indexed by number, destructured, and passed to array methods.
+
+---
+
+### 11. Recall
+
+1. Does a homomorphic mapped type convert a tuple into a plain object?
+2. What does `Partial<[string, number]>` produce?
+3. Are rest elements (`...T[]`) preserved in mapped tuples?
+
+**If you remember only one thing:**
+Homomorphic mapped types preserve array and tuple structures, transforming each element position individually.
+
+---
+
+# Topic 13: Recursive Mapped Types (`DeepReadonly<T>` and `DeepPartial<T>`)
+
+### 1. What is it?
+Standard `Readonly<T>` and `Partial<T>` are **shallow**: they only affect the top-level properties of an object. Nested objects remain mutable or required.
+
+A **Recursive Mapped Type** references itself in its property definition, recursing deeply through all nested objects and arrays to apply modifiers at every level.
+
+### 2. Why does it exist?
+Real-world data structures are deeply nested:
+```typescript
+type AppConfig = {
+  database: {
+    connection: {
+      host: string;
+      port: number;
+    };
+  };
+};
+```
+If you pass `Readonly<AppConfig>`, someone can still mutate `config.database.connection.host = "hacked"`!
+A recursive mapped type like `DeepReadonly<T>` guarantees complete immutability from the root down to the leaf properties.
+
+### 3. Basic example
+
+```typescript
+type DeepReadonly<T> = {
+  readonly [K in keyof T]: T[K] extends Function
+    ? T[K]
+    : T[K] extends object
+    ? DeepReadonly<T[K]>
+    : T[K];
+};
+
+type Config = {
+  db: {
+    host: string;
+  };
+};
+
+const locked: DeepReadonly<Config> = {
+  db: { host: "localhost" },
+};
+
+// locked.db = { host: "remote" }; // Error: db is readonly!
+// locked.db.host = "remote";       // Error: host is ALSO readonly!
+```
+
+**Line-by-line explanation:**
+- `readonly [K in keyof T]:`: Marks the current level `readonly`.
+- `T[K] extends Function ? T[K]`: If the property is a function, leave it alone (functions are objects, but we don't want to map over their methods).
+- `: T[K] extends object ? DeepReadonly<T[K]>`: If the property is an object, recursively call `DeepReadonly<T[K]>` on it.
+- `: T[K]`: Base case: primitives (`string`, `number`, `boolean`) are returned unchanged.
+
+---
+
+### 4. How it works inside TypeScript
+1. **Recursion Unfolding**: When inspecting `locked.db.host`, TypeScript expands `DeepReadonly` on the nested `db` object.
+2. **Function Guard**: Checking `T[K] extends Function` prevents TypeScript from trying to map over function prototype properties like `bind`, `call`, and `apply`.
+3. **Base Case Termination**: Primitives terminate the recursion.
+
+---
+
+### 5. Think first
+
+What happens if you do NOT exclude `Function` in a recursive mapped type? Decide first.
+
+```typescript
+type BadDeep<T> = {
+  [K in keyof T]: T[K] extends object ? BadDeep<T[K]> : T[K];
+};
+
+type Service = {
+  run: () => void;
+};
+
+type Result = BadDeep<Service>;
 ```
 
 ---
 
-### Q18: How do you extract only the readonly properties of an object?
-**Answer:**
-```typescript
-type ReadonlyKeys<T> = {
-  [K in keyof T]-?: Equals<{ [P in K]: T[P] }, { readonly [P in K]: T[P] }> extends true
-    ? K
-    : never;
-}[keyof T];
+**Answer and Reason:**
 
-type PickReadonly<T> = Pick<T, ReadonlyKeys<T>>;
-```
+In JavaScript, functions are objects!
+
+**Reason**: Without checking `extends Function` first, TypeScript treats `() => void` as an object and attempts to map over all function properties (`bind`, `apply`, `caller`), breaking the function signature.
 
 ---
 
-### Q19: How do you invert a key-value object map where values become keys?
-**Answer:**
+### 6. Try it yourself
+Write a `DeepPartial<T>` type that makes all properties and nested object properties optional. Test it on `{ user: { profile: { age: number } } }`.
+
+---
+
+### 7. More examples
+
+#### Example A: DeepPartial Implementation (Medium)
+
 ```typescript
-type Invert<T extends Record<PropertyKey, PropertyKey>> = {
-  [K in keyof T as T[K]]: K;
+type DeepPartial<T> = {
+  [K in keyof T]?: T[K] extends Function
+    ? T[K]
+    : T[K] extends object
+    ? DeepPartial<T[K]>
+    : T[K];
+};
+
+type NestedUser = {
+  id: string;
+  profile: {
+    name: string;
+    settings: {
+      darkMode: boolean;
+    };
+  };
+};
+
+// All levels are optional:
+const update: DeepPartial<NestedUser> = {
+  profile: {
+    settings: {},
+  },
 };
 ```
 
----
-
-### Q20: What happens if two properties in an object have identical values when using `Invert<T>`?
-**Answer:**
-If multiple keys have identical values (e.g. `{ a: "val", b: "val" }`), the mapped type intersects the keys, creating a union of keys for that target key (`val: "a" | "b"`).
+**Line-by-line explanation:**
+- Every level of the hierarchy accepts partial updates.
 
 ---
 
-### Q21: How do you promisify all methods on an interface?
-**Answer:**
+### 8. Common mistakes
+
+#### Mistake 1: Forgetting to handle arrays in recursive types
+
+**Wrong code:**
+Arrays are objects, so a naive `T[K] extends object` maps over array methods (`push`, `pop`) unless handled properly:
 ```typescript
-type AsyncMethods<T> = {
-  [K in keyof T]: T[K] extends (...args: infer P) => infer R
-    ? (...args: P) => Promise<Awaited<R>>
+type DeepReadonly<T> = {
+  readonly [K in keyof T]: T[K] extends (infer E)[]
+    ? readonly DeepReadonly<E>[]
+    : T[K] extends object
+    ? DeepReadonly<T[K]>
     : T[K];
 };
 ```
 
 ---
 
-### Q22: How do you prefix all property keys of an object with a namespace (`PrefixKeys<T, "user_">`)?
-**Answer:**
-```typescript
-type PrefixKeys<T, Prefix extends string> = {
-  [K in keyof T as `${Prefix}${string & K}`]: T[K];
-};
-
-interface Profile { id: string; email: string; }
-type Prefixed = PrefixKeys<Profile, "user_">;
-// { user_id: string; user_email: string }
-```
+### 9. Rules to remember
+1. Standard `Readonly` and `Partial` are shallow.
+2. Recursive mapped types check `extends object` and call themselves on nested structures.
+3. Always guard against `Function` to avoid breaking function signatures.
+4. Handle arrays explicitly when recursing.
 
 ---
 
-### Q23: How do you suffix all property keys of an object (`SuffixKeys<T, "Id">`)?
-**Answer:**
+### 10. Exercises
+
+#### Question 1 (Predict the compile result)
+Will the reassignment on line 8 compile?
 ```typescript
-type SuffixKeys<T, Suffix extends string> = {
-  [K in keyof T as `${string & K}${Suffix}`]: T[K];
+type DeepReadonly<T> = {
+  readonly [K in keyof T]: T[K] extends object ? DeepReadonly<T[K]> : T[K];
 };
+type Nested = { a: { b: number } };
+const obj: DeepReadonly<Nested> = { a: { b: 10 } };
+obj.a.b = 20;
 ```
 
----
-
-### Q24: How do you filter an object to only properties that are NOT functions?
-**Answer:**
+#### Question 2 (Find and fix the bug)
+The recursive type below breaks on methods. Fix it by excluding functions:
 ```typescript
-type NonFunctionProperties<T> = {
-  [K in keyof T as T[K] extends Function ? never : K]: T[K];
+type DeepLock<T> = {
+  readonly [K in keyof T]: T[K] extends object ? DeepLock<T[K]> : T[K];
 };
 ```
 
+#### Question 3 (Write code from scratch)
+Write `DeepMutable<T>` that recursively removes `readonly` from all properties and nested objects.
+
+#### Question 4 (Explain in your own words)
+Why is `DeepReadonly` necessary even when TypeScript has the built-in `Readonly<T>` utility?
+
 ---
 
-### Q25: How do you map an object type to an object containing boolean dirty flags for each property?
-**Answer:**
+### Solutions
+
+#### Solution to Question 1
+**Hint 1**: Is `b` read-only in `DeepReadonly`?
+
+**Answer**:
+No, it fails. `DeepReadonly` recursed into `a` and marked `b` as `readonly`.
+
+#### Solution to Question 2
+**Hint 1**: Add `T[K] extends Function ? T[K] : ...`.
+
+**Answer**:
 ```typescript
-type DirtyFlags<T> = {
-  [K in keyof T]: boolean;
-};
-```
-
----
-
-### Q26: How do you map an object type to an object containing validation error arrays for each property?
-**Answer:**
-```typescript
-type ValidationErrors<T> = {
-  [K in keyof T]?: string[];
-};
-```
-
----
-
-### Q27: How does TypeScript handle mapping over an empty object type (`{}`)?
-**Answer:**
-Since `keyof {}` evaluates to `never`, the mapped type evaluates to an empty object `{}`.
-
----
-
-### Q28: How do you unwrap `Ref<T>` or `Observable<T>` wrappers across an entire object?
-**Answer:**
-```typescript
-type UnwrapObservables<T> = {
-  [K in keyof T]: T[K] extends { subscribe(fn: (val: infer V) => any): any } ? V : T[K];
-};
-```
-
----
-
-### Q29: What is the difference between `[K in keyof T]: T[K]` and `Identity<T>`?
-**Answer:**
-`[K in keyof T]: T[K]` creates a clean, flat object type that flattens intersections (`A & B`), simplifying type tooltips in VS Code.
-
-```typescript
-type Prettify<T> = {
-  [K in keyof T]: T[K];
-} & {};
-```
-
----
-
-### Q30: How do you make specific keys optional while keeping all other keys required?
-**Answer:**
-Combine `Omit` and `Partial`:
-
-```typescript
-type MakeOptional<T, K extends keyof T> = Omit<T, K> & Partial<Pick<T, K>>;
-```
-
----
-
-### Q31: How do you make specific keys required while keeping all other keys optional?
-**Answer:**
-```typescript
-type MakeRequired<T, K extends keyof T> = Omit<T, K> & Required<Pick<T, K>>;
-```
-
----
-
-### Q32: How do you make specific keys readonly while keeping others mutable?
-**Answer:**
-```typescript
-type MakeReadonly<T, K extends keyof T> = Omit<T, K> & Readonly<Pick<T, K>>;
-```
-
----
-
-### Q33: How do you map an object's values to getter functions?
-**Answer:**
-```typescript
-type ValueToGetter<T> = {
-  [K in keyof T]: () => T[K];
-};
-```
-
----
-
-### Q34: What is the effect of mapping over a union of object types (`A | B`) with a mapped type?
-**Answer:**
-A mapped type is non-distributive over unions by default unless wrapped in a distributive conditional helper:
-
-```typescript
-// Distributive mapped type:
-type DistributiveMapped<T> = T extends unknown
-  ? { [K in keyof T]: T[K] }
-  : never;
-```
-
----
-
-### Q35: How do you recursively strip `null` from all properties in an object?
-**Answer:**
-```typescript
-type StripNull<T> = {
-  [K in keyof T]: T[K] extends object ? StripNull<T[K]> : Exclude<T[K], null>;
-};
-```
-
----
-
-### Q36: How do you transform property values based on their current type?
-**Answer:**
-Use conditional types inside the value position of the mapped type:
-
-```typescript
-type StringifyPrimitives<T> = {
-  [K in keyof T]: T[K] extends number | boolean ? string : T[K];
-};
-```
-
----
-
-### Q37: How do you map an interface to produce a JSON-serializable DTO?
-**Answer:**
-Strip all functions and Symbols:
-
-```typescript
-type JsonDto<T> = {
-  [K in keyof T as T[K] extends Function | symbol ? never : K]: T[K];
-};
-```
-
----
-
-### Q38: How do you generate an Event Payload mapping where every key `key` maps to `{ previous: T[K], current: T[K] }`?
-**Answer:**
-```typescript
-type ChangePayloads<T> = {
-  [K in keyof T as `on${Capitalize<string & K>}Changed`]: {
-    previous: T[K];
-    current: T[K];
-  };
-};
-```
-
----
-
-### Q39: Can mapped types add new properties that did not exist in the original type?
-**Answer:**
-Directly inside `[K in keyof T]`, you cannot add unrelated properties.
-However, you can intersect the mapped type with additional properties:
-`type Extended<T> = { [K in keyof T]: T[K] } & { timestamp: number };`
-
----
-
-### Q40: How do you convert a tuple of keys into an object type with boolean values?
-**Answer:**
-```typescript
-type TupleToObject<T extends readonly string[]> = {
-  [K in T[number]]: boolean;
-};
-
-type Flags = TupleToObject<["isRead", "isWrite", "isAdmin"]>;
-// { isRead: boolean; isWrite: boolean; isAdmin: boolean }
-```
-
----
-
-### Q41: How do you map an object's properties to reactive Signal wrappers?
-**Answer:**
-```typescript
-interface Signal<T> {
-  value: T;
-}
-
-type ToSignals<T> = {
-  [K in keyof T]: Signal<T[K]>;
-};
-```
-
----
-
-### Q42: What happens when `Readonly<T>` is applied to a class instance?
-**Answer:**
-All public properties are marked as `readonly`, but methods remain callable (method signatures are marked as readonly property functions).
-
----
-
-### Q43: How do you remove an index signature from an object type while preserving explicit properties?
-**Answer:**
-Filter keys where `string extends K` or `number extends K`:
-
-```typescript
-type RemoveIndexSignature<T> = {
-  [K in keyof T as string extends K ? never : number extends K ? never : K]: T[K];
-};
-```
-
----
-
-### Q44: How do you create an exhaustive schema mapper that checks that a mapped object implements all keys of a model?
-**Answer:**
-Constrain the schema keys using `Record<keyof Model, SchemaValidator>`.
-
----
-
-### Q45: What is the Golden Rule of Mapped Types?
-**Answer:**
-**"Use Homomorphic Mapped Types (`[K in keyof T]`) whenever possible to automatically preserve property modifiers and tuple structures, and use `as` key remapping with `never` for surgical key filtering."**
-`;
-};
-
-
----
-
----
-
-## 💼 Section 09: Comprehensive Senior Engineering Interview Q&As (Part B: Questions 46–90)
-
-### Q46: How do you recursively transform all snake_case property keys of an object into camelCase (`DeepCamelCase<T>`)?
-**Answer:**
-Combine recursive mapped types with key remapping and string template literal transformation:
-
-```typescript
-type SnakeToCamel<S extends string> =
-  S extends `${infer Head}_${infer Tail}`
-    ? `${Head}${Capitalize<SnakeToCamel<Tail>>}`
-    : S;
-
-type DeepCamelCase<T> = T extends Function | boolean | number | string | symbol | bigint | null | undefined
-  ? T
-  : T extends readonly (infer E)[]
-  ? DeepCamelCase<E>[]
-  : {
-      [K in keyof T as SnakeToCamel<string & K>]: DeepCamelCase<T[K]>;
-    };
-
-interface DatabaseRow {
-  user_id: string;
-  first_name: string;
-  account_details: {
-    billing_address: string;
-    zip_code: number;
-  };
-}
-
-type CamelCased = DeepCamelCase<DatabaseRow>;
-// {
-//   userId: string;
-//   firstName: string;
-//   accountDetails: {
-//     billingAddress: string;
-//     zipCode: number;
-//   };
-// }
-```
-
----
-
-### Q47: How do you recursively transform all camelCase property keys into snake_case (`DeepSnakeCase<T>`)?
-**Answer:**
-```typescript
-type CamelToSnake<S extends string> =
-  S extends `${infer First}${infer Rest}`
-    ? First extends Uppercase<First>
-      ? `_${Lowercase<First>}${CamelToSnake<Rest>}`
-      : `${First}${CamelToSnake<Rest>}`
-    : S;
-
-type DeepSnakeCase<T> = T extends Function | boolean | number | string | symbol | bigint | null | undefined
-  ? T
-  : T extends readonly (infer E)[]
-  ? DeepSnakeCase<E>[]
-  : {
-      [K in keyof T as CamelToSnake<string & K>]: DeepSnakeCase<T[K]>;
-    };
-```
-
----
-
-### Q48: How do you strip a specific prefix from all keys of an object?
-**Answer:**
-```typescript
-type StripPrefix<T, Prefix extends string> = {
-  [K in keyof T as K extends `${Prefix}${infer Rest}` ? Rest : K]: T[K];
-};
-
-interface StoredItem {
-  meta_created: number;
-  meta_author: string;
-  data: string;
-}
-
-type Stripped = StripPrefix<StoredItem, "meta_">;
-// { created: number; author: string; data: string }
-```
-
----
-
-### Q49: How do you strip a specific suffix from all keys of an object?
-**Answer:**
-```typescript
-type StripSuffix<T, Suffix extends string> = {
-  [K in keyof T as K extends `${infer Rest}${Suffix}` ? Rest : K]: T[K];
-};
-
-interface RawForm {
-  nameField: string;
-  ageField: number;
-}
-
-type CleanForm = StripSuffix<RawForm, "Field">;
-// { name: string; age: number }
-```
-
----
-
-### Q50: How do you merge two object types where properties of the second type overwrite the first type?
-**Answer:**
-```typescript
-type Merge<A, B> = Omit<A, keyof B> & B;
-
-type T1 = { id: string; name: string };
-type T2 = { name: number; age: number };
-
-type Merged = Merge<T1, T2>;
-// { id: string; name: number; age: number }
-```
-
----
-
-### Q51: How do you map an object type into a schema definition object where each property maps to a validator function?
-**Answer:**
-```typescript
-type SchemaDefinition<T> = {
-  [K in keyof T]: (val: unknown) => val is T[K];
-};
-
-interface User { name: string; age: number; }
-type UserValidator = SchemaDefinition<User>;
-// {
-//   name: (val: unknown) => val is string;
-//   age: (val: unknown) => val is number;
-// }
-```
-
----
-
-### Q52: How do you extract keys whose values are strictly boolean?
-**Answer:**
-```typescript
-type BooleanKeys<T> = {
-  [K in keyof T]: T[K] extends boolean ? K : never;
-}[keyof T];
-```
-
----
-
-### Q53: How do you extract keys whose values are strictly numbers?
-**Answer:**
-```typescript
-type NumericKeys<T> = {
-  [K in keyof T]: T[K] extends number ? K : never;
-}[keyof T];
-```
-
----
-
-### Q54: How do you map an object type into a builder interface where every method accepts a value and returns `this`?
-**Answer:**
-```typescript
-type BuilderInterface<T, BuilderInstance> = {
-  [K in keyof T as `set${Capitalize<string & K>}`]: (value: T[K]) => BuilderInstance;
-};
-```
-
----
-
-### Q55: How do you make all nested properties nullable (`DeepNullable<T>`)?
-**Answer:**
-```typescript
-type DeepNullable<T> = T extends Function
-  ? T
-  : T extends object
-  ? { [K in keyof T]: DeepNullable<T[K]> | null }
-  : T | null;
-```
-
----
-
-### Q56: How do you extract the common keys present in both type $A$ and type $B$?
-**Answer:**
-```typescript
-type CommonKeys<A, B> = Extract<keyof A, keyof B>;
-```
-
----
-
-### Q57: How do you extract the difference of keys between type $A$ and type $B$?
-**Answer:**
-```typescript
-type DiffKeys<A, B> = Exclude<keyof A, keyof B>;
-```
-
----
-
-### Q58: How do you create an object type with exact keys from an array of string literals at runtime?
-**Answer:**
-```typescript
-type FromStringArray<T extends readonly string[], Val> = {
-  [K in T[number]]: Val;
-};
-```
-
----
-
-### Q59: How do you create a type-safe Patch type where only changed properties are included?
-**Answer:**
-```typescript
-type Patch<T> = {
-  [K in keyof T]?: T[K];
-};
-```
-
----
-
-### Q60: How do you create a type that requires at least one property of an object to be defined?
-**Answer:**
-Combine mapped types with union distribution:
-
-```typescript
-type RequireAtLeastOne<T, Keys extends keyof T = keyof T> =
-  Keys extends keyof T
-    ? Required<Pick<T, Keys>> & Partial<Omit<T, Keys>>
-    : never;
-
-interface Contact { email?: string; phone?: string; }
-type ValidContact = RequireAtLeastOne<Contact>;
-// Allows { email: "..." } or { phone: "..." } or both, but disallows {}!
-```
-
----
-
-### Q61: How do you create a type that enforces exactly one property of an object to be defined (XOR)?
-**Answer:**
-```typescript
-type Without<T, U> = { [P in Exclude<keyof T, keyof U>]?: never };
-type XOR<T, U> = (T | U) extends object ? (Without<T, U> & U) | (Without<U, T> & T) : T | U;
-```
-
----
-
-### Q62: How do you map an object type to an asynchronous loader map where every property is a loader Promise?
-**Answer:**
-```typescript
-type AsyncLoaders<T> = {
-  [K in keyof T]: () => Promise<T[K]>;
-};
-```
-
----
-
-### Q63: How do you map an object type to a proxy traps handler?
-**Answer:**
-```typescript
-type ProxyHandlers<T extends object> = {
-  get?<K extends keyof T>(target: T, p: K, receiver: any): T[K];
-  set?<K extends keyof T>(target: T, p: K, value: T[K], receiver: any): boolean;
-};
-```
-
----
-
-### Q64: How do you strip all symbol properties from an object type?
-**Answer:**
-```typescript
-type StripSymbols<T> = {
-  [K in keyof T as K extends symbol ? never : K]: T[K];
-};
-```
-
----
-
-### Q65: How do you keep only symbol properties from an object type?
-**Answer:**
-```typescript
-type OnlySymbols<T> = {
-  [K in keyof T as K extends symbol ? K : never]: T[K];
-};
-```
-
----
-
-### Q66: How do you map an object type to an HTTP query parameter dictionary where all values are strings?
-**Answer:**
-```typescript
-type QueryParams<T> = {
-  [K in keyof T as T[K] extends Function ? never : K]?: string;
-};
-```
-
----
-
-### Q67: How do you map an object to produce a ChangeEvent union where each variant has `{ property: K; oldValue: T[K]; newValue: T[K] }`?
-**Answer:**
-```typescript
-type ChangeEvents<T> = {
-  [K in keyof T]: {
-    property: K;
-    oldValue: T[K];
-    newValue: T[K];
-  };
-}[keyof T];
-```
-
----
-
-### Q68: How do you map an object to a Form Field State object with `value`, `isValid`, and `isTouched`?
-**Answer:**
-```typescript
-type FormFields<T> = {
-  [K in keyof T]: {
-    value: T[K];
-    isValid: boolean;
-    isTouched: boolean;
-    errors: string[];
-  };
-};
-```
-
----
-
-### Q69: What is the compiler performance cost of recursive mapped types over deep objects?
-**Answer:**
-For every nested object, the compiler generates a new internal type symbol and type identity cache record. Deeply nested recursive mapped types applied over hundreds of files can significantly inflate memory usage and compilation times.
-**Mitigation**: Restrict recursion depth using terminal depth guards or use shallow utility types where deep immutability is unnecessary.
-
----
-
-### Q70: How do you make an object's properties `readonly` except for a specific whitelist of keys?
-**Answer:**
-```typescript
-type ReadonlyExcept<T, K extends keyof T> = Readonly<Omit<T, K>> & Pick<T, K>;
-```
-
----
-
-### Q71: How do you make an object's properties optional except for a specific whitelist of required keys?
-**Answer:**
-```typescript
-type OptionalExcept<T, K extends keyof T> = Partial<Omit<T, K>> & Required<Pick<T, K>>;
-```
-
----
-
-### Q72: How do you map an object's numeric properties to currency strings while preserving other fields?
-**Answer:**
-```typescript
-type CurrencyFormatted<T> = {
-  [K in keyof T]: T[K] extends number ? `$${string}` : T[K];
-};
-```
-
----
-
-### Q73: How do you create an identity mapped type that forces TypeScript to simplify complex intersection types in hover tooltips?
-**Answer:**
-```typescript
-type Simplify<T> = {
-  [K in keyof T]: T[K];
-} & {};
-```
-
----
-
-### Q74: How do you remove all readonly modifiers from a deeply nested object graph?
-**Answer:**
-```typescript
-type DeepMutable<T> = T extends Function | boolean | number | string | symbol | bigint | null | undefined
-  ? T
-  : T extends readonly (infer E)[]
-  ? DeepMutable<E>[]
-  : { -readonly [K in keyof T]: DeepMutable<T[K]> };
-```
-
----
-
-### Q75: How do you map an interface to produce an audit diff record?
-**Answer:**
-```typescript
-type AuditDiff<T> = {
-  [K in keyof T]?: {
-    before: T[K];
-    after: T[K];
-    updatedBy: string;
-    updatedAt: number;
-  };
-};
-```
-
----
-
-### Q76: How do you convert a union of object types into a mapped object where each key corresponds to a variant?
-**Answer:**
-```typescript
-type UnionToMap<U extends { type: string }> = {
-  [E in U as E["type"]]: E;
-};
-```
-
----
-
-### Q77: How do you map an object's properties to asynchronous resolver functions?
-**Answer:**
-```typescript
-type Resolvers<T, Context> = {
-  [K in keyof T]: (parent: T, args: Record<string, any>, context: Context) => Promise<T[K]> | T[K];
-};
-```
-
----
-
-### Q78: How do you extract keys whose values match a union of types?
-**Answer:**
-```typescript
-type KeysMatchingUnion<T, Allowed> = {
-  [K in keyof T]: T[K] extends Allowed ? K : never;
-}[keyof T];
-```
-
----
-
-### Q79: How do you map an object's properties into mock factory generators?
-**Answer:**
-```typescript
-type MockFactories<T> = {
-  [K in keyof T]: () => T[K];
-};
-```
-
----
-
-### Q80: How do you map an object to support Redux action dispatches for each property update?
-**Answer:**
-```typescript
-type ActionDispatchers<T> = {
-  [K in keyof T as `update${Capitalize<string & K>}`]: (payload: T[K]) => {
-    type: `UPDATE_${Uppercase<string & K>}`;
-    payload: T[K];
-  };
-};
-```
-
----
-
-### Q81: How do you map an object to produce a snapshot comparison report?
-**Answer:**
-```typescript
-type ComparisonReport<T> = {
-  [K in keyof T]: {
-    isEqual: boolean;
-    source: T[K];
-    target: T[K];
-  };
-};
-```
-
----
-
-### Q82: How do you enforce that a generic type must contain only serializable JSON values?
-**Answer:**
-```typescript
-type JsonPrimitive = string | number | boolean | null;
-type JsonCompatible<T> = {
-  [K in keyof T]: T[K] extends JsonPrimitive | JsonPrimitive[] | Record<string, JsonPrimitive>
+type DeepLock<T> = {
+  readonly [K in keyof T]: T[K] extends Function
     ? T[K]
-    : never;
+    : T[K] extends object
+    ? DeepLock<T[K]>
+    : T[K];
 };
 ```
 
----
+#### Solution to Question 3
+**Hint 1**: Use `-readonly` and recurse.
 
-### Q83: How do you map an object type into a schema for database table columns?
-**Answer:**
+**Answer**:
 ```typescript
-type ColumnDefinitions<T> = {
-  [K in keyof T]: {
-    columnName: string;
-    type: T[K] extends string ? "VARCHAR" : T[K] extends number ? "INTEGER" : "TEXT";
-    nullable: undefined extends T[K] ? true : false;
-  };
+type DeepMutable<T> = {
+  -readonly [K in keyof T]: T[K] extends Function
+    ? T[K]
+    : T[K] extends object
+    ? DeepMutable<T[K]>
+    : T[K];
 };
 ```
 
+#### Solution to Question 4
+**Hint 1**: Does `Readonly<T>` protect nested objects?
+
+**Answer**:
+Built-in `Readonly<T>` is strictly shallow; it only prevents reassigning top-level properties. Nested objects inside a `Readonly` object remain completely mutable unless a recursive utility like `DeepReadonly<T>` traverses and locks each nested level.
+
 ---
 
-### Q84: How do you generate an indexed access mapping where every property is wrapped in a getter/setter descriptor?
-**Answer:**
+### 11. Recall
+
+1. What is the difference between shallow and deep immutability?
+2. Why must functions be excluded when recursing into objects?
+3. How do you remove `readonly` deeply across an object?
+
+**If you remember only one thing:**
+Recursive mapped types call themselves on nested objects to apply modifiers deeply across an entire schema.
+
+---
+
+# Topic 14: Mapping Over Unions of Object Keys
+
+### 1. What is it?
+You can construct mapped types directly from arbitrary unions of string literal keys:
 ```typescript
-type PropertyDescriptors<T> = {
-  [K in keyof T]: {
-    get?(): T[K];
-    set?(val: T[K]): void;
-    enumerable?: boolean;
-    configurable?: boolean;
-  };
+type Status = "draft" | "published" | "archived";
+
+type StatusFlags = {
+  [K in Status]: boolean;
 };
 ```
+Here, `K` iterates over each member of the union `Status`.
 
----
+### 2. Why does it exist?
+Often, you start with a union of string literals (like a list of event names, roles, or permission strings) and need to create an object where every member of that union is a required key.
 
-### Q85: How do you map an object's properties into telemetry metrics?
-**Answer:**
-```typescript
-type TelemetryCounters<T> = {
-  [K in keyof T as `metric_${string & K}_total`]: number;
-};
-```
+Mapping over a union of string literals allows you to create these object shapes directly, without needing a base interface first.
 
----
-
-### Q86: How do you strip all properties with `never` value types from an object?
-**Answer:**
-```typescript
-type StripNever<T> = {
-  [K in keyof T as [T[K]] extends [never] ? never : K]: T[K];
-};
-```
-
----
-
-### Q87: How do you map an object type to an input mask configuration?
-**Answer:**
-```typescript
-type InputMasks<T> = {
-  [K in keyof T]?: RegExp | string;
-};
-```
-
----
-
-### Q88: How do you map an object type to an Internationalization (i18n) translation dictionary?
-**Answer:**
-```typescript
-type I18nKeys<T> = {
-  [K in keyof T as `i18n_${string & K}`]: string;
-};
-```
-
----
-
-### Q89: How do you map an object's properties into optimistic UI update rollback snapshots?
-**Answer:**
-```typescript
-type RollbackStore<T> = {
-  [K in keyof T]?: {
-    rollbackValue: T[K];
-    revertedAt: number;
-  };
-};
-```
-
----
-
-### Q90: What is the architectural power of Mapped Types in enterprise design systems?
-**Answer:**
-**"Mapped types allow an engineering organization to define a domain entity once, and automatically project it into Database Schemas, API Request Payloads, Response DTOs, State Store Lenses, and Form Validation Schemas with 100% mathematical fidelity and zero manual synchronization overhead."**
-`;
-};
-
-
----
-
-## 4. Output Prediction Puzzles (15 Puzzles with Step-by-Step Traces)
-
-Test your mental model of TypeScript's mapped type transformation engine, homomorphic rules, key remapping, and index signature resolution.
-
----
-
-### Puzzle 1: Key Remapping Filtering to `never`
+### 3. Basic example
 
 ```typescript
-type FilterStringProps<T> = {
-  [K in keyof T as T[K] extends string ? K : never]: T[K];
+type HttpMethod = "GET" | "POST" | "PUT" | "DELETE";
+
+type RouteHandlers = {
+  [M in HttpMethod]: (url: string) => void;
 };
 
-interface UserProfile {
-  id: number;
-  name: string;
-  bio: string | null;
-  email: string;
-}
-
-type Result1 = FilterStringProps<UserProfile>;
-// Question: What keys does Result1 contain?
+const router: RouteHandlers = {
+  GET: (url) => console.log("GET", url),
+  POST: (url) => console.log("POST", url),
+  PUT: (url) => console.log("PUT", url),
+  DELETE: (url) => console.log("DELETE", url),
+};
 ```
 
-**Step-by-Step Evaluation Trace:**
-1. `keyof UserProfile` yields `'id' | 'name' | 'bio' | 'email'`.
-2. TS iterates over each key `K`:
-   - `K = 'id'`: `UserProfile['id']` is `number`. `number extends string` is false -> maps to `never`. In key remapping (`as`), mapping to `never` removes the key completely.
-   - `K = 'name'`: `UserProfile['name']` is `string`. `string extends string` is true -> key `'name'` retained.
-   - `K = 'bio'`: `UserProfile['bio']` is `string | null`. `(string | null) extends string` is false -> maps to `never`, key `'bio'` removed.
-   - `K = 'email'`: `UserProfile['email']` is `string` -> key `'email'` retained.
-3. **Output Type:** `{ name: string; email: string; }`.
+**Line-by-line explanation:**
+- `type HttpMethod`: A union of four string literals.
+- `[M in HttpMethod]:`: Iterates over `"GET"`, `"POST"`, `"PUT"`, and `"DELETE"`.
+- Every method must be implemented on `router`.
 
 ---
 
-### Puzzle 2: Homomorphic vs Non-Homomorphic Tuple Mapping
-
-```typescript
-type Homomorphic<T> = {
-  [K in keyof T]: T[K];
-};
-
-type NonHomomorphic<T> = {
-  [K in keyof T as K]: T[K];
-};
-
-type Arr = [string, number];
-
-type R1 = Homomorphic<Arr>;
-type R2 = NonHomomorphic<Arr>;
-```
-
-**Step-by-Step Evaluation Trace:**
-1. In `Homomorphic<Arr>`, the syntax `[K in keyof T]` directly references `keyof T` without key remapping or boxing.
-2. Homomorphic mapped types on tuples/arrays preserve the tuple structure! `Homomorphic<[string, number]>` produces `[string, number]`.
-3. In `NonHomomorphic<Arr>`, the introduction of `as K` (key remapping) turns off homomorphic array preservation.
-4. TypeScript treats `Arr` as an object whose keys include `"0"`, `"1"`, `"length"`, `"slice"`, `"map"`, etc.
-5. **Output Types:**
-   - `R1` = `[string, number]` (Tuple preserved).
-   - `R2` = `{ 0: string; 1: number; length: 2; slice: ...; map: ...; ... }` (Plain object exposing all Array prototype members!).
+### 4. How it works inside TypeScript
+1. **Union Iteration**: The `in` operator accepts any union of types that extend `string | number | symbol`.
+2. **Exhaustive Keys**: Every member of the union becomes a required property key on the resulting object.
+3. **Non-Homomorphic**: Because it does not use `keyof T`, it creates a clean, independent object type.
 
 ---
 
-### Puzzle 3: Modifier Stripping (`-readonly`, `-?`)
+### 5. Think first
+
+What happens if you omit `"DELETE"` in `router` above? Decide first.
 
 ```typescript
-interface ImmutableDraft {
-  readonly id: number;
-  readonly title?: string;
-  readonly tags?: readonly string[];
-}
-
-type ConcreteMutable<T> = {
-  -readonly [K in keyof T]-?: T[K];
+const router: RouteHandlers = {
+  GET: (url) => {},
+  POST: (url) => {},
+  PUT: (url) => {},
 };
-
-type Result3 = ConcreteMutable<ImmutableDraft>;
 ```
 
-**Step-by-Step Evaluation Trace:**
-1. `-readonly` strips the `readonly` modifier from every key.
-2. `-?` removes the optionality flag (`?`), making every property strictly required and stripping `undefined` if it was introduced solely by optionality.
-3. For `title?: string`: `-?` converts it to `title: string`.
-4. For `tags?: readonly string[]`: the outer property becomes mutable (`tags: readonly string[]`), but the inner array remains `readonly string[]` because mapping is shallow!
-5. **Output Type:**
+---
+
+**Answer and Reason:**
+
+This code fails to compile:
+
+```
+Property 'DELETE' is missing in type '{ GET: ...; POST: ...; PUT: ...; }' but required in type 'RouteHandlers'.
+```
+
+**Reason**: Mapping over a union makes every member of the union a required property.
+
+---
+
+### 6. Try it yourself
+Create a union `Role = "admin" | "editor" | "viewer"`. Create a mapped type `RoleDescriptions = { [R in Role]: string }`. Implement a valid object.
+
+---
+
+### 7. More examples
+
+#### Example A: Generating Event Handlers from Event Names (Medium)
+
+```typescript
+type EventName = "click" | "hover" | "focus";
+
+type EventListenerMap = {
+  [E in EventName as `on${Capitalize<E>}`]: (event: Event) => void;
+};
+// { onClick: ...; onHover: ...; onFocus: ... }
+```
+
+**Line-by-line explanation:**
+- Combines union mapping with key remapping and capitalization.
+
+---
+
+### 8. Common mistakes
+
+#### Mistake 1: Trying to iterate over a non-literal type like `string`
+
+**Wrong code:**
+```typescript
+type Bad = {
+  [K in string]: number; // Error: An index signature must have a type annotation!
+};
+```
+
+**Why it happens:**
+`in` requires a discrete union of keys (like `"a" | "b"`). For arbitrary strings, you must use an index signature `{ [key: string]: number }` or `Record<string, number>`.
+
+---
+
+### 9. Rules to remember
+1. `[K in Union]` loops over every literal member of a union.
+2. Every union member becomes a required property.
+3. Can be combined with `as` for key remapping and filtering.
+
+---
+
+### 10. Exercises
+
+#### Question 1 (Predict the compile result)
+What properties are required on `Obj`?
+```typescript
+type Keys = "x" | "y";
+type Obj = { [K in Keys]: number };
+```
+
+#### Question 2 (Find and fix the bug)
+The mapped type below fails to compile because it tries to use `in` on broad `string`. Fix it:
+```typescript
+type MapAll = { [K in string]: boolean };
+```
+
+#### Question 3 (Write code from scratch)
+Define a union `Size = "sm" | "md" | "lg"`. Write a mapped type `SizeToPixels` that maps each size to a `number`.
+
+#### Question 4 (Explain in your own words)
+What is the difference between `[K in "a" | "b"]` and `[K in keyof T]`?
+
+---
+
+### Solutions
+
+#### Solution to Question 1
+**Hint 1**: The keys are `"x"` and `"y"`.
+
+**Answer**:
+Properties `x: number` and `y: number` are required.
+
+#### Solution to Question 2
+**Hint 1**: Use `Record<string, boolean>` or index signature `[key: string]: boolean`.
+
+**Answer**:
+```typescript
+type MapAll = Record<string, boolean>;
+```
+
+#### Solution to Question 3
+**Hint 1**: Use `[S in Size]: number`.
+
+**Answer**:
+```typescript
+type Size = "sm" | "md" | "lg";
+type SizeToPixels = {
+  [S in Size]: number;
+};
+
+const sizes: SizeToPixels = {
+  sm: 12,
+  md: 16,
+  lg: 24,
+};
+```
+
+#### Solution to Question 4
+**Hint 1**: Which one is homomorphic and inherits from an existing type?
+
+**Answer**:
+`[K in "a" | "b"]` is a non-homomorphic mapped type that iterates over an explicit union of literal keys to build a brand-new object. `[K in keyof T]` is a homomorphic mapped type that links directly to an existing object type `T` and inherits its property modifiers and tuple structures.
+
+---
+
+### 11. Recall
+
+1. What syntax loops over a union of string literals?
+2. Does `[K in Union]` require every member of the union to be present?
+3. What is the difference between iterating over `"a" | "b"` versus `string`?
+
+**If you remember only one thing:**
+`[K in Union]` builds a strongly typed object where every member of a string literal union becomes a required property.
+
+---
+
+# Final Checkpoint Challenge: Topics 11 to 14
+
+### Challenge Scenario
+Build a type-safe database entity transformation pipeline:
+
+1. Define an entity schema:
    ```typescript
-   {
-     id: number;
+   interface PostEntity {
+     id: string;
      title: string;
-     tags: readonly string[];
+     content: string;
+     publishedAt: Date | null;
+     tags: string[];
    }
    ```
+2. Using value-side conditional mapping, create `JsonPost`:
+   - If a property is a `Date | null`, convert it to `string | null`.
+   - If a property is an array `(infer E)[]`, preserve it as `E[]`.
+   - Leave other properties unchanged.
+3. Write a `DeepReadonly<T>` mapped type that deeply freezes all nested properties and arrays.
+4. Using key remapping and filtering (`never`), create `OnlyStringFields` that extracts only properties whose value type is `string`.
+5. Apply `DeepReadonly` to `JsonPost`.
 
----
-
-### Puzzle 4: Interface Call Signature Loss
-
-```typescript
-interface CallableService {
-  (command: string): void;
-  version: number;
-  execute(task: string): boolean;
-}
-
-type IdentityMap<T> = {
-  [K in keyof T]: T[K];
-};
-
-type Result4 = IdentityMap<CallableService>;
-// Can Result4 be invoked as a function?
-```
-
-**Step-by-Step Evaluation Trace:**
-1. `CallableService` has an object property `version`, a method `execute`, and a call signature `(command: string): void`.
-2. `keyof CallableService` evaluates only to property names: `"version" | "execute"`. Call signatures and construct signatures do not have string, number, or symbol keys in `keyof`.
-3. The mapped type iterates over `"version"` and `"execute"`.
-4. The call signature `(command: string): void` is discarded during mapped type iteration.
-5. **Output Type:** `{ version: number; execute: (task: string) => boolean; }`.
-6. Invoking `Result4("test")` fails type checking with `TS2349: This expression is not callable`.
-
----
-
-### Puzzle 5: Key Collision via Remapping
+### Challenge Solution
 
 ```typescript
-type Collide<T> = {
-  [K in keyof T as "fixed"]: T[K];
-};
-
-interface Target {
-  a: string;
-  b: number;
-}
-
-type Result5 = Collide<Target>;
-```
-
-**Step-by-Step Evaluation Trace:**
-1. TypeScript iterates over keys `'a'` and `'b'`.
-2. For `'a'`, the key is remapped to `'fixed'`, with value `string`.
-3. For `'b'`, the key is remapped to `'fixed'`, with value `number`.
-4. When two distinct keys map to the same literal key name during mapped type evaluation, TypeScript synthesizes their property types into an **intersection** (`A & B`).
-5. `string & number` evaluates to `never`.
-6. **Output Type:** `{ fixed: never; }`.
-
----
-
-### Puzzle 6: Value Filtering on Heterogeneous Interfaces
-
-```typescript
-type MethodsOnly<T> = {
-  [K in keyof T as T[K] extends (...args: any[]) => any ? K : never]: T[K];
-};
-
-class OrderService {
-  id: string = "101";
-  static timeout: number = 5000;
-  computeTotal(tax: number): number { return tax * 1.2; }
-  private secretKey: string = "sec_abc";
-  cancel(): void {}
-}
-
-type Result6 = MethodsOnly<OrderService>;
-```
-
-**Step-by-Step Evaluation Trace:**
-1. `keyof OrderService` inspects the instance type of `OrderService`, ignoring `static` members.
-2. `keyof OrderService` in public type queries includes public instance properties and methods: `'id' | 'computeTotal' | 'cancel'`. (Private member `'secretKey'` is nominal and generally inaccessible in structural remappings or stripped).
-3. `OrderService['id']` is `string` -> does not extend function -> maps to `never`.
-4. `OrderService['computeTotal']` is function -> retained.
-5. `OrderService['cancel']` is function -> retained.
-6. **Output Type:** `{ computeTotal: (tax: number) => number; cancel: () => void; }`.
-
----
-
-### Puzzle 7: Deep Readonly on Functions and Primitives
-
-```typescript
-type DeepReadonly<T> = T extends (...args: any[]) => any
-  ? T
-  : T extends object
-  ? { readonly [K in keyof T]: DeepReadonly<T[K]> }
-  : T;
-
-interface ComplexStore {
-  fetcher: (url: string) => Promise<string>;
-  config: {
-    retries: number;
-    endpoints: string[];
-  };
-}
-
-type Result7 = DeepReadonly<ComplexStore>;
-```
-
-**Step-by-Step Evaluation Trace:**
-1. For `fetcher`: TS encounters `T extends (...args: any[]) => any`. The conditional is true, so it returns `T` untouched without attempting to map function properties.
-2. For `config`: It is an object, so it maps keys recursively:
-   - `readonly retries: number`
-   - `readonly endpoints: readonly string[]` (homomorphic mapping on arrays).
-3. **Output Type:**
-   ```typescript
-   {
-     readonly fetcher: (url: string) => Promise<string>;
-     readonly config: {
-       readonly retries: number;
-       readonly endpoints: readonly string[];
-     };
-   }
-   ```
-
----
-
-### Puzzle 8: Mapped Type over Union of Objects
-
-```typescript
-type MakeOptional<T> = {
-  [K in keyof T]?: T[K];
-};
-
-type UnionState = { status: "success"; data: string } | { status: "error"; error: Error };
-
-type Result8 = MakeOptional<UnionState>;
-```
-
-**Step-by-Step Evaluation Trace:**
-1. Notice that `MakeOptional<T>` is NOT distributive because `T` is not a naked type parameter in a conditional type (`T extends any`). It is directly inside `keyof T`.
-2. `keyof (A | B)` evaluates to the intersection of keys: `keyof A & keyof B`.
-3. Key `'status'` exists on both; `'data'` and `'error'` exist on only one branch.
-4. `keyof UnionState` = `'status'`.
-5. `MakeOptional` evaluates only over `'status'`:
-   `status?: ("success" | "error")`.
-6. Notice that `'data'` and `'error'` are completely lost!
-7. *Note:* To preserve unions, one must distribute first: `type DistributiveOptional<T> = T extends any ? MakeOptional<T> : never;`.
-
----
-
-### Puzzle 9: As-Clause Template Literal Capitalization
-
-```typescript
-type Getters<T> = {
-  [K in keyof T as K extends string ? `get${Capitalize<K>}` : never]: () => T[K];
-};
-
-interface Dimensions {
-  width: number;
-  height: number;
-  [extra: number]: string;
-}
-
-type Result9 = Getters<Dimensions>;
-```
-
-**Step-by-Step Evaluation Trace:**
-1. `keyof Dimensions` is `string | number` (specifically `"width" | "height" | number`).
-2. TS evaluates `K`:
-   - `K = "width"`: `K extends string` is true -> `Capitalize<"width">` is `"Width"` -> `get${"Width"}` is `"getWidth"`. Type: `() => number`.
-   - `K = "height"`: `Capitalize<"height">` is `"Height"` -> `"getHeight"`. Type: `() => number`.
-   - `K = number`: `number extends string` is false -> maps to `never`! The numeric index signature is filtered out.
-3. **Output Type:** `{ getWidth: () => number; getHeight: () => number; }`.
-
----
-
-### Puzzle 10: `Pick` vs `Omit` and Symbol Keys
-
-```typescript
-const secret = Symbol("secret");
-
-interface SecuredConfig {
-  [secret]: string;
-  host: string;
-  port: number;
-}
-
-type Picked = Pick<SecuredConfig, typeof secret | "host">;
-type Omitted = Omit<SecuredConfig, "port">;
-```
-
-**Step-by-Step Evaluation Trace:**
-1. `Pick<T, K>` is implemented as `{ [P in K]: T[P] }`.
-   - `K` = `typeof secret | "host"`.
-   - Mapped types support symbol keys since TS 2.7.
-   - `Picked` = `{ [secret]: string; host: string; }`.
-2. `Omit<T, K>` is implemented as `Pick<T, Exclude<keyof T, K>>`.
-   - `keyof SecuredConfig` is `typeof secret | "host" | "port"`.
-   - `Exclude<..., "port">` = `typeof secret | "host"`.
-   - `Omitted` = `{ [secret]: string; host: string; }`.
-3. Both properly retain symbol keys.
-
----
-
-### Puzzle 11: Nested Path Traversal Extraction
-
-```typescript
-type PathValue<T, P extends string> =
-  P extends `${infer Key}.${infer Rest}`
-    ? Key extends keyof T
-      ? PathValue<T[Key], Rest>
-      : never
-    : P extends keyof T
-    ? T[P]
-    : never;
-
-interface DatabaseSchema {
-  server: {
-    connection: {
-      poolSize: number;
-      host: string;
-    };
-  };
-}
-
-type R11_A = PathValue<DatabaseSchema, "server.connection.poolSize">;
-type R11_B = PathValue<DatabaseSchema, "server.invalid.poolSize">;
-```
-
-**Step-by-Step Evaluation Trace:**
-1. For `R11_A`:
-   - Step 1: `server.connection.poolSize` matches `Key = "server"`, `Rest = "connection.poolSize"`. `server` is key of `DatabaseSchema`. Next: `PathValue<DatabaseSchema["server"], "connection.poolSize">`.
-   - Step 2: `connection.poolSize` matches `Key = "connection"`, `Rest = "poolSize"`. `connection` is key of `server`. Next: `PathValue<DatabaseSchema["server"]["connection"], "poolSize">`.
-   - Step 3: `"poolSize"` has no `.`, falls through to `P extends keyof T` -> returns `number`.
-2. For `R11_B`:
-   - Step 1: `server` matches.
-   - Step 2: `invalid` is NOT a key of `DatabaseSchema["server"]` -> returns `never`.
-3. **Output Types:** `R11_A = number`, `R11_B = never`.
-
----
-
-### Puzzle 12: `Record<string, unknown>` vs `{ [k: string]: unknown }` vs Homomorphic Mapping
-
-```typescript
-type Input = {
-  a?: string;
-  readonly b: number;
-};
-
-type WrapRecord<T> = Record<keyof T, string>;
-type WrapHomomorphic<T> = { [K in keyof T]: string };
-
-type TestRecord = WrapRecord<Input>;
-type TestHomomorphic = WrapHomomorphic<Input>;
-```
-
-**Step-by-Step Evaluation Trace:**
-1. `WrapRecord<T>` expands to `{ [P in keyof T]: string }`.
-2. Wait! Why does `Record` not preserve modifiers?
-   - In TS, `Record<K, T>` is defined as `type Record<K extends keyof any, T> = { [P in K]: T; }`.
-   - Because `K` is an arbitrary type parameter (`keyof any`), it is considered a **non-homomorphic** mapped type!
-   - Therefore, modifiers (`readonly`, `?`) from `Input` are **discarded**!
-3. In `WrapHomomorphic<T>`, `[K in keyof T]` directly references `keyof T` where `T` is the target type parameter.
-   - It is homomorphic, meaning it **copies** the `readonly` and `?` modifiers from `Input`.
-4. **Output Types:**
-   - `TestRecord` = `{ a: string; b: string; }` (Both required, both mutable).
-   - `TestHomomorphic` = `{ a?: string; readonly b: string; }` (Optional and readonly flags preserved).
-
----
-
-### Puzzle 13: Optionality vs Undefined in Key Extraction
-
-```typescript
-interface Sample {
-  a?: string;
-  b: string | undefined;
-}
-
-type RequiredKeys<T> = {
-  [K in keyof T]-?: {} extends Pick<T, K> ? never : K;
-}[keyof T];
-
-type Result13 = RequiredKeys<Sample>;
-```
-
-**Step-by-Step Evaluation Trace:**
-1. For property `a?: string`:
-   - `Pick<Sample, 'a'>` is `{ a?: string }`.
-   - Is `{}` assignable to `{ a?: string }`? Yes! Because `a` is optional, an empty object `{}` satisfies `{ a?: string }`.
-   - `{} extends Pick<Sample, 'a'>` is true -> resolves to `never`.
-2. For property `b: string | undefined`:
-   - `Pick<Sample, 'b'>` is `{ b: string | undefined }`.
-   - Is `{}` assignable to `{ b: string | undefined }`? No! Property `b` is required, even though its value may be `undefined`.
-   - `{} extends Pick<Sample, 'b'>` is false -> resolves to `'b'`.
-3. Union across all keys: `never | 'b' = 'b'`.
-4. **Output Type:** `'b'`.
-
----
-
-### Puzzle 14: Mutable Deep Partial on Readonly Arrays
-
-```typescript
-type DeepPartial<T> = T extends Function
-  ? T
-  : T extends Array<infer U>
-  ? _DeepPartialArray<U>
-  : T extends object
-  ? { [K in keyof T]?: DeepPartial<T[K]> }
-  : T;
-
-interface _DeepPartialArray<U> extends Array<DeepPartial<U>> {}
-
-interface State {
-  readonly items: readonly string[];
-}
-
-type Result14 = DeepPartial<State>;
-```
-
-**Step-by-Step Evaluation Trace:**
-1. `State` is an object. Its key `items` is evaluated.
-2. `items` has type `readonly string[]` (`ReadonlyArray<string>`).
-3. Does `ReadonlyArray<string>` extend `Array<infer U>`?
-   - In TypeScript, `Array<T>` is mutable (has `push`, `pop`, etc.), whereas `ReadonlyArray<T>` lacks mutating methods.
-   - Contravariance / structural check: A readonly array is NOT assignable to a mutable `Array`!
-   - `readonly string[] extends Array<infer U>` is FALSE!
-4. It falls through to `T extends object`!
-5. Mapping over `ReadonlyArray<string>` as an object maps all array prototype methods (`slice`, `concat`, etc.) as optional properties!
-6. **Lesson:** Always check `T extends readonly (infer U)[]` or `T extends ReadonlyArray<infer U>` to correctly intercept readonly arrays!
-
----
-
-### Puzzle 15: Exact/Strict Keys Mapped Filter
-
-```typescript
-type DisallowUnknownKeys<Actual, Expected> = {
-  [K in keyof Actual]: K extends keyof Expected ? Actual[K] : never;
-};
-
-type Validate<Actual, Expected> =
-  keyof Actual extends keyof Expected ? Actual : DisallowUnknownKeys<Actual, Expected>;
-
-interface ExpectedConfig {
-  port: number;
-  host: string;
-}
-
-function configure<T extends ExpectedConfig>(config: Validate<T, ExpectedConfig>): T {
-  return config as T;
-}
-
-// Case A: configure({ port: 8080, host: "localhost" });
-// Case B: configure({ port: 8080, host: "localhost", extra: 123 });
-```
-
-**Step-by-Step Evaluation Trace:**
-1. In Case A:
-   - `Actual` keys: `'port' | 'host'`.
-   - `'port' | 'host' extends keyof ExpectedConfig` is true.
-   - `Validate` resolves to `T`. Validates cleanly without error.
-2. In Case B:
-   - `Actual` keys: `'port' | 'host' | 'extra'`.
-   - `'port' | 'host' | 'extra' extends 'port' | 'host'` is false!
-   - `Validate` resolves to `DisallowUnknownKeys<T, ExpectedConfig>`.
-   - For `'extra'`: `'extra' extends 'port' | 'host'` is false -> maps to `never`.
-   - The argument must satisfy `{ port: number; host: string; extra: never }`.
-   - Passing `extra: 123` fails because `number` is not assignable to `never`!
-3. **Result:** Produces a compile-time excess property rejection even when type parameters are inferred!
-
-
----
-
-## 5. Four Complete Runnable Production Projects with Test Assertions
-
-Every project below is a fully functional, self-contained TypeScript engine demonstrating production metaprogramming patterns. All class properties are explicitly declared for strict Node.js compatibility (`--experimental-strip-types`).
-
----
-
-### Project 1: Enterprise Deep Immutable State & RFC 6902 JSON Patch Engine
-
-#### Architectural Overview
-```
-+-------------------------------------------------------------------------+
-|                  Deep Immutable State & Patch Engine                   |
-+-------------------------------------------------------------------------+
-|  [Source State: T]                                                      |
-|         │                                                               |
-|         ▼                                                               |
-|  [DeepImmutableProxy<T>] ──► Enforces DeepReadonly at compile time      |
-|         │                                                               |
-|         ▼                                                               |
-|  [JsonPatchEngine]                                                      |
-|    ├── generateDiff(prev, next): PatchOperation[]                       |
-|    └── applyPatches(target, patches): DeepReadonly<T>                   |
-|         │                                                               |
-|         ▼                                                               |
-|  [Type-Safe Path Accessor] ──► Mapped Path Traversal & Compile Validity |
-+-------------------------------------------------------------------------+
-```
-
-#### Complete Implementation & Verification Suite
-```typescript
-import assert from "node:assert";
-
-// Type Metaprogramming Definitions
-export type Primitive = string | number | boolean | bigint | symbol | null | undefined;
-
-export type DeepReadonly<T> = T extends Primitive | ((...args: any[]) => any)
-  ? T
-  : T extends ReadonlyArray<infer U>
-  ? ReadonlyArray<DeepReadonly<U>>
-  : T extends Map<infer K, infer V>
-  ? ReadonlyMap<DeepReadonly<K>, DeepReadonly<V>>
-  : T extends Set<infer M>
-  ? ReadonlySet<DeepReadonly<M>>
-  : { readonly [K in keyof T]: DeepReadonly<T[K]> };
-
-export type DeepPartial<T> = T extends Primitive | ((...args: any[]) => any)
-  ? T
-  : T extends ReadonlyArray<infer U>
-  ? ReadonlyArray<DeepPartial<U>>
-  : { [K in keyof T]?: DeepPartial<T[K]> };
-
-export type JsonPatchOp = "add" | "remove" | "replace";
-
-export interface PatchOperation {
-  op: JsonPatchOp;
-  path: string;
-  value?: any;
-}
-
-export class StatePatchEngine<T extends Record<string, any>> {
-  private currentState: DeepReadonly<T>;
-
-  constructor(initialState: T) {
-    this.currentState = this.deepFreeze(this.cloneDeep(initialState)) as DeepReadonly<T>;
-  }
-
-  public getState(): DeepReadonly<T> {
-    return this.currentState;
-  }
-
-  public update(updater: (draft: T) => void): PatchOperation[] {
-    const mutableClone = this.cloneDeep(this.currentState as T);
-    updater(mutableClone);
-    const patches = this.computeDiff(this.currentState, mutableClone, "");
-    this.currentState = this.deepFreeze(mutableClone) as DeepReadonly<T>;
-    return patches;
-  }
-
-  public applyPatch(patches: PatchOperation[]): void {
-    const target = this.cloneDeep(this.currentState as T);
-    for (const patch of patches) {
-      const segments = patch.path.split("/").filter((s) => s.length > 0);
-      let curr: any = target;
-      for (let i = 0; i < segments.length - 1; i++) {
-        curr = curr[segments[i]];
-      }
-      const finalKey = segments[segments.length - 1];
-
-      if (patch.op === "replace" || patch.op === "add") {
-        curr[finalKey] = patch.value;
-      } else if (patch.op === "remove") {
-        if (Array.isArray(curr)) {
-          curr.splice(Number(finalKey), 1);
-        } else {
-          delete curr[finalKey];
-        }
-      }
-    }
-    this.currentState = this.deepFreeze(target) as DeepReadonly<T>;
-  }
-
-  private computeDiff(prev: any, next: any, currentPath: string): PatchOperation[] {
-    const patches: PatchOperation[] = [];
-
-    if (prev === next) return patches;
-
-    if (
-      typeof prev !== "object" ||
-      prev === null ||
-      typeof next !== "object" ||
-      next === null
-    ) {
-      patches.push({ op: "replace", path: currentPath, value: next });
-      return patches;
-    }
-
-    const prevKeys = new Set(Object.keys(prev));
-    const nextKeys = new Set(Object.keys(next));
-
-    // Find removed keys
-    for (const key of prevKeys) {
-      if (!nextKeys.has(key)) {
-        patches.push({ op: "remove", path: `${currentPath}/${key}` });
-      }
-    }
-
-    // Find added or modified keys
-    for (const key of nextKeys) {
-      const childPath = `${currentPath}/${key}`;
-      if (!prevKeys.has(key)) {
-        patches.push({ op: "add", path: childPath, value: next[key] });
-      } else {
-        const subPatches = this.computeDiff(prev[key], next[key], childPath);
-        patches.push(...subPatches);
-      }
-    }
-
-    return patches;
-  }
-
-  private deepFreeze<U>(obj: U): U {
-    if (obj === null || typeof obj !== "object") return obj;
-    Object.freeze(obj);
-    for (const key of Object.getOwnPropertyNames(obj)) {
-      const val = (obj as any)[key];
-      if (val !== null && typeof val === "object" && !Object.isFrozen(val)) {
-        this.deepFreeze(val);
-      }
-    }
-    return obj;
-  }
-
-  private cloneDeep<U>(obj: U): U {
-    return structuredClone(obj);
-  }
-}
-
-// Verification Assertions
-interface ApplicationState {
-  version: number;
-  user: {
-    id: string;
-    profile: {
-      displayName: string;
-      roles: string[];
-    };
-  };
-  settings: {
-    theme: "light" | "dark";
-    notifications: boolean;
-  };
-}
-
-const initialState: ApplicationState = {
-  version: 1,
-  user: {
-    id: "usr_99",
-    profile: {
-      displayName: "Alice",
-      roles: ["admin", "engineer"],
-    },
-  },
-  settings: {
-    theme: "dark",
-    notifications: true,
-  },
-};
-
-const store = new StatePatchEngine<ApplicationState>(initialState);
-
-// Verify immutability at runtime
-const state1 = store.getState();
-assert.strictEqual(state1.user.profile.displayName, "Alice");
-assert.throws(() => {
-  (state1.user.profile as any).displayName = "Bob";
-}, /TypeError: Cannot assign to read only property/);
-
-// Update via mutation draft and capture patches
-const patches = store.update((draft) => {
-  draft.version = 2;
-  draft.user.profile.displayName = "Alice Smith";
-  draft.settings.theme = "light";
-});
-
-assert.strictEqual(patches.length, 3);
-assert.deepStrictEqual(patches, [
-  { op: "replace", path: "/version", value: 2 },
-  { op: "replace", path: "/user/profile/displayName", value: "Alice Smith" },
-  { op: "replace", path: "/settings/theme", value: "light" },
-]);
-
-const state2 = store.getState();
-assert.strictEqual(state2.version, 2);
-assert.strictEqual(state2.user.profile.displayName, "Alice Smith");
-assert.strictEqual(state2.settings.theme, "light");
-
-// Rollback via applyPatch
-store.applyPatch([
-  { op: "replace", path: "/version", value: 1 },
-  { op: "replace", path: "/user/profile/displayName", value: "Alice" },
-]);
-assert.strictEqual(store.getState().version, 1);
-assert.strictEqual(store.getState().user.profile.displayName, "Alice");
-
-console.log("Project 1 (Deep State & Patch Engine) passed all assertions.");
-```
-
----
-
-### Project 2: Type-Safe ORM Query Builder & Data Projection Mapper
-
-#### Architectural Overview
-```
-+-------------------------------------------------------------------------+
-|                  Type-Safe Data Mapper & Projection Query               |
-+-------------------------------------------------------------------------+
-|  Entity Schema: T                                                       |
-|         │                                                               |
-|  [QueryBuilder<T, SelectedKeys>]                                        |
-|    ├── select(...keys: K[]): QueryBuilder<T, K>                          |
-|    ├── where<K extends keyof T>(key: K, op: Operator, val: T[K])        |
-|    ├── orderBy(key: keyof T, dir: 'ASC' | 'DESC')                       |
-|    └── execute(dataSource: T[]): Pick<T, SelectedKeys>[]                |
-+-------------------------------------------------------------------------+
-```
-
-#### Complete Implementation & Verification Suite
-```typescript
-import assert from "node:assert";
-
-export type ComparisonOperator = "eq" | "neq" | "gt" | "lt" | "contains";
-
-export interface WhereClause<T> {
-  key: keyof T;
-  op: ComparisonOperator;
-  value: any;
-}
-
-export type OrderDirection = "ASC" | "DESC";
-
-export interface OrderClause<T> {
-  key: keyof T;
-  direction: OrderDirection;
-}
-
-// Metaprogramming Projections
-export type ModelProjection<T, K extends keyof T> = {
-  [P in K]: T[P];
-};
-
-export class TypeSafeQueryBuilder<T extends Record<string, any>, SelectedKeys extends keyof T = keyof T> {
-  private selectedKeys: (keyof T)[];
-  private whereClauses: WhereClause<T>[];
-  private orderClauses: OrderClause<T>[];
-
-  constructor(selectedKeys?: (keyof T)[]) {
-    this.selectedKeys = selectedKeys ?? [];
-    this.whereClauses = [];
-    this.orderClauses = [];
-  }
-
-  public select<K extends keyof T>(...keys: K[]): TypeSafeQueryBuilder<T, K> {
-    const builder = new TypeSafeQueryBuilder<T, K>(keys);
-    builder.whereClauses = [...this.whereClauses];
-    builder.orderClauses = [...this.orderClauses];
-    return builder;
-  }
-
-  public where<K extends keyof T>(
-    key: K,
-    op: ComparisonOperator,
-    value: T[K]
-  ): this {
-    this.whereClauses.push({ key, op, value });
-    return this;
-  }
-
-  public orderBy(key: keyof T, direction: OrderDirection = "ASC"): this {
-    this.orderClauses.push({ key, direction });
-    return this;
-  }
-
-  public execute(dataset: T[]): ModelProjection<T, SelectedKeys>[] {
-    let result = [...dataset];
-
-    // Filter
-    for (const clause of this.whereClauses) {
-      result = result.filter((row) => {
-        const fieldVal = row[clause.key];
-        switch (clause.op) {
-          case "eq":
-            return fieldVal === clause.value;
-          case "neq":
-            return fieldVal !== clause.value;
-          case "gt":
-            return fieldVal > clause.value;
-          case "lt":
-            return fieldVal < clause.value;
-          case "contains":
-            return typeof fieldVal === "string" && fieldVal.includes(clause.value);
-          default:
-            return true;
-        }
-      });
-    }
-
-    // Sort
-    for (const order of this.orderClauses) {
-      result.sort((a, b) => {
-        const valA = a[order.key];
-        const valB = b[order.key];
-        if (valA < valB) return order.direction === "ASC" ? -1 : 1;
-        if (valA > valB) return order.direction === "ASC" ? 1 : -1;
-        return 0;
-      });
-    }
-
-    // Project keys
-    if (this.selectedKeys.length === 0) {
-      return result as ModelProjection<T, SelectedKeys>[];
-    }
-
-    return result.map((row) => {
-      const projection: any = {};
-      for (const key of this.selectedKeys) {
-        projection[key] = row[key];
-      }
-      return projection as ModelProjection<T, SelectedKeys>;
-    });
-  }
-}
-
-// Verification Assertions
-interface ProductEntity {
-  id: number;
-  sku: string;
-  name: string;
-  price: number;
-  inStock: boolean;
-  category: "hardware" | "software" | "cloud";
-}
-
-const mockProducts: ProductEntity[] = [
-  { id: 1, sku: "HW-001", name: "Mechanical Keyboard", price: 150, inStock: true, category: "hardware" },
-  { id: 2, sku: "SW-101", name: "IDE Professional", price: 200, inStock: true, category: "software" },
-  { id: 3, sku: "HW-002", name: "4K Monitor", price: 600, inStock: false, category: "hardware" },
-  { id: 4, sku: "CL-500", name: "Compute Node", price: 80, inStock: true, category: "cloud" },
-];
-
-const query = new TypeSafeQueryBuilder<ProductEntity>()
-  .select("id", "name", "price")
-  .where("inStock", "eq", true)
-  .where("price", "gt", 100)
-  .orderBy("price", "DESC");
-
-const results = query.execute(mockProducts);
-
-assert.strictEqual(results.length, 2);
-assert.deepStrictEqual(results[0], { id: 2, name: "IDE Professional", price: 200 });
-assert.deepStrictEqual(results[1], { id: 1, name: "Mechanical Keyboard", price: 150 });
-
-// Verify that non-selected properties are absent from projected output
-assert.strictEqual((results[0] as any).sku, undefined);
-assert.strictEqual((results[0] as any).inStock, undefined);
-
-console.log("Project 2 (Type-Safe ORM Query Builder) passed all assertions.");
-```
-
----
-
-### Project 3: Dynamic Form Controller & Schema Validation Pipeline
-
-#### Architectural Overview
-```
-+-------------------------------------------------------------------------+
-|                  Type-Safe Dynamic Form Controller                      |
-+-------------------------------------------------------------------------+
-|  Model Schema: T                                                        |
-|         │                                                               |
-|  [FormState<T>]                                                         |
-|    ├── values: T                                                        |
-|    ├── errors: { [K in keyof T]?: string[] }                            |
-|    ├── touched: { [K in keyof T]?: boolean }                            |
-|    └── dirty: { [K in keyof T]?: boolean }                              |
-|         │                                                               |
-|  [ValidationRules<T>]                                                   |
-|    └── { [K in keyof T]?: ValidatorFn<T[K]>[] }                         |
-|         │                                                               |
-|  [FormController<T>] ──► setFieldValue(), validateField(), submit()    |
-+-------------------------------------------------------------------------+
-```
-
-#### Complete Implementation & Verification Suite
-```typescript
-import assert from "node:assert";
-
-export type FormErrors<T> = {
-  [K in keyof T]?: string[];
-};
-
-export type FormTouched<T> = {
-  [K in keyof T]?: boolean;
-};
-
-export type FormDirty<T> = {
-  [K in keyof T]?: boolean;
-};
-
-export type FieldValidator<V> = (val: V) => string | null;
-
-export type FormValidationSchema<T> = {
-  [K in keyof T]?: FieldValidator<T[K]>[];
-};
-
-export class FormController<T extends Record<string, any>> {
-  private initialValues: T;
-  private currentValues: T;
-  private errors: FormErrors<T>;
-  private touched: FormTouched<T>;
-  private dirty: FormDirty<T>;
-  private validators: FormValidationSchema<T>;
-
-  constructor(initialValues: T, validators?: FormValidationSchema<T>) {
-    this.initialValues = { ...initialValues };
-    this.currentValues = { ...initialValues };
-    this.errors = {};
-    this.touched = {};
-    this.dirty = {};
-    this.validators = validators ?? {};
-  }
-
-  public getValues(): Readonly<T> {
-    return this.currentValues;
-  }
-
-  public getErrors(): FormErrors<T> {
-    return this.errors;
-  }
-
-  public isFieldTouched<K extends keyof T>(field: K): boolean {
-    return !!this.touched[field];
-  }
-
-  public isFieldDirty<K extends keyof T>(field: K): boolean {
-    return !!this.dirty[field];
-  }
-
-  public setFieldValue<K extends keyof T>(field: K, value: T[K]): void {
-    this.currentValues[field] = value;
-    this.touched[field] = true;
-    this.dirty[field] = this.currentValues[field] !== this.initialValues[field];
-    this.validateField(field);
-  }
-
-  public validateField<K extends keyof T>(field: K): boolean {
-    const rules = this.validators[field];
-    if (!rules || rules.length === 0) {
-      delete this.errors[field];
-      return true;
-    }
-
-    const fieldErrors: string[] = [];
-    const val = this.currentValues[field];
-    for (const rule of rules) {
-      const err = rule(val);
-      if (err) fieldErrors.push(err);
-    }
-
-    if (fieldErrors.length > 0) {
-      this.errors[field] = fieldErrors;
-      return false;
-    } else {
-      delete this.errors[field];
-      return true;
-    }
-  }
-
-  public validateAll(): boolean {
-    let isValid = true;
-    for (const key of Object.keys(this.currentValues) as (keyof T)[]) {
-      const fieldValid = this.validateField(key);
-      if (!fieldValid) isValid = false;
-    }
-    return isValid;
-  }
-
-  public reset(): void {
-    this.currentValues = { ...this.initialValues };
-    this.errors = {};
-    this.touched = {};
-    this.dirty = {};
-  }
-}
-
-// Verification Assertions
-interface SignupFormData {
-  username: string;
-  email: string;
-  age: number;
-}
-
-const form = new FormController<SignupFormData>(
-  { username: "", email: "", age: 18 },
-  {
-    username: [
-      (v) => (v.length < 3 ? "Username must be at least 3 chars" : null),
-      (v) => (/\s/.test(v) ? "Username cannot contain spaces" : null),
-    ],
-    email: [
-      (v) => (!v.includes("@") ? "Must be a valid email" : null),
-    ],
-    age: [
-      (v) => (v < 18 ? "Must be at least 18 years old" : null),
-    ],
-  }
-);
-
-assert.strictEqual(form.isFieldTouched("username"), false);
-assert.strictEqual(form.isFieldDirty("username"), false);
-
-// Mutate username with invalid value
-form.setFieldValue("username", "al");
-assert.strictEqual(form.isFieldTouched("username"), true);
-assert.strictEqual(form.isFieldDirty("username"), true);
-assert.deepStrictEqual(form.getErrors().username, ["Username must be at least 3 chars"]);
-
-// Provide valid username
-form.setFieldValue("username", "alice");
-assert.strictEqual(form.getErrors().username, undefined);
-
-// Validate all fields
-const isValid = form.validateAll();
-assert.strictEqual(isValid, false);
-assert.deepStrictEqual(form.getErrors().email, ["Must be a valid email"]);
-
-// Fill remaining valid fields
-form.setFieldValue("email", "alice@example.com");
-assert.strictEqual(form.validateAll(), true);
-assert.strictEqual(Object.keys(form.getErrors()).length, 0);
-
-console.log("Project 3 (Dynamic Form Controller) passed all assertions.");
-```
-
----
-
-### Project 4: Enterprise CQRS Event Bus & Remapped Handler Hub
-
-#### Architectural Overview
-```
-+-------------------------------------------------------------------------+
-|                  Enterprise CQRS Event Bus & Handler Hub                |
-+-------------------------------------------------------------------------+
-|  Domain Events Map: EventType -> Payload                                 |
-|         │                                                               |
-|  [Key Remapping Metaprogramming]                                        |
-|    └── { [K in keyof Events as `on${Capitalize<K>}`]: HandlerFn<Events[K]> }
-|         │                                                               |
-|  [TypedEventHub<Events>]                                                |
-|    ├── emit<K extends keyof Events>(event: K, payload: Events[K])       |
-|    ├── subscribe<K extends keyof Events>(event: K, handler)             |
-|    └── registerAggregate(handlerObject: RemappedHandlerHub<Events>)    |
-+-------------------------------------------------------------------------+
-```
-
-#### Complete Implementation & Verification Suite
-```typescript
-import assert from "node:assert";
-
-export type DomainEvents = Record<string, any>;
-
-export type EventHandler<Payload> = (payload: Payload) => void | Promise<void>;
-
-// Remapped Event Handler Signature
-export type RemappedHandlerHub<Events extends DomainEvents> = {
-  [K in keyof Events as K extends string ? `on${Capitalize<K>}` : never]?: EventHandler<Events[K]>;
-};
-
-export class TypedEventHub<Events extends DomainEvents> {
-  private listeners: {
-    [K in keyof Events]?: EventHandler<Events[K]>[];
-  };
-  private executionLog: { event: keyof Events; payload: any; timestamp: number }[];
-
-  constructor() {
-    this.listeners = {};
-    this.executionLog = [];
-  }
-
-  public subscribe<K extends keyof Events>(
-    event: K,
-    handler: EventHandler<Events[K]>
-  ): () => void {
-    if (!this.listeners[event]) {
-      this.listeners[event] = [];
-    }
-    this.listeners[event]!.push(handler);
-
-    // Unsubscribe closure
-    return () => {
-      this.listeners[event] = this.listeners[event]!.filter((h) => h !== handler);
-    };
-  }
-
-  public emit<K extends keyof Events>(event: K, payload: Events[K]): void {
-    this.executionLog.push({ event, payload, timestamp: Date.now() });
-    const handlers = this.listeners[event];
-    if (handlers) {
-      for (const fn of handlers) {
-        fn(payload);
-      }
-    }
-  }
-
-  public registerAggregate(aggregate: RemappedHandlerHub<Events>): () => void {
-    const unsubs: (() => void)[] = [];
-    const proto = Object.getPrototypeOf(aggregate);
-    const propertyNames = new Set([
-      ...Object.keys(aggregate),
-      ...(proto ? Object.getOwnPropertyNames(proto) : []),
-    ]);
-
-    for (const key of propertyNames) {
-      if (key.startsWith("on") && key.length > 2) {
-        const rawEventName = key.slice(2);
-        const eventName = (rawEventName.charAt(0).toLowerCase() + rawEventName.slice(1)) as keyof Events;
-        const handler = (aggregate as any)[key];
-        if (typeof handler === "function") {
-          const unsub = this.subscribe(eventName, handler.bind(aggregate));
-          unsubs.push(unsub);
-        }
-      }
-    }
-
-    return () => {
-      for (const unsub of unsubs) unsub();
-    };
-  }
-
-  public getAuditLog(): ReadonlyArray<{ event: keyof Events; payload: any }> {
-    return this.executionLog;
-  }
-}
-
-// Verification Assertions
-interface CommerceEvents {
-  orderPlaced: { orderId: string; amount: number; customerId: string };
-  paymentSettled: { orderId: string; transactionHash: string };
-  orderShipped: { orderId: string; trackingNumber: string };
-}
-
-const bus = new TypedEventHub<CommerceEvents>();
-
-let notificationSent = false;
-let paymentProcessed = false;
-
-// Direct subscriber test
-const unsubOrderPlaced = bus.subscribe("orderPlaced", (payload) => {
-  assert.strictEqual(payload.orderId, "ORD-777");
-  notificationSent = true;
-});
-
-// Aggregate handler implementation adhering to RemappedHandlerHub<CommerceEvents>
-class AccountingAggregate implements RemappedHandlerHub<CommerceEvents> {
-  public settledOrders: string[];
-
-  constructor() {
-    this.settledOrders = [];
-  }
-
-  public onPaymentSettled(payload: { orderId: string; transactionHash: string }): void {
-    this.settledOrders.push(payload.orderId);
-    paymentProcessed = true;
-  }
-}
-
-const accounting = new AccountingAggregate();
-const detachAggregate = bus.registerAggregate(accounting);
-
-// Emit events
-bus.emit("orderPlaced", { orderId: "ORD-777", amount: 249.99, customerId: "CUST-10" });
-bus.emit("paymentSettled", { orderId: "ORD-777", transactionHash: "0xabc123" });
-
-assert.strictEqual(notificationSent, true);
-assert.strictEqual(paymentProcessed, true);
-assert.deepStrictEqual(accounting.settledOrders, ["ORD-777"]);
-
-// Test unsubscription
-unsubOrderPlaced();
-notificationSent = false;
-bus.emit("orderPlaced", { orderId: "ORD-888", amount: 15.0, customerId: "CUST-11" });
-assert.strictEqual(notificationSent, false); // Handler removed
-
-assert.strictEqual(bus.getAuditLog().length, 3);
-
-console.log("Project 4 (CQRS Event Bus & Remapped Hub) passed all assertions.");
-```
-
-
----
-
-## 6. Enterprise Best Practices: 20 DOs and DON'Ts
-
-| # | Rule | Bad Practice (DON'T) | Best Practice (DO) | Architectural Impact |
-|---|------|----------------------|--------------------|----------------------|
-| 1 | **Homomorphic Preservation** | `type MapObj<T> = { [K in keyof T as K]: T[K] }` | `type MapObj<T> = { [K in keyof T]: T[K] }` | Adding redundant `as K` breaks homomorphic array and tuple preservation. |
-| 2 | **Record vs Mapped Object** | `type MyProps<T> = Record<keyof T, string>` | `type MyProps<T> = { [K in keyof T]: string }` | `Record` drops `readonly` and optional `?` modifiers; homomorphic mapped types preserve them. |
-| 3 | **Filter Keys with `never`** | `[K in keyof T]: T[K] extends Fn ? T[K] : undefined` | `[K in keyof T as T[K] extends Fn ? K : never]: T[K]` | Mapping values to `undefined` leaves dangling empty keys. Mapping keys to `never` in `as` prunes them completely. |
-| 4 | **Modifier Stripping** | `type Mutable<T> = { [K in keyof T]: T[K] }` | `type Mutable<T> = { -readonly [K in keyof T]: T[K] }` | Omitting modifier prefixes keeps incoming `readonly` intact. Explicit `-readonly` strips it. |
-| 5 | **Union Distribution** | `{ [K in keyof (A \| B)]: ... }` | `T extends any ? { [K in keyof T]: ... } : never` | `keyof (A \| B)` yields only common keys. Distributing over `T` maps every union branch independently. |
-| 6 | **Recursive Depth Safety** | Recursively mapping arbitrary `T` without depth guard or primitive check | Intercept `T extends Primitive \| Function` before recurring into object properties | Prevents infinite recursion, compiler slowdowns, and mangling Date, RegExp, or Map instances. |
-| 7 | **Readonly Array Handling** | `T extends Array<infer U>` in `DeepPartial` | `T extends readonly (infer U)[]` | `ReadonlyArray` does not extend mutable `Array`, causing deep mappers to fall through to object mapping. |
-| 8 | **Index Signatures Pruning** | Assuming `keyof T` returns only literal keys | Use `string extends K ? never : K` in `as` clause | Eliminates broad `[x: string]: any` index signatures to isolate known explicit properties. |
-| 9 | **Call Signatures Preservation** | Relying on mapped types for function/callable interfaces | Intercept call signatures with conditional types before mapping object properties | Mapped types drop call and construct signatures completely. |
-| 10 | **Template Literal Keys** | Hardcoding uppercase transforms manually | Use built-in `Capitalize<K>`, `Uncapitalize<K>`, `Uppercase<K>`, `Lowercase<K>` | Leverages compiler-native intrinsics with optimal compilation caching. |
-| 11 | **Exact Optional Checking** | `T[K] extends undefined` | `{} extends Pick<T, K>` | Distinguishes optional properties (`prop?: string`) from required properties with undefined values (`prop: string \| undefined`). |
-| 12 | **Avoid `any` in Value Mappings** | `[K in keyof T]: any` | `[K in keyof T]: unknown` or strongly typed projection | Prevents type safety holes and cascading `any` contagion across downstream consumers. |
-| 13 | **Avoid Circular Type Bomb** | Self-referencing recursive mapped types without lazy evaluation | Guard recursion using tuple counters or known termination criteria | Prevents TS2589: Type instantiation is excessively deep and possibly infinite. |
-| 14 | **Symbol Keys Retention** | Assuming keys are only `string \| number` | Support `string \| number \| symbol` when defining custom dictionary constraints | Modern ECMAScript relies heavily on Symbol keys (e.g. `Symbol.iterator`, `Symbol.dispose`). |
-| 15 | **Explicit Prototype Traversal** | Using `Object.keys()` on class instances to bind remapped methods | Inspect both instance keys and `Object.getPrototypeOf(instance)` | Class methods reside on the prototype; `Object.keys()` will miss them entirely. |
-| 16 | **No Parameter Properties** | `constructor(public id: string)` in multi-runtime targets | Declare properties explicitly: `public id: string; constructor(id: string) { this.id = id; }` | Ensures zero-transpile compatibility with Node.js `--experimental-strip-types` and modern bundlers. |
-| 17 | **Immutable By Default** | Returning raw mutable references from state stores | Wrap outputs in `DeepReadonly<T>` and freeze with `Object.freeze()` | Prevents accidental external mutations from corrupting internal architectural state. |
-| 18 | **Avoid Overloaded Mapped Types** | Mapping multiple unrelated mutations in a single opaque mapped type | Compose single-purpose utility types (`DeepReadonly<DeepPartial<T>>`) | Enhances readability, reusability, and compiler diagnostic reporting. |
-| 19 | **Key Collision Awareness** | Remapping disparate keys to identical literal strings without intersection handling | Ensure remapping expressions preserve unique identity or intentionally handle intersected types | Prevents unexpected `{ prop: never }` collisions. |
-| 20 | **Export Intermediate Types** | Inlining massive mapped type expressions into public function signatures | Create named aliases for complex mapped types | Dramatically improves IDE autocomplete, hover tooltips, and `.d.ts` declaration generation. |
-
----
-
-## 7. Real-World Case Study: Enterprise Schema Synthesis & Bidirectional DTO Mapper
-
-### Problem Context
-Modern enterprise platforms often struggle with the divergence between Database Entities (Prisma, TypeORM), GraphQL/REST API DTOs, and Client-Side Form State. Writing separate interfaces for `UserEntity`, `UpdateUserInput`, `UserDto`, and `UserFormState` results in massive code duplication, subtle schema drift, and brittle runtime mapping layers.
-
-### Architectural Solution
-Using TypeScript Mapped Types and Key Remapping, we synthesize:
-1. **Creation Input DTO**: Auto-generates from Entity by stripping auto-generated columns (`id`, `createdAt`, `updatedAt`) and making nullable columns optional.
-2. **Partial Update DTO**: Auto-generates deep patch schemas.
-3. **Form Controller State**: Remaps properties into typed validation observables (`values`, `errors`, `touched`, `validators`).
-4. **Bidirectional Transform Engine**: Maps database snake_case or raw columns to API camelCase properties with 100% compile-time verification.
-
-```typescript
-// Core Entity Definition
-export interface BaseEntity {
+interface PostEntity {
   id: string;
-  createdAt: Date;
-  updatedAt: Date;
+  title: string;
+  content: string;
+  publishedAt: Date | null;
+  tags: string[];
 }
 
-export interface UserEntity extends BaseEntity {
-  first_name: string;
-  last_name: string;
-  email_address: string;
-  phone_number: string | null;
-  is_active: boolean;
-  role: "admin" | "member" | "viewer";
-}
-
-// 1. Synthesize Creation DTO (Strip BaseEntity keys, convert snake_case to camelCase)
-type SnakeToCamel<S extends string> = S extends `${infer P1}_${infer P2}${infer Rest}`
-  ? `${Lowercase<P1>}${Uppercase<P2>}${SnakeToCamel<Rest>}`
-  : Lowercase<S>;
-
-export type CreateDto<T extends BaseEntity> = {
-  [K in keyof Omit<T, keyof BaseEntity> as SnakeToCamel<K & string>]: T[K];
+// 2. Conditionally transform Date to string:
+type JsonPost = {
+  [K in keyof PostEntity]: PostEntity[K] extends Date | null
+    ? string | null
+    : PostEntity[K];
 };
 
-// 2. Synthesize Patch DTO (Deep Partial + Remapped Keys)
-export type UpdateDto<T extends BaseEntity> = Partial<CreateDto<T>>;
-
-// 3. Synthesize Form Validation Schema
-export type FormValidationSchema<T> = {
-  [K in keyof T]?: (val: T[K]) => string | null;
+// 3. DeepReadonly implementation:
+type DeepReadonly<T> = {
+  readonly [K in keyof T]: T[K] extends Function
+    ? T[K]
+    : T[K] extends readonly (infer E)[]
+    ? readonly DeepReadonly<E>[]
+    : T[K] extends object
+    ? DeepReadonly<T[K]>
+    : T[K];
 };
 
-// Implementation: DTO Mapper
-export class DtoMapper {
-  public static toCreateDto<T extends BaseEntity>(entity: T): CreateDto<T> {
-    const ignored: Set<string> = new Set(["id", "createdAt", "updatedAt"]);
-    const dto: any = {};
+// 4. Extract only string fields:
+type OnlyStringFields = {
+  [K in keyof PostEntity as PostEntity[K] extends string ? K : never]: PostEntity[K];
+};
+// Inferred as: { id: string; title: string; content: string }
 
-    for (const [key, value] of Object.entries(entity)) {
-      if (!ignored.has(key)) {
-        const camelKey = key.replace(/_([a-z])/g, (_, g) => g.toUpperCase());
-        dto[camelKey] = value;
-      }
-    }
+// 5. Freeze JsonPost:
+type FrozenPost = DeepReadonly<JsonPost>;
 
-    return dto as CreateDto<T>;
-  }
-}
+const post: FrozenPost = {
+  id: "post_101",
+  title: "TypeScript Mapped Types",
+  content: "Deep dive into modifiers and remapping.",
+  publishedAt: "2026-10-02T12:00:00Z",
+  tags: ["typescript", "programming"],
+};
 ```
-
----
-
-## 8. Practice Drills (75 Drills across 5 Progression Tiers)
-
-### Tier 1: Syntax & Built-in Utilities (Drills 1–15)
-1. Write a custom `MyPartial<T>` mapped type from scratch without using TypeScript's built-in `Partial`.
-2. Write a custom `MyRequired<T>` that enforces all properties using the `-?` modifier.
-3. Write a custom `MyReadonly<T>` that attaches `readonly` to all properties.
-4. Write an `Unreadonly<T>` (or `Mutable<T>`) that strips `readonly` using `-readonly`.
-5. Implement `MyRecord<K, T>` where `K extends keyof any`.
-6. Implement `MyPick<T, K>` using mapped type key constraint `[P in K]`.
-7. Implement `MyOmit<T, K>` by composing `MyPick` with `Exclude`.
-8. Write a mapped type that transforms all property values of an object `T` to `boolean`.
-9. Write a mapped type that transforms all property values of an object `T` to `Promise<T[K]>`.
-10. Write a mapped type that wraps all property values in an accessor `{ get: () => T[K]; set: (v: T[K]) => void }`.
-11. Write a mapped type that maps every property value to a string description of its type.
-12. Inspect the behavior of mapping over an empty interface `{}`.
-13. Inspect the behavior of mapping over `any` and `unknown`.
-14. Write a mapped type that turns all properties into nullables (`T[K] | null`).
-15. Write a mapped type that preserves property keys but maps every value to `never`.
-
-### Tier 2: Modifier Manipulation & Homomorphism (Drills 16–30)
-16. Demonstrate with an example why `{ [K in keyof T]: T[K] }` preserves tuple length while `{ [K in keyof T as K]: T[K] }` turns tuples into objects.
-17. Write a mapped type that makes only optional properties required while leaving existing required properties unchanged.
-18. Write a mapped type that strips `readonly` from arrays while keeping nested objects readonly.
-19. Create an `OptionalToNullable<T>` that replaces optional `?` properties with required `T[K] | null`.
-20. Demonstrate what happens when mapping over a union of interfaces `A | B`.
-21. Write a `DistributiveMapped<T>` that distributes mapped transformations over union types.
-22. Test how `-?` interacts with explicit `undefined` values (`prop: string | undefined`).
-23. Write a mapped type that converts only `readonly` properties into mutable ones without altering mutability of existing properties.
-24. Explain why `Record<keyof T, T[keyof T]>` is non-homomorphic.
-25. Write a mapped type that preserves symbol keys alongside string and number keys.
-26. Verify how homomorphic mapped types treat `ReadonlyArray<T>`.
-27. Write a utility that preserves private class fields during mapped type transformations (and explain why it fails).
-28. Create a mapped type that preserves index signatures while modifying explicit properties.
-29. Write a utility that strips index signatures from an interface while keeping explicit keys.
-30. Prove how mapped types treat methods defined as method signatures vs function properties.
-
-### Tier 3: Key Remapping & Filtering with `as` (Drills 31–45)
-31. Write a mapped type `FilterByType<T, ValueType>` that removes all keys whose values do not match `ValueType`.
-32. Write a mapped type `OmitByType<T, ValueType>` that drops keys matching `ValueType`.
-33. Write a mapped type that extracts only method keys from a class instance.
-34. Write a mapped type that extracts only non-function (data) properties from a class.
-35. Implement a getter-generator: remapping every property `foo` into `getFoo: () => T['foo']`.
-36. Implement a setter-generator: remapping every property `bar` into `setBar: (val: T['bar']) => void`.
-37. Write a mapped type that adds a `_` prefix to all private-by-convention properties.
-38. Write a mapped type that strips a specific prefix (e.g. `data_`) from all keys.
-39. Write a mapped type that converts all `UPPERCASE_KEYS` to `camelCaseKeys`.
-40. Implement a mapped type that filters out any key starting with `temp_`.
-41. Write a mapped type that prefixes all method names with `execute_`.
-42. Create a mapped type that maps keys to string literal representations of their values.
-43. What happens when key remapping produces an empty object? Verify with assertions.
-44. Create a mapped type that converts snake_case keys to camelCase using template literal recursion.
-45. Create a mapped type that converts camelCase keys to kebab-case.
-
-### Tier 4: Recursive & Nested Metaprogramming (Drills 46–60)
-46. Implement a production-grade `DeepReadonly<T>` that handles primitives, arrays, tuples, Maps, and Sets.
-47. Implement `DeepRequired<T>` that recursively strips `?` from all nested objects.
-48. Implement `DeepMutable<T>` that recursively strips `readonly` at all levels.
-49. Implement `DeepNullable<T>` that attaches `null` to all nested primitive leaves.
-50. Implement `DeepNonNullable<T>` that strips `null` and `undefined` recursively.
-51. Write a `DeepUndefinable<T>` that recursively allows `undefined` on all fields.
-52. Create a `Paths<T>` utility that returns a union of all dot-separated object paths.
-53. Create a `PathValue<T, Path>` utility that resolves the property type at a dot-separated path.
-54. Implement a `DeepOmit<T, KeyUnion>` that removes matching keys at any nesting level.
-55. Implement a `DeepPick<T, PathUnion>` that selects nested sub-trees based on dot paths.
-56. Create a type-safe nested lens `Lens<T, Path>` providing `get()` and `set()` methods.
-57. Write a recursive mapper that transforms all `Date` objects in a nested structure into ISO strings.
-58. Write a recursive mapper that converts all BigInt values into numbers.
-59. Prevent recursion stack overflow on circular references using a depth-limiting tuple counter.
-60. Implement a recursive mapper that wraps all leaf functions in an error-handling boundary.
-
-### Tier 5: Enterprise Framework Architecture & Synthesis (Drills 61–75)
-61. Build a type-safe Redux action creator mapper from a slice of reducer functions.
-62. Build a type-safe RPC client interface generated from a backend service class.
-63. Synthesize a GraphQL Query Selection Set type mapper.
-64. Create a dynamic configuration validator that verifies environment variables against an interface.
-65. Build a reactive state Proxy mapper that emits `'change:${key}'` events when properties are mutated.
-66. Construct a Database Repository interface where `findUnique` requires unique branded keys.
-67. Build a JSON-Schema-to-TypeScript type synthesis engine.
-68. Design an IoC Container dependency token mapper.
-69. Create a type-safe event-emitter that supports wildcards (`*`) and namespaced events (`auth.*`).
-70. Build an immutable state update helper using mapped paths (`updateIn(state, 'user.address.zip', 90210)`).
-71. Synthesize a CLI argument parser schema from an options interface.
-72. Build a type-safe Mock generator that auto-stubs all methods of an interface with Jest/Vitest mock functions.
-73. Create a bidirectional serializer/deserializer mapped type system.
-74. Build a type-safe routing table mapper that extracts URL parameters from path templates (`/users/:id/posts/:postId`).
-75. Design a complete Microservices Contract Registry ensuring client and server RPC parity.
-
-
----
-
