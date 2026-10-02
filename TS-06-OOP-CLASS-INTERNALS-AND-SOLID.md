@@ -1,1537 +1,1690 @@
-# Module TS-06: Complete OOP, Class Internals, Modifiers, & SOLID Principles
+# Module TS-06: Complete OOP, Class Internals & Modifiers
 
-> **Track**: TypeScript Production Engineering Masterclass (TS 5.x)  
-> **Prerequisites**: [TS-00](file:///C:/Users/ayush/OneDrive/Desktop/js-learning/TS-00-QUEUE-AND-INDEX.md), [TS-01](file:///C:/Users/ayush/OneDrive/Desktop/js-learning/TS-01-TYPE-ARCHITECTURE-AND-STRUCTURAL-SUBTYPING.md), [TS-02](file:///C:/Users/ayush/OneDrive/Desktop/js-learning/TS-02-GENERICS-AND-TYPE-OPERATORS.md), [TS-03](file:///C:/Users/ayush/OneDrive/Desktop/js-learning/TS-03-CONDITIONAL-TYPES-AND-INFERENCE.md), [TS-04](file:///C:/Users/ayush/OneDrive/Desktop/js-learning/TS-04-MAPPED-TYPES-AND-METAPROGRAMMING.md), [TS-05](file:///C:/Users/ayush/OneDrive/Desktop/js-learning/TS-05-TEMPLATE-LITERAL-TYPES-AND-PARSERS.md)  
-> **Target Audience**: Principal Engineers, Software Architects, Framework Authors  
-> **Universal Specification**: Complete Technical Treatise, 90 Real-World Interview Q&As with Runnable Code, 15 Prediction Puzzles with Step-by-Step Traces, 4 Complete Runnable Production Projects with Test Assertions, 20 DOs & DON'Ts, Real-World Enterprise Case Study, 75 Practice Drills (5 Tiers).
+Welcome to TypeScript Object-Oriented Programming (OOP), Class Internals, and Modifiers. This module teaches how classes work in TypeScript, the difference between compile-time modifiers and runtime private fields, abstract contracts, polymorphic chaining, and the SOLID architectural principles.
 
 ---
 
-# Module TS-06: Complete OOP, Class Internals, Modifiers, & SOLID Principles
+# Topic 1: The Dual Nature of Classes: Instance Type vs Static Constructor Type
 
-## 1. Architectural Deep-Dive & Specification Foundations
+### 1. What is it?
+In TypeScript, a single `class` declaration creates two distinct things at the same time:
+1. **A Value**: The runtime JavaScript constructor function that you invoke with `new`.
+2. **A Type**: The shape of the instance produced by that constructor.
 
-### 1.1 The Dual-Type Nature of Classes: Static Side vs Instance Side
+Because the class name serves as both a value and a type, referencing `ClassName` gives you the instance shape, while referencing `typeof ClassName` gives you the constructor function itself.
 
-In TypeScript, a `class` declaration introduces **two distinct entities** into the compiler's symbol table with the exact same identifier:
-1. A **Value**: The JavaScript constructor function that exists at runtime.
-2. A **Type**: The structural shape of an instance produced by `new` (`InstanceType<typeof ClassName>`).
+### 2. Why does it exist?
+JavaScript classes have both instance properties (defined on the created object or prototype) and static properties (defined directly on the class constructor function).
+
+In a static type system, TypeScript must type both halves independently. If you write a factory function that takes a class constructor and instantiates it, you need to type the constructor (`typeof User`), not the instance (`User`).
+
+### 3. Basic example
 
 ```typescript
-class Account {
-  public static defaultCurrency: string = "USD";
-  public balance: number;
+class User {
+  static defaultRole: string = "guest";
+  id: string;
 
-  constructor(initialBalance: number) {
-    this.balance = initialBalance;
+  constructor(id: string) {
+    this.id = id;
   }
 
-  public deposit(amount: number): void {
-    this.balance += amount;
+  printId(): void {
+    console.log(this.id);
   }
 }
 
-// 1. The Instance Type:
-// Type queries referencing 'Account' refer to the instance shape:
-const userAccount: Account = new Account(100);
+// 1. Instance Type: represents an object created by 'new User()'
+const userInstance: User = new User("usr_1");
 
-// 2. The Static Constructor Type:
-// To type the constructor function itself, use 'typeof Account':
-type AccountConstructor = typeof Account;
+// 2. Static / Constructor Type: represents the User constructor itself
+type UserConstructor = typeof User;
 
-const factory: AccountConstructor = Account;
-console.log(factory.defaultCurrency); // "USD"
+const userFactory: UserConstructor = User;
+console.log(userFactory.defaultRole); // "guest"
 ```
 
-```
-+-------------------------------------------------------------------------+
-|                  The Dual-Type Nature of TypeScript Classes             |
-+-------------------------------------------------------------------------+
-|  Value Identifier: Account                                              |
-|    ├── Runtime Constructor Function                                     |
-|    └── Prototype Object (Methods, Getters, Setters)                     |
-+-------------------------------------------------------------------------+
-|  Type 1: typeof Account (Constructor / Static Side)                     |
-|    ├── new (initialBalance: number) => Account                          |
-|    └── defaultCurrency: string                                          |
-+-------------------------------------------------------------------------+
-|  Type 2: Account (Instance Side)                                        |
-|    ├── balance: number                                                  |
-|    └── deposit(amount: number): void                                    |
-+-------------------------------------------------------------------------+
+**Line-by-line explanation:**
+- `class User { ... }`: Declares the class.
+- `static defaultRole`: A property stored on the constructor function, not on instances.
+- `const userInstance: User`: `User` here refers to the instance type. It requires properties `id` and method `printId()`.
+- `type UserConstructor = typeof User;`: `typeof User` refers to the constructor function. It has a constructor signature `new (id: string) => User` and the static property `defaultRole`.
+
+---
+
+### 4. How it works inside TypeScript
+1. **Symbol Table Split**: The compiler enters `User` in both the Type space and the Value space.
+2. **Type Space Lookup**: In type positions (`let u: User`), the compiler resolves the instance interface.
+3. **Value Space Lookup**: In value positions (`new User()`), the compiler evaluates the JavaScript constructor function.
+4. **`typeof` Query**: Writing `typeof User` in type space bridges from the value space to query the constructor's static type.
+
+---
+
+### 5. Think first
+
+What happens when you pass a class name to a function expecting an instance? Decide first.
+
+```typescript
+class Point {
+  x: number = 0;
+}
+
+function draw(p: Point) {
+  console.log(p.x);
+}
+
+draw(Point);
 ```
 
 ---
 
-### 1.2 Access Modifiers Deep-Dive: `public`, `protected`, and `private`
+**Answer and Reason:**
 
-TypeScript provides three compile-time accessibility modifiers:
-- `public` (default): Accessible from anywhere (internal, subclasses, and external callers).
-- `protected`: Accessible within the declaring class and all derived subclasses, but forbidden to external callers.
-- `private`: Accessible **only** within the declaring class. Forbidden to external callers AND derived subclasses.
+This code fails to compile:
+
+```
+Argument of type 'typeof Point' is not assignable to parameter of type 'Point'.
+  Property 'x' is missing in type 'typeof Point' but required in type 'Point'.
+```
+
+**Reason**: `draw` expects an instance of `Point` (`{ x: number }`). You passed `Point` (the constructor function `typeof Point`), not an instance created with `new Point()`.
+
+---
+
+### 6. Try it yourself
+Create a class `Config` with a static property `version = 1` and an instance property `env = "dev"`. Declare a function `printVersion(c: typeof Config)` that accepts the constructor and prints `c.version`.
+
+---
+
+### 7. More examples
+
+#### Example A: Generic Factory Function (Medium)
+
+```typescript
+type Constructor<T> = new (...args: any[]) => T;
+
+function createInstance<T>(Cls: Constructor<T>, ...args: any[]): T {
+  return new Cls(...args);
+}
+
+const user = createInstance(User, "usr_100");
+// user is typed as User!
+```
+
+**Line-by-line explanation:**
+- `new (...args: any[]) => T` represents a constructor function that produces instances of type `T`.
+
+---
+
+### 8. Common mistakes
+
+#### Mistake 1: Confusing `Class` and `typeof Class` in factory parameters
+
+**Wrong code:**
+```typescript
+function build(Target: User) {
+  // return new Target(); // Error: 'Target' has no construct signatures!
+}
+```
+
+**Why it happens:**
+`Target: User` means an already-instantiated user object. To accept the class constructor, write `Target: typeof User`.
+
+---
+
+### 9. Rules to remember
+1. `ClassName` in type space refers to the instance type.
+2. `typeof ClassName` in type space refers to the constructor / static side.
+3. Static properties belong to `typeof ClassName`, not `ClassName`.
+
+---
+
+### 10. Exercises
+
+#### Question 1 (Predict the compile result)
+What is the type of `val`?
+```typescript
+class Account {
+  balance: number = 0;
+}
+type Acc = Account;
+```
+
+#### Question 2 (Find and fix the bug)
+Fix the parameter type so `makeItem` can instantiate `Cls`:
+```typescript
+function makeItem(Cls: Point) {
+  return new Cls();
+}
+```
+
+#### Question 3 (Write code from scratch)
+Write a class `Server` with a static property `port = 8080`. Write a function that accepts `typeof Server` and returns its `port`.
+
+#### Question 4 (Explain in your own words)
+Why does TypeScript create both a value and a type when you declare a class?
+
+---
+
+### Solutions
+
+#### Solution to Question 1
+**Hint 1**: Does `Account` refer to the instance or the constructor?
+
+**Answer**:
+`Acc` is the instance type `{ balance: number }`.
+
+#### Solution to Question 2
+**Hint 1**: Use `typeof Point` or a constructor signature.
+
+**Answer**:
+```typescript
+function makeItem(Cls: typeof Point) {
+  return new Cls();
+}
+```
+
+#### Solution to Question 3
+**Hint 1**: Access `Cls.port`.
+
+**Answer**:
+```typescript
+class Server {
+  static port: number = 8080;
+}
+
+function getPort(s: typeof Server): number {
+  return s.port;
+}
+```
+
+#### Solution to Question 4
+**Hint 1**: Think about what exists at runtime versus what the type checker needs.
+
+**Answer**:
+In JavaScript, classes are runtime constructor functions that can be invoked and passed around (the value). At the same time, static type checking requires an interface describing what properties instances of that class will have (the type). Creating both allows seamless integration between JavaScript runtime behavior and static type checking.
+
+---
+
+### 11. Recall
+
+1. What does `ClassName` represent in type space?
+2. What does `typeof ClassName` represent in type space?
+3. Where are static properties located?
+
+**If you remember only one thing:**
+`User` is the type of an instance, while `typeof User` is the type of the constructor function itself.
+
+---
+
+# Topic 2: Access Modifiers: `public`, `protected`, and `private`
+
+### 1. What is it?
+TypeScript provides three compile-time access modifiers that control where class properties and methods can be accessed:
+- `public` (default): Accessible from anywhere (inside the class, derived subclasses, and external callers).
+- `protected`: Accessible within the declaring class and all derived subclasses. Forbidden to outside callers.
+- `private`: Accessible **only** within the declaring class. Forbidden to subclasses and outside callers.
+
+### 2. Why does it exist?
+Encapsulation is a core principle of object-oriented design.
+
+If internal state (like an internal password hash or database connection pointer) is accessible to outside callers, callers can modify it directly, bypassing validation rules and causing corrupt state. Access modifiers enforce encapsulation at compile time.
+
+### 3. Basic example
 
 ```typescript
 class BaseEntity {
   public id: string;
-  protected internalVersion: number;
+  protected version: number;
   private secretToken: string;
 
   constructor(id: string, token: string) {
     this.id = id;
-    this.internalVersion = 1;
+    this.version = 1;
     this.secretToken = token;
   }
 
-  protected bumpVersion(): void {
-    this.internalVersion++;
+  public getSecret(): string {
+    return this.secretToken; // Allowed: private accessible inside declaring class
   }
 }
 
 class UserEntity extends BaseEntity {
-  public printVersion(): void {
-    // Legal: internalVersion is protected
-    this.bumpVersion();
-    console.log(`Version: ${this.internalVersion}`);
-
-    // ERROR: TS2341: Property 'secretToken' is private and only accessible within class 'BaseEntity'.
-    // console.log(this.secretToken);
+  public updateVersion(): void {
+    this.version++; // Allowed: protected accessible inside subclass
+    // console.log(this.secretToken); // Compile Error: secretToken is private to BaseEntity!
   }
 }
+
+const entity = new BaseEntity("usr_1", "tok_secret");
+console.log(entity.id); // Allowed: public
+// console.log(entity.version); // Compile Error: version is protected!
+// console.log(entity.secretToken); // Compile Error: secretToken is private!
 ```
+
+**Line-by-line explanation:**
+- `public id`: Can be read by `entity.id` anywhere.
+- `protected version`: `UserEntity` can access `this.version` inside its methods, but outside code (`entity.version`) cannot.
+- `private secretToken`: Can only be accessed inside `BaseEntity`. Even the child class `UserEntity` is forbidden from reading it.
 
 ---
 
-### 1.3 TypeScript `private` vs ECMAScript `#private` (Hard vs Soft Privacy)
+### 4. How it works inside TypeScript
+1. **Modifier Checking**: When compiling property access (`obj.prop`), the compiler looks up the declaring class of `prop` and checks if the calling scope has permission.
+2. **Type Erasure**: `public`, `protected`, and `private` are TypeScript-only keywords. When emitted to JavaScript, all access modifier keywords are completely removed!
+3. **Compile-Time Only**: A `private` property in TypeScript is still accessible at runtime if inspected with raw JavaScript or bracket notation (`entity["secretToken"]`).
 
-Understanding the fundamental divide between TypeScript's compile-time `private` modifier and native JavaScript private fields (`#field`, TC39 Stage 4 / ES2022) is essential for enterprise security:
+---
 
-| Feature | TypeScript `private prop: T` | ECMAScript `#prop: T` |
-| :--- | :--- | :--- |
-| **Enforcement Layer** | **Compile-Time Only** (Type checker) | **Runtime Engine** (V8 / Bytecode VM) |
-| **Compiled JavaScript** | `this.prop = val;` (Regular property!) | `#prop` or `WeakMap` private brand |
-| **Bypass via Bracket Access** | `(instance as any)['prop']` (Accessible!) | Throws runtime `SyntaxError` |
-| **Inspection via Reflection** | `Object.keys()`, `Reflect.ownKeys()` | Completely invisible to reflection |
-| **Subclass Collisions** | Subclasses cannot declare same name | Subclasses can independently declare `#prop` |
-| **Performance Overhead** | Zero runtime cost (Standard property) | Brand-check slot lookup (Minimal) |
+### 5. Think first
+
+What happens when you access a `protected` member on an instance from outside the class? Decide first.
 
 ```typescript
-class VulnerableVault {
-  private secretKey: string = "super_secret_123";
+class Device {
+  protected serialNumber: string = "SN-100";
 }
 
-const v = new VulnerableVault();
-// TypeScript error at compile time, BUT succeeds at runtime:
-console.log((v as any).secretKey); // "super_secret_123" (LEAK!)
-
-class SecureVault {
-  #secretKey: string = "hardened_runtime_secret";
-
-  public verify(key: string): boolean {
-    return this.#secretKey === key;
-  }
-}
-
-const s = new SecureVault();
-// Even with 'any', runtime engine refuses access:
-// console.log((s as any).#secretKey); // SyntaxError: Private identifier '#secretKey' is not accessible outside class
+const d = new Device();
+console.log(d.serialNumber);
 ```
 
 ---
 
-### 1.4 Polymorphic `this` and Fluent Method Chaining
+**Answer and Reason:**
 
-In TypeScript, `this` can be used as a return type annotation. When used in a class hierarchy, polymorphic `this` dynamically represents the **current subtype**, allowing fluent builder patterns to survive inheritance without losing specific derived types:
+This code fails to compile:
+
+```
+Property 'serialNumber' is protected and only accessible within class 'Device' and its subclasses.
+```
+
+**Reason**: `protected` members cannot be accessed directly on instances from external code.
+
+---
+
+### 6. Try it yourself
+Create a class `Account` with `public id: string` and `protected balance: number`. Create a subclass `SavingsAccount` with a method `deposit(amount: number)` that adds to `this.balance`. Verify that `deposit` can access `balance`.
+
+---
+
+### 7. More examples
+
+#### Example A: Private Methods for Internal Helpers (Medium)
 
 ```typescript
 class QueryBuilder {
-  protected table: string = "";
-
-  public from(table: string): this {
-    this.table = table;
-    return this;
-  }
-}
-
-class PostgresQueryBuilder extends QueryBuilder {
-  protected schema: string = "public";
-
-  public withSchema(schema: string): this {
-    this.schema = schema;
-    return this;
-  }
-}
-
-// Fluent chaining automatically preserves derived PostgresQueryBuilder type:
-const query = new PostgresQueryBuilder()
-  .from("users")         // Returns PostgresQueryBuilder (not base QueryBuilder!)
-  .withSchema("tenant_1"); // Compiles cleanly without casting!
-```
-
----
-
-### 1.5 Type Guard Methods on Classes: `this is SubType`
-
-Class methods can act as user-defined type guards on the calling instance using `this is SubType`:
-
-```typescript
-abstract class FileNode {
-  public name: string;
-  constructor(name: string) { this.name = name; }
-
-  public isDirectory(): this is DirectoryNode {
-    return this instanceof DirectoryNode;
+  private sanitize(input: string): string {
+    return input.trim();
   }
 
-  public isFile(): this is LeafFileNode {
-    return this instanceof LeafFileNode;
-  }
-}
-
-class LeafFileNode extends FileNode {
-  public sizeBytes: number = 1024;
-}
-
-class DirectoryNode extends FileNode {
-  public children: FileNode[] = [];
-}
-
-function processNode(node: FileNode) {
-  if (node.isDirectory()) {
-    // TypeScript narrows 'node' to DirectoryNode:
-    console.log(node.children.length);
-  } else if (node.isFile()) {
-    // TypeScript narrows 'node' to LeafFileNode:
-    console.log(node.sizeBytes);
+  public where(clause: string): void {
+    const clean = this.sanitize(clause); // Allowed
+    console.log("WHERE", clean);
   }
 }
 ```
 
 ---
 
-### 1.6 Abstract Classes, Abstract Members, & Constructor Signatures
+### 8. Common mistakes
 
-An `abstract class` cannot be instantiated directly and serves as a formal base contract:
+#### Mistake 1: Relying on TypeScript `private` for security
+
+**Wrong assumption:**
+Assuming TypeScript `private` hides sensitive data from hackers in browser memory.
+
+**Reality:**
+TypeScript access modifiers are completely erased during compilation. At runtime, the property is a plain, public JavaScript property! For true runtime privacy, use `#private` (covered in Topic 3).
+
+---
+
+### 9. Rules to remember
+1. `public`: Accessible everywhere (default).
+2. `protected`: Accessible in class and subclasses.
+3. `private`: Accessible only in the declaring class.
+4. Access modifiers are compile-time only and erased in emitted JavaScript.
+
+---
+
+### 10. Exercises
+
+#### Question 1 (Predict the compile result)
+Will the call to `p.code` compile?
+```typescript
+class Key {
+  private code: string = "secret";
+}
+const p = new Key();
+console.log(p.code);
+```
+
+#### Question 2 (Find and fix the bug)
+The subclass cannot access `count` because it is marked `private`. Change it so subclasses can access it, but external code cannot:
+```typescript
+class Counter {
+  private count: number = 0;
+}
+class StepCounter extends Counter {
+  step() { this.count++; }
+}
+```
+
+#### Question 3 (Write code from scratch)
+Write a class `DatabasePool` with:
+- a private property `connections: number`
+- a public method `getConnectionCount(): number`
+
+#### Question 4 (Explain in your own words)
+What is the difference between `protected` and `private`?
+
+---
+
+### Solutions
+
+#### Solution to Question 1
+**Hint 1**: Is `code` accessible outside the class?
+
+**Answer**:
+No, it fails with: `Property 'code' is private and only accessible within class 'Key'`.
+
+#### Solution to Question 2
+**Hint 1**: Change `private` to `protected`.
+
+**Answer**:
+```typescript
+class Counter {
+  protected count: number = 0;
+}
+class StepCounter extends Counter {
+  step() { this.count++; }
+}
+```
+
+#### Solution to Question 3
+**Hint 1**: Use `private connections = 0;`.
+
+**Answer**:
+```typescript
+class DatabasePool {
+  private connections: number = 5;
+
+  public getConnectionCount(): number {
+    return this.connections;
+  }
+}
+```
+
+#### Solution to Question 4
+**Hint 1**: Think about whether subclasses have access.
+
+**Answer**:
+A `private` member can only be accessed within the exact class that declared it; derived subclasses cannot access it. A `protected` member can be accessed by both the declaring class and any child subclasses that extend it, while still hiding the member from outside callers.
+
+---
+
+### 11. Recall
+
+1. What is the default access modifier if none is written?
+2. Which modifier allows access inside subclasses but denies external callers?
+3. Do TypeScript `private` properties exist on the JavaScript object at runtime?
+
+**If you remember only one thing:**
+`private` is for declaring class only, `protected` includes subclasses, and both are compile-time checks erased at runtime.
+
+---
+
+# Topic 3: TypeScript `private` vs JavaScript `#private` Fields
+
+### 1. What is it?
+There are two ways to make class fields private in TypeScript:
+1. **TypeScript `private`**: A compile-time keyword (`private prop: string`). Erased at runtime.
+2. **ECMAScript `#private`**: A native JavaScript syntax introduced in ES2022 (`#prop: string`). Enforced at runtime by the JavaScript engine in memory.
+
+### 2. Why does it exist?
+TypeScript's `private` keyword was created in 2012 before JavaScript had native private fields. It stops accidental access during compilation, but can still be bypassed at runtime (e.g. via `obj["secret"]` or `Object.keys()`).
+
+The ECMAScript `#private` syntax provides **hard privacy**: the field is completely inaccessible from outside the class, even with bracket access or runtime reflection.
+
+### 3. Basic example
 
 ```typescript
-abstract class AbstractRepository<T> {
-  protected tableName: string;
+class SecurityVault {
+  // 1. Soft private (compile-time only):
+  private softToken: string = "soft_secret";
 
-  constructor(tableName: string) {
-    this.tableName = tableName;
-  }
+  // 2. Hard private (runtime engine enforced):
+  #hardToken: string = "hard_secret";
 
-  // Abstract methods must be implemented by concrete subclasses
-  public abstract findById(id: string): Promise<T | null>;
-  public abstract save(entity: T): Promise<void>;
-
-  // Concrete shared template method
-  public async exists(id: string): Promise<boolean> {
-    const item = await this.findById(id);
-    return item !== null;
+  public getTokens() {
+    return { soft: this.softToken, hard: this.#hardToken };
   }
 }
 
-// Abstract Constructor Type Signature:
-type AbstractConstructor<T = {}> = abstract new (...args: any[]) => T;
+const vault = new SecurityVault();
+
+// Bypassing soft private at runtime:
+console.log((vault as any).softToken); // Prints "soft_secret"!
+
+// Trying to bypass hard private:
+// console.log((vault as any).#hardToken); // Syntax Error!
+// console.log(vault["#hardToken"]); // undefined! Hard private fields cannot be accessed by name!
+```
+
+**Line-by-line explanation:**
+- `private softToken`: Emitted as a regular property `this.softToken` in JavaScript. Casting to `any` allows accessing it.
+- `#hardToken`: Stored in a private field slot managed directly by the V8 JavaScript engine. It cannot be read or written from outside the class by any means.
+
+---
+
+### 4. How it works inside TypeScript
+Comparison table of the two private mechanisms:
+
+| Feature | TypeScript `private x` | ECMAScript `#x` |
+|---|---|---|
+| **Enforced At** | Compile time only | Compile time AND Runtime |
+| **Runtime Representation** | Regular object property | Native Private Identifier / WeakMap |
+| **Bracket Access (`obj["x"]`)** | Allowed at runtime | Returns `undefined` (inaccessible) |
+| **Subclass Collisions** | Subclasses cannot use same private name | Subclasses CAN declare `#x` without collision |
+| **`Object.keys()` Visibility** | Visible at runtime | Completely hidden |
+
+---
+
+### 5. Think first
+
+What does `Object.keys(vault)` return for the class below? Decide first.
+
+```typescript
+class Vault {
+  private softKey = "a";
+  #hardKey = "b";
+}
+const v = new Vault();
+console.log(Object.keys(v));
 ```
 
 ---
 
-### 1.7 `implements` vs `extends` & The Interface Parameter Type Trap
+**Answer and Reason:**
 
-A critical junior trap in TypeScript: **`implements` does NOT infer method parameter types!**
+It prints:
 
-```typescript
-interface AuthService {
-  authenticate(username: string, token: string): Promise<boolean>;
-}
-
-// THE TRAP:
-class BadAuthService implements AuthService {
-  // TS7006: Parameter 'username' implicitly has an 'any' type!
-  // TS7006: Parameter 'token' implicitly has an 'any' type!
-  // async authenticate(username, token) { return true; }
-
-  // CORRECT: Parameter types must be explicitly typed!
-  async authenticate(username: string, token: string): Promise<boolean> {
-    return username.length > 0 && token.length > 0;
-  }
-}
+```javascript
+["softKey"]
 ```
+
+**Reason**: `softKey` is compiled into a standard enumerable JavaScript property, so `Object.keys` finds it. `#hardKey` is a native private field and is completely invisible to reflection.
 
 ---
 
-### 1.8 The `override` Keyword & `noImplicitOverride` (TS 4.3+)
-
-When a base class method changes its signature or is deleted, derived class overrides can silently turn into orphaned methods without warning. The `override` keyword guarantees that a method genuinely overrides a base class member:
-
-```typescript
-class BaseWorker {
-  public start(): void {
-    console.log("Worker started");
-  }
-}
-
-class HeavyWorker extends BaseWorker {
-  // With 'noImplicitOverride: true', this is mandatory and verified:
-  public override start(): void {
-    super.start();
-    console.log("Heavy resources allocated");
-  }
-
-  // If BaseWorker removes 'start()', TypeScript immediately triggers:
-  // TS4113: This member cannot have an 'override' modifier because it is not declared in the base class.
-}
-```
-
+### 6. Try it yourself
+Create a class `ApiKeyManager` with a native private field `#apiKey: string`. Add a public method `verify(key: string): boolean` that compares input with `#apiKey`. Try to read `#apiKey` directly from outside the class to see the compiler error.
 
 ---
 
-## 2. Advanced OOP Patterns, Static Internals, Mixins, & SOLID Architecture
+### 7. More examples
 
-### 2.1 Static Initialization Blocks & Static Inheritance
-
-JavaScript classes have **dual-linkage inheritance**:
-1. The **instance prototype chain**: `SubClass.prototype.__proto__ === SuperClass.prototype`.
-2. The **static constructor chain**: `SubClass.__proto__ === SuperClass`.
-
-This enables static properties and methods to be inherited by derived classes!
-
-#### Static Blocks (`static { ... }`, ES2022 / TS 4.4+)
-Static initialization blocks allow multi-statement logic, exception handling, and access to private fields during class evaluation:
-
-```typescript
-class DatabaseConnection {
-  static #pool: any[];
-  public static isInitialized: boolean = false;
-
-  static {
-    try {
-      this.#pool = [];
-      this.isInitialized = true;
-      console.log("Database connection pool initialized statically.");
-    } catch (err) {
-      console.error("Static pool initialization failed", err);
-    }
-  }
-
-  public static getPoolSize(): number {
-    return this.#pool.length;
-  }
-}
-```
-
----
-
-### 2.2 Mixins & Multiple Inheritance Emulation
-
-Because ECMAScript and TypeScript strictly enforce single inheritance (`extends SuperClass`), multiple inheritance must be emulated using the **Class Expression Mixin Pattern**:
-
-```typescript
-export type Constructor<T = {}> = new (...args: any[]) => T;
-
-// 1. Mixin: Timestampable
-export function Timestampable<TBase extends Constructor>(Base: TBase) {
-  return class extends Base {
-    public createdAt: Date = new Date();
-    public updatedAt: Date = new Date();
-
-    public touch(): void {
-      this.updatedAt = new Date();
-    }
-  };
-}
-
-// 2. Mixin: SoftDeletable
-export function SoftDeletable<TBase extends Constructor>(Base: TBase) {
-  return class extends Base {
-    public isDeleted: boolean = false;
-    public deletedAt: Date | null = null;
-
-    public softDelete(): void {
-      this.isDeleted = true;
-      this.deletedAt = new Date();
-    }
-  };
-}
-
-// 3. Concrete Base Class
-export class BaseEntity {
-  public id: string;
-  constructor(id: string) {
-    this.id = id;
-  }
-}
-
-// 4. Compose Mixins
-export class Article extends SoftDeletable(Timestampable(BaseEntity)) {
-  public title: string;
-
-  constructor(id: string, title: string) {
-    super(id);
-    this.title = title;
-  }
-}
-
-const article = new Article("art_101", "TypeScript OOP In-Depth");
-console.log(article.id);        // "art_101"
-console.log(article.createdAt); // Date
-article.softDelete();
-console.log(article.isDeleted); // true
-```
-
----
-
-### 2.3 The SOLID Principles in TypeScript
-
-```
-+-------------------------------------------------------------------------+
-|                  SOLID Principles in TypeScript Architecture            |
-+-------------------------------------------------------------------------+
-|  [S] Single Responsibility  ──► Class has ONE reason to change           |
-|  [O] Open/Closed            ──► Open for extension, closed for mutation  |
-|  [L] Liskov Substitution    ──► Subclasses satisfy behavioral contracts  |
-|  [I] Interface Segregation  ──► Granular role interfaces, not fat monolith|
-|  [D] Dependency Inversion   ──► High-level modules depend on abstractions|
-+-------------------------------------------------------------------------+
-```
-
-#### 1. Single Responsibility Principle (SRP)
-A class should encapsulate a single domain responsibility, keeping data modeling, persistence, and transport decoupled:
-
-```typescript
-// VIOLATION: User handles domain data, DB persistence, and email transport:
-// class BadUser { saveToDb() { ... } sendWelcomeEmail() { ... } }
-
-// REFACTORED TO SRP:
-export class User {
-  public id: string;
-  public email: string;
-  constructor(id: string, email: string) {
-    this.id = id;
-    this.email = email;
-  }
-}
-
-export interface UserRepository {
-  save(user: User): Promise<void>;
-}
-
-export interface EmailService {
-  sendEmail(to: string, subject: string, body: string): Promise<void>;
-}
-```
-
-#### 2. Open/Closed Principle (OCP)
-Classes should be open for extension without modifying existing code. Achieved via polymorphic strategies:
-
-```typescript
-export interface DiscountStrategy {
-  calculate(price: number): number;
-}
-
-export class RegularDiscount implements DiscountStrategy {
-  public calculate(price: number): number { return price; }
-}
-
-export class VipDiscount implements DiscountStrategy {
-  public calculate(price: number): number { return price * 0.8; }
-}
-
-export class OrderCalculator {
-  public computeFinalPrice(price: number, discount: DiscountStrategy): number {
-    return discount.calculate(price);
-  }
-}
-// Adding 'HolidayDiscount' requires ZERO edits to OrderCalculator!
-```
-
-#### 3. Liskov Substitution Principle (LSP)
-Subclasses must be substitutable for their base types without altering program correctness. In TypeScript, this means method parameter types must be **contravariant or invariant**, and return types must be **covariant**:
-
-```typescript
-export abstract class PaymentProcessor {
-  public abstract process(amount: number): Promise<{ success: boolean; txId: string }>;
-}
-
-export class StripeProcessor extends PaymentProcessor {
-  // Satisfies LSP: Returns subtype (same shape or narrower), accepts same parameter
-  public override async process(amount: number): Promise<{ success: boolean; txId: string }> {
-    return { success: true, txId: `stripe_${amount}` };
-  }
-}
-```
-
-#### 4. Interface Segregation Principle (ISP)
-Clients should not be forced to depend on methods they do not use. Split monolithic interfaces into focused roles:
-
-```typescript
-// VIOLATION: Fat Monolith
-// interface Worker { work(): void; eat(): void; sleep(): void; }
-
-// REFACTORED TO GRANULAR ROLES:
-export interface Workable {
-  work(): void;
-}
-
-export interface Feedable {
-  eat(): void;
-}
-
-export class HumanWorker implements Workable, Feedable {
-  public work(): void { console.log("Working"); }
-  public eat(): void { console.log("Eating lunch"); }
-}
-
-export class RobotWorker implements Workable {
-  public work(): void { console.log("Assembling components 24/7"); }
-  // RobotWorker is NOT forced to implement unused 'eat()' method!
-}
-```
-
-#### 5. Dependency Inversion Principle (DIP)
-High-level modules must depend on abstractions (interfaces), never on concrete implementations:
-
-```typescript
-export interface Logger {
-  log(message: string): void;
-}
-
-export class ConsoleLogger implements Logger {
-  public log(message: string): void { console.log(`[LOG]: ${message}`); }
-}
-
-export class OrderService {
-  private repository: UserRepository;
-  private logger: Logger;
-
-  // Constructor Injection: Depends entirely on abstract interfaces
-  constructor(repository: UserRepository, logger: Logger) {
-    this.repository = repository;
-    this.logger = logger;
-  }
-
-  public async registerUser(id: string, email: string): Promise<void> {
-    const user = new User(id, email);
-    await this.repository.save(user);
-    this.logger.log(`Registered user: ${id}`);
-  }
-}
-```
-
----
-
-### 2.4 Composition Over Inheritance (The Strategy Pattern)
-
-Inheritance creates tight compile-time coupling (`is-a`). Composition provides dynamic runtime flexibility (`has-a`):
-
-```typescript
-export interface CompressionCodec {
-  compress(data: string): string;
-}
-
-export class GzipCompression implements CompressionCodec {
-  public compress(data: string): string { return `[GZIP]:${data}`; }
-}
-
-export class BrotliCompression implements CompressionCodec {
-  public compress(data: string): string { return `[BROTLI]:${data}`; }
-}
-
-export class NetworkPayloadSender {
-  private codec: CompressionCodec;
-
-  constructor(codec: CompressionCodec) {
-    this.codec = codec;
-  }
-
-  public setCodec(codec: CompressionCodec): void {
-    this.codec = codec; // Dynamic strategy swap at runtime!
-  }
-
-  public send(payload: string): string {
-    return this.codec.compress(payload);
-  }
-}
-```
-
-
----
-
-## 3. 90 Real-World Technical Interview Q&As (Part 1: Q1–Q45)
-
----
-
-#### Q1: What is the dual-type nature of TypeScript classes?
-**Answer:**
-A TypeScript `class` declaration introduces both a runtime **value** (the constructor function) and **two types**:
-1. The **instance type** (`Account`): Represents instances created by `new Account()`.
-2. The **static constructor type** (`typeof Account`): Represents the constructor function itself, including static methods and properties.
-
-```typescript
-class Account {
-  public static version: number = 1;
-  public balance: number = 0;
-}
-
-const inst: Account = new Account();       // Instance type
-const ctor: typeof Account = Account;      // Static constructor type
-console.log(ctor.version);                 // 1
-```
-
----
-
-#### Q2: How do you extract the instance type of a class constructor dynamically?
-**Answer:**
-Using the built-in `InstanceType<T>` utility type:
-
-```typescript
-class OrderManager {
-  public process(): void {}
-}
-
-type OrderInstance = InstanceType<typeof OrderManager>; // OrderManager
-```
-
----
-
-#### Q3: How do you extract constructor parameter types of a class?
-**Answer:**
-Using the built-in `ConstructorParameters<T>` utility type:
-
-```typescript
-class UserSession {
-  constructor(public userId: string, public expiresAt: number) {}
-}
-
-type SessionArgs = ConstructorParameters<typeof UserSession>; // [string, number]
-```
-
----
-
-#### Q4: What is the difference between `public`, `protected`, and `private` in TypeScript?
-**Answer:**
-- `public`: Accessible anywhere.
-- `protected`: Accessible within the declaring class and all its derived subclasses.
-- `private`: Accessible only within the declaring class. Subclasses cannot access it.
-
-```typescript
-class Base {
-  public pub = 1;
-  protected prot = 2;
-  private priv = 3;
-}
-
-class Sub extends Base {
-  test() {
-    console.log(this.pub);  // OK
-    console.log(this.prot); // OK
-    // console.log(this.priv); // TS2341 Error!
-  }
-}
-```
-
----
-
-#### Q5: Why is TypeScript's `private` considered "soft privacy"?
-**Answer:**
-TypeScript's `private` keyword only exists at compile time. When compiled to JavaScript, it is converted into a standard public property, meaning external code can bypass it at runtime using bracket notation or reflection:
-
-```typescript
-class SecretKeeper {
-  private secret: string = "classified";
-}
-
-const keeper = new SecretKeeper();
-// Compile error, BUT prints "classified" at runtime:
-console.log((keeper as any)["secret"]); // "classified"
-```
-
----
-
-#### Q6: How does ECMAScript `#private` (private fields) differ from TypeScript `private`?
-**Answer:**
-`#private` is enforced at the **runtime VM bytecode layer** using private name lexical brand checks. It cannot be accessed via bracket notation or reflection and throws a runtime `SyntaxError` if accessed outside the class body.
-
-```typescript
-class HardenedSecret {
-  #secret: string = "hard_security";
-  getSecret() { return this.#secret; }
-}
-
-const h = new HardenedSecret();
-// console.log((h as any)["#secret"]); // undefined
-// (h as any).#secret; // SyntaxError: Private identifier '#secret' is not accessible
-```
-
----
-
-#### Q7: Can a subclass declare a private field with the same name as a parent class private field?
-**Answer:**
-- With TypeScript `private`: **NO**. Subclasses cannot redeclare a `private` member of the parent class (throws `TS2415`).
-- With ECMAScript `#private`: **YES**. Private fields are scoped strictly to the enclosing class body. A subclass can declare `#field` completely independently without collision.
+#### Example A: Independent Private Fields in Inheritance (Medium)
 
 ```typescript
 class Parent {
-  #id: string = "parent";
+  #id = "parent_id";
+  printParent() { console.log(this.#id); }
 }
 
 class Child extends Parent {
-  #id: string = "child"; // Legal! Distinct private brand slot.
+  #id = "child_id"; // No collision! Completely independent private field.
+  printChild() { console.log(this.#id); }
 }
+
+const c = new Child();
+c.printParent(); // "parent_id"
+c.printChild();  // "child_id"
 ```
+
+**Line-by-line explanation:**
+- Native `#private` fields are scoped to the exact declaring class. Subclasses can reuse the same `#id` identifier without colliding.
 
 ---
 
-#### Q8: What is the `readonly` modifier in classes, and where can it be initialized?
-**Answer:**
-`readonly` properties can only be assigned either at their declaration site or inside the class `constructor`. They cannot be modified in methods.
+### 8. Common mistakes
 
+#### Mistake 1: Trying to use dynamic bracket notation on `#private` fields
+
+**Wrong code:**
 ```typescript
-class ImmutableConfig {
-  public readonly endpoint: string;
-  public readonly timeout: number = 5000; // Declaration site
-
-  constructor(endpoint: string) {
-    this.endpoint = endpoint; // Constructor site
-  }
-
-  public update() {
-    // this.endpoint = "new"; // TS2540: Cannot assign to 'endpoint' because it is read-only.
-  }
-}
-```
-
----
-
-#### Q9: Does `readonly` on a class property make nested object references immutable?
-**Answer:**
-No! `readonly` is shallow. If a `readonly` property holds an object or array, its internal properties and elements remain completely mutable.
-
-```typescript
-class Settings {
-  public readonly tags: string[] = ["production"];
-}
-
-const s = new Settings();
-s.tags.push("experimental"); // Mutates internal array despite 'readonly'!
-```
-
----
-
-#### Q10: What are Parameter Properties in TypeScript and what is their desugaring?
-**Answer:**
-Parameter properties automatically declare and assign class properties directly in the constructor signature using access modifiers:
-
-```typescript
-// Concise Parameter Property:
-class Example {
-  constructor(public id: string, private secret: number) {}
-}
-
-// Desugars into:
-class DesugaredExample {
-  public id: string;
-  private secret: number;
-  constructor(id: string, secret: number) {
-    this.id = id;
-    this.secret = secret;
+class Item {
+  #value = 10;
+  getValue(prop: string) {
+    // return this[`#${prop}`]; // Syntax Error!
   }
 }
 ```
 
----
-
-#### Q11: Why are Parameter Properties discouraged in modern multi-target / strip-only environments?
-**Answer:**
-In modern environments running Node.js `--experimental-strip-types` or TypeScript without transpile steps (isolated declarations), parameter properties cannot be stripped as pure types because they generate executable runtime assignment code. Explicit property declarations guarantee 100% compatibility across all runtimes.
+**Why it happens:**
+`#` is part of the identifier syntax, not a string property name. Private fields cannot be indexed dynamically.
 
 ---
 
-#### Q12: What does the `strictPropertyInitialization` compiler option enforce?
-**Answer:**
-When enabled (with `strictNullChecks`), TypeScript ensures that every non-optional class property is explicitly initialized either at its declaration site or inside the constructor.
+### 9. Rules to remember
+1. `private x` is soft privacy (compile-time only).
+2. `#x` is hard privacy (enforced by the JavaScript runtime engine).
+3. Use `#x` whenever you need true encapsulation that cannot be bypassed by reflection.
 
+---
+
+### 10. Exercises
+
+#### Question 1 (Predict the compile result)
+Will the line outside the class compile?
 ```typescript
-class Config {
-  // TS2564: Property 'port' has no initializer and is not definitely assigned in the constructor.
-  // public port: number;
-
-  public port: number = 8080; // OK
+class Session {
+  #sessionId: string = "xyz";
 }
+const s = new Session();
+console.log(s.#sessionId);
 ```
 
----
-
-#### Q13: What is the Definite Assignment Assertion operator (`!`) on class properties?
-**Answer:**
-Placing `!` after a property name tells the compiler that the property will be initialized out-of-band (e.g. via dependency injection or lifecycle hooks) and suppresses `TS2564`:
-
+#### Question 2 (Find and fix the bug)
+Fix the syntax error:
 ```typescript
-class Component {
-  public element!: HTMLElement; // Initialized in onMount lifecycle
-
-  public onMount(el: HTMLElement) {
-    this.element = el;
+class User {
+  #name: string;
+  constructor(name: string) {
+    this.name = name; // Bug: Missed the '#' prefix!
   }
 }
 ```
 
----
+#### Question 3 (Write code from scratch)
+Write a class `Counter` that stores its count in a native private field `#count: number`. Add public methods `increment()` and `getCount()`.
 
-#### Q14: What is Polymorphic `this` as a return type?
-**Answer:**
-Polymorphic `this` allows method chaining in base classes to return the exact type of the derived subclass at runtime:
-
-```typescript
-class Builder {
-  public setStep(): this {
-    return this;
-  }
-}
-
-class AdvancedBuilder extends Builder {
-  public setSpecial(): this {
-    return this;
-  }
-}
-
-const b = new AdvancedBuilder().setStep().setSpecial(); // Type remains AdvancedBuilder!
-```
+#### Question 4 (Explain in your own words)
+Why does native `#private` prevent name collisions between parent classes and child classes?
 
 ---
 
-#### Q15: How do type predicates on class methods (`this is SubType`) narrow instances?
-**Answer:**
-A method with return type `this is SubType` refines the type of the caller instance within conditional control flow:
+### Solutions
 
+#### Solution to Question 1
+**Hint 1**: Can `#` fields be accessed outside the class?
+
+**Answer**:
+No, it fails with: `Property '#sessionId' is not accessible outside class 'Session' because it has a private identifier`.
+
+#### Solution to Question 2
+**Hint 1**: Use `this.#name`.
+
+**Answer**:
 ```typescript
-abstract class Vehicle {
-  public isCar(): this is Car {
-    return this instanceof Car;
-  }
-}
-
-class Car extends Vehicle {
-  public drive(): void {}
-}
-
-function operate(v: Vehicle) {
-  if (v.isCar()) {
-    v.drive(); // Narrowed to Car
+class User {
+  #name: string;
+  constructor(name: string) {
+    this.#name = name;
   }
 }
 ```
 
----
+#### Solution to Question 3
+**Hint 1**: Initialize `#count = 0`.
 
-#### Q16: What is an `abstract class` and how does it differ from an `interface`?
-**Answer:**
-- `abstract class`: Can contain both abstract method signatures AND concrete method implementations, fields, and constructors. It generates runtime JavaScript code and supports `instanceof`.
-- `interface`: A pure compile-time contract without any runtime code or implementation.
-
----
-
-#### Q17: Can an abstract class be instantiated directly using `new`?
-**Answer:**
-No. Attempting `new AbstractClass()` produces `TS2511: Cannot create an instance of an abstract class`.
-
----
-
-#### Q18: How do you define a type for an abstract class constructor?
-**Answer:**
-Use the `abstract new` constructor signature:
-
+**Answer**:
 ```typescript
-type AbstractCtor<T = any> = abstract new (...args: any[]) => T;
+class Counter {
+  #count: number = 0;
 
-function isInstanceOf<T>(inst: any, ctor: AbstractCtor<T>): inst is T {
-  return inst instanceof ctor;
-}
-```
+  increment(): void {
+    this.#count++;
+  }
 
----
-
-#### Q19: What is the "Interface Parameter Type Trap" with `implements`?
-**Answer:**
-When a class implements an interface, TypeScript validates the public shape of the class, but it does **NOT** infer the parameter types of implemented methods. You must annotate parameter types explicitly or they default to `any`:
-
-```typescript
-interface Processor {
-  execute(data: string): boolean;
-}
-
-class MyProcessor implements Processor {
-  // Must annotate '(data: string)', otherwise 'data' implicitly has type 'any'!
-  execute(data: string): boolean {
-    return data.length > 0;
+  getCount(): number {
+    return this.#count;
   }
 }
 ```
 
+#### Solution to Question 4
+**Hint 1**: How are `#` fields stored in the JavaScript engine?
+
+**Answer**:
+Native `#` private fields are not stored as property keys on the object's prototype or shape. Instead, the engine associates private field storage with the specific class definition that declared them. Because the storage is keyed to the class itself, a parent class and a child class maintain separate private storage slots.
+
 ---
 
-#### Q20: Can a class implement multiple interfaces?
-**Answer:**
-Yes. A class can implement any number of comma-separated interfaces:
+### 11. Recall
 
+1. What syntax creates native runtime-private fields?
+2. Can `(obj as any).field` access a `#private` field?
+3. Do `#private` fields appear in `Object.keys()`?
+
+**If you remember only one thing:**
+Use native `#field` for runtime-enforced privacy, and `private field` for compile-time design intent.
+
+---
+
+# Topic 4: Parameter Properties (`constructor(public id: string)`)
+
+### 1. What is it?
+TypeScript provides a shorthand syntax called **Parameter Properties** that lets you declare and initialize class properties directly in the constructor arguments list:
 ```typescript
-interface Readable { read(): string; }
-interface Writable { write(data: string): void; }
-
-class StreamBuffer implements Readable, Writable {
-  read(): string { return ""; }
-  write(data: string): void {}
-}
-```
-
----
-
-#### Q21: What is the `override` keyword introduced in TypeScript 4.3?
-**Answer:**
-`override` explicitly marks a method that intends to override a method inherited from a base class. When `noImplicitOverride: true` is enabled, omitting `override` on an overridden method triggers a compile error.
-
-```typescript
-class BaseService {
-  start(): void {}
-}
-
-class DerivedService extends BaseService {
-  override start(): void {
-    super.start();
-  }
-}
-```
-
----
-
-#### Q22: What problem does `noImplicitOverride` prevent?
-**Answer:**
-It prevents two bugs:
-1. **Accidental Overriding**: Defining a method in a subclass that accidentally shares the name of a base class method without realizing it.
-2. **Phantom Overrides**: Modifying or removing a base class method, causing the subclass's intended override to silently become an unrelated orphan method.
-
----
-
-#### Q23: How does static inheritance work in TypeScript/ES6 classes?
-**Answer:**
-Static members are attached directly to the constructor function. Because `DerivedClass.__proto__ === BaseClass`, derived classes inherit all public and protected static properties and methods of their base class.
-
-```typescript
-class Parent {
-  public static appName: string = "Suite";
-}
-
-class Child extends Parent {}
-
-console.log(Child.appName); // "Suite"
-```
-
----
-
-#### Q24: What are Static Initialization Blocks (`static { ... }`, ES2022 / TS 4.4+)?
-**Answer:**
-Static blocks provide a dedicated lexical scope inside class bodies to run initialization statements, setup logic, and error handling for static members during class definition:
-
-```typescript
-class Registry {
-  public static items: Map<string, string>;
-
-  static {
-    Registry.items = new Map();
-    Registry.items.set("default", "v1");
-  }
-}
-```
-
----
-
-#### Q25: In what order do static blocks and static fields execute in an inheritance hierarchy?
-**Answer:**
-1. Base class static fields and static blocks execute in definition order.
-2. Derived class static fields and static blocks execute in definition order.
-
----
-
-#### Q26: Can static blocks access private instance fields or private static fields?
-**Answer:**
-Static blocks can access **private static fields** (`#privateStatic`) within the same class, but they cannot access instance fields because no instance exists during static evaluation.
-
----
-
-#### Q27: How do you dynamically reference the derived constructor inside an instance method?
-**Answer:**
-Using `this.constructor`:
-
-```typescript
-class BaseNode {
-  public clone(): this {
-    const Ctor = this.constructor as new () => this;
-    return new Ctor();
-  }
-}
-```
-
----
-
-#### Q28: How do you emulate Multiple Inheritance in TypeScript using Mixins?
-**Answer:**
-By defining functions that accept a generic constructor type and return a class expression extending it:
-
-```typescript
-type GConstructor<T = {}> = new (...args: any[]) => T;
-
-function Activatable<TBase extends GConstructor>(Base: TBase) {
-  return class extends Base {
-    public isActive: boolean = false;
-    public activate() { this.isActive = true; }
-  };
-}
-```
-
----
-
-#### Q29: Can mixins define constructors that accept arguments?
-**Answer:**
-Yes, by using `...args: any[]` and passing them to `super(...args)`:
-
-```typescript
-function Tagged<TBase extends GConstructor>(Base: TBase) {
-  return class extends Base {
-    public tag: string;
-    constructor(...args: any[]) {
-      super(...args);
-      this.tag = "default-tag";
-    }
-  };
-}
-```
-
----
-
-#### Q30: What is the limitation of mixin composition regarding private `#fields`?
-**Answer:**
-Classes generated inside mixin expressions cannot declare `#private` fields if the mixin is invoked multiple times in the same inheritance hierarchy due to ECMAScript private field branding rules.
-
----
-
-#### Q31: How does return type covariance apply to class method overrides?
-**Answer:**
-A derived class method can narrow its return type to a subtype of the parent class method's return type:
-
-```typescript
-class AnimalProducer {
-  produce(): object { return {}; }
-}
-
-class SpecificProducer extends AnimalProducer {
-  // Covariant narrowing: returns { id: string } which is a subtype of object
-  override produce(): { id: string } { return { id: "1" }; }
-}
-```
-
----
-
-#### Q32: Why are method parameters bivariant by default in TypeScript classes?
-**Answer:**
-To maintain ergonomics for arrays and collections (e.g. `Array<Derived>` assignable to `Array<Base>`), method declarations in TypeScript classes are checked bivariantly unless declared as function property signatures.
-
----
-
-#### Q33: How do you enforce strict contravariant parameter checking in class methods?
-**Answer:**
-Declare methods as function properties rather than method signatures:
-
-```typescript
-class Handler {
-  // Function property: strictly checked contravariantly under 'strictFunctionTypes'
-  public process: (input: string) => void = (input) => {};
-}
-```
-
----
-
-#### Q34: What is the rule for getter and setter types in TypeScript 4.3+?
-**Answer:**
-TypeScript 4.3 allows setters to accept a broader type than the getter returns:
-
-```typescript
-class Dimension {
-  private _width: number = 0;
-
-  get width(): number {
-    return this._width;
-  }
-
-  // Setter accepts string OR number; coerces to number internally
-  set width(value: string | number) {
-    this._width = typeof value === "string" ? parseFloat(value) : value;
-  }
-}
-```
-
----
-
-#### Q35: How do you make a TypeScript class iterable using `[Symbol.iterator]`?
-**Answer:**
-Implement the `Iterable<T>` interface and declare a generator method:
-
-```typescript
-class NumberCollection implements Iterable<number> {
-  private items: number[] = [1, 2, 3];
-
-  *[Symbol.iterator](): Iterator<number> {
-    for (const item of this.items) {
-      yield item;
-    }
-  }
-}
-
-for (const n of new NumberCollection()) console.log(n); // 1, 2, 3
-```
-
----
-
-#### Q36: What is the `using` statement and `[Symbol.dispose]` in TypeScript 5.2+?
-**Answer:**
-TypeScript 5.2 introduced explicit resource management (TC39 Stage 3). When an object implements `[Symbol.dispose]()`, declaring it with `using` guarantees that `[Symbol.dispose]()` will be invoked automatically when execution exits the lexical block:
-
-```typescript
-class TempFile implements Disposable {
-  public path: string = "/tmp/work.txt";
-
-  [Symbol.dispose](): void {
-    console.log("Cleaning up temp file...");
-  }
-}
-
-{
-  using file = new TempFile();
-  console.log(`Writing to ${file.path}`);
-} // 'Symbol.dispose' executes here automatically!
-```
-
----
-
-#### Q37: What is `await using` and `[Symbol.asyncDispose]`?
-**Answer:**
-The asynchronous variant of resource management for resources requiring async cleanup (database connections, network sockets):
-
-```typescript
-class AsyncDbConnection implements AsyncDisposable {
-  async [Symbol.asyncDispose](): Promise<void> {
-    console.log("Closing DB connection asynchronously...");
-  }
-}
-
-async function runQuery() {
-  await using db = new AsyncDbConnection();
-} // Automatically awaits [Symbol.asyncDispose]() upon exit!
-```
-
----
-
-#### Q38: How do you implement nominal branding in classes using private fields?
-**Answer:**
-ECMAScript private fields create true nominal types because TypeScript considers two classes structurally incompatible if either contains a private field:
-
-```typescript
-class OrderId {
-  #brand!: void;
-  public value: string;
-  constructor(v: string) { this.value = v; }
-}
-
-class UserId {
-  #brand!: void;
-  public value: string;
-  constructor(v: string) { this.value = v; }
-}
-
-let order: OrderId = new OrderId("ord_1");
-// let user: UserId = order; // TS2322: Type 'OrderId' is not assignable to type 'UserId'.
-```
-
----
-
-#### Q39: What happens when `super()` is omitted in a derived class constructor?
-**Answer:**
-TypeScript throws `TS17009: 'super' must be called before accessing 'this' in the constructor of a derived class`.
-
----
-
-#### Q40: Can you access `this` before calling `super()` in a constructor?
-**Answer:**
-No. ECMAScript spec dictates that derived class instance binding (`this`) is only initialized after `super()` evaluates.
-
----
-
-#### Q41: How do you declare a constructor that cannot be instantiated outside the class (Singleton pattern)?
-**Answer:**
-Mark the `constructor` as `private`:
-
-```typescript
-class GlobalConfig {
-  private static instance: GlobalConfig;
-  private constructor() {}
-
-  public static getInstance(): GlobalConfig {
-    if (!this.instance) this.instance = new GlobalConfig();
-    return this.instance;
-  }
-}
-
-// new GlobalConfig(); // TS2673: Constructor is private.
-const config = GlobalConfig.getInstance();
-```
-
----
-
-#### Q42: What is the effect of marking a constructor `protected`?
-**Answer:**
-The class cannot be instantiated directly via `new`, but it can be extended and instantiated by derived subclasses.
-
----
-
-#### Q43: How does TypeScript type-check method overloading in classes?
-**Answer:**
-Multiple overload signatures precede a single implementation signature. The implementation signature is not visible to external callers:
-
-```typescript
-class Formatter {
-  format(val: string): string;
-  format(val: number): string;
-  format(val: any): string {
-    return String(val);
-  }
-}
-```
-
----
-
-#### Q44: Can static methods be overloaded in classes?
-**Answer:**
-Yes, static methods follow identical overloading mechanics to instance methods.
-
----
-
-#### Q45: How do you ensure that a class method cannot be overridden by subclasses (final methods)?
-**Answer:**
-TypeScript does not currently have a native `final` keyword for methods, but you can achieve finality by defining the method as a `readonly` function property in the base class:
-
-```typescript
-class BasePipeline {
-  public readonly execute = (): void => {
-    console.log("Core execution algorithm cannot be overridden");
-  };
-}
-```
-
-
----
-
-## 3. 90 Real-World Technical Interview Q&As (Part 2: Q46–Q90)
-
----
-
-#### Q46: What is the Single Responsibility Principle (SRP) in TypeScript?
-**Answer:**
-A class should have only one reason to change, meaning it must encapsulate only a single domain concern or responsibility.
-
-```typescript
-// SRP VIOLATION: Handles customer data, email formatting, and database queries:
-// class BadCustomer { save() {} sendInvoice() {} }
-
-// CLEAN SRP:
-class Customer {
+class User {
   constructor(public id: string, public name: string) {}
 }
-
-class CustomerRepository {
-  async save(customer: Customer): Promise<void> {}
-}
-
-class InvoiceMailer {
-  async send(customer: Customer, amount: number): Promise<void> {}
-}
 ```
+Prefixing a constructor parameter with `public`, `protected`, `private`, or `readonly` automatically creates a property on the class and assigns the argument to it.
+
+### 2. Why does it exist?
+In standard JavaScript and vanilla TypeScript, creating an object with several fields requires tedious boilerplate:
+1. Declare the property on the class (`id: string;`).
+2. Add the parameter to the constructor (`constructor(id: string)`).
+3. Assign the property inside the constructor body (`this.id = id;`).
+
+Parameter properties eliminate all three repetitive steps in a single declaration.
+
+### 3. Basic example
+
+```typescript
+// Boilerplate-free declaration:
+class User {
+  constructor(
+    public id: string,
+    public name: string,
+    private token: string,
+    readonly createdAt: number
+  ) {
+    // No 'this.id = id' needed! TypeScript generates it automatically.
+  }
+}
+
+const user = new User("usr_1", "Alex", "tok_99", 1700000000);
+console.log(user.id);   // "usr_1"
+console.log(user.name); // "Alex"
+// console.log(user.token); // Compile Error: token is private!
+```
+
+**Line-by-line explanation:**
+- `public id: string`: Declares a public property `id` and assigns the first argument to `this.id`.
+- `public name: string`: Declares a public property `name` and assigns the second argument to `this.name`.
+- `private token: string`: Declares a private property `token` and assigns it.
+- `readonly createdAt: number`: Declares a readonly property.
+- The constructor body `{}` can be empty because property assignment is handled automatically.
 
 ---
 
-#### Q47: How is the Open/Closed Principle (OCP) implemented in TypeScript?
-**Answer:**
-Software entities should be open for extension, but closed for modification. We achieve this by depending on polymorphic interfaces or abstract base classes:
+### 4. How it works inside TypeScript
+When TypeScript compiles a parameter property to JavaScript, it automatically generates:
 
-```typescript
-interface TaxStrategy {
-  calculate(amount: number): number;
-}
-
-class UsTaxStrategy implements TaxStrategy {
-  calculate(amount: number): number { return amount * 0.08; }
-}
-
-class EuTaxStrategy implements TaxStrategy {
-  calculate(amount: number): number { return amount * 0.20; }
-}
-
-class TaxCalculator {
-  // Open to any new TaxStrategy without editing TaxCalculator:
-  compute(amount: number, strategy: TaxStrategy): number {
-    return strategy.calculate(amount);
+```javascript
+// Emitted JavaScript:
+class User {
+  constructor(id, name, token, createdAt) {
+    this.id = id;
+    this.name = name;
+    this.token = token;
+    this.createdAt = createdAt;
   }
 }
 ```
 
 ---
 
-#### Q48: What is a classic violation of the Liskov Substitution Principle (LSP)?
-**Answer:**
-The Classic Rectangle/Square problem. Overriding `setWidth` and `setHeight` in a `Square` subclass breaks the behavioral contract assumed by callers of `Rectangle`:
+### 5. Think first
+
+What happens if you omit the access modifier keyword (`public`, `private`, etc.) in the constructor? Decide first.
 
 ```typescript
-class Rectangle {
-  protected _width: number = 0;
-  protected _height: number = 0;
-
-  setWidth(w: number) { this._width = w; }
-  setHeight(h: number) { this._height = h; }
-  getArea() { return this._width * this._height; }
+class Point {
+  constructor(x: number, y: number) {}
 }
 
-class Square extends Rectangle {
-  override setWidth(w: number) { this._width = w; this._height = w; }
-  override setHeight(h: number) { this._width = h; this._height = h; }
-}
-
-function verify(rect: Rectangle) {
-  rect.setWidth(5);
-  rect.setHeight(4);
-  // Caller expects 5 * 4 = 20. But Square yields 4 * 4 = 16! LSP VIOLATED!
-}
+const p = new Point(10, 20);
+console.log(p.x);
 ```
 
 ---
 
-#### Q49: How does the Interface Segregation Principle (ISP) prevent bloated code?
-**Answer:**
-Instead of defining one massive interface with dozens of methods, ISP splits contracts into small, cohesive role interfaces:
+**Answer and Reason:**
 
-```typescript
-// Fat interface: forces non-printing devices to implement print()
-// interface Device { print(): void; scan(): void; fax(): void; }
+This code fails to compile:
 
-// Role interfaces:
-interface Printer { print(doc: string): void; }
-interface Scanner { scan(): string; }
-
-class SimplePrinter implements Printer {
-  print(doc: string): void { console.log(doc); }
-}
+```
+Property 'x' does not exist on type 'Point'.
 ```
 
+**Reason**: Without an access modifier (`public`, `private`, `protected`, or `readonly`), `x` and `y` are just regular constructor parameters. They do NOT create properties on the class!
+
 ---
 
-#### Q50: How does Dependency Inversion (DIP) differ from Dependency Injection (DI)?
-**Answer:**
-- **Dependency Inversion Principle (DIP)**: The high-level architectural rule stating that high-level modules should depend on abstractions (interfaces), not concrete implementations.
-- **Dependency Injection (DI)**: The mechanical design pattern used to implement DIP by passing dependencies into a class (via constructor, property, or method) rather than having the class instantiate them directly.
+### 6. Try it yourself
+Write a class `Product` using parameter properties with `public readonly id: string` and `public price: number`. Create an instance and print its properties.
+
+---
+
+### 7. More examples
+
+#### Example A: Combining Parameter Properties with Constructor Logic (Medium)
 
 ```typescript
-interface DataStore { get(key: string): string; }
-
-class CacheService {
-  // Dependency Injection fulfilling Dependency Inversion:
-  constructor(private store: DataStore) {}
-}
-```
-
----
-
-#### Q51: What is the "Fragile Base Class" problem in OOP?
-**Answer:**
-When changes made to a base class unintentionally break the behavior or internal state assumptions of derived subclasses due to tight coupling and shared implementation details.
-
----
-
-#### Q52: Why is "Composition Over Inheritance" preferred in enterprise systems?
-**Answer:**
-Inheritance is rigid (`is-a`), creates compile-time coupling, exposes parent class internals, and cannot be changed at runtime. Composition (`has-a`) delegates responsibilities to interchangeable components that can be dynamically swapped at runtime.
-
-```typescript
-class LogProcessor {
-  constructor(private formatter: LogFormatter, private transport: LogTransport) {}
-}
-```
-
----
-
-#### Q53: How do you implement the Strategy Pattern in TypeScript?
-**Answer:**
-Define a family of algorithms behind a common interface and encapsulate each one in a separate class:
-
-```typescript
-interface RouteStrategy {
-  buildRoute(start: string, end: string): string;
-}
-
-class FastestRoute implements RouteStrategy {
-  buildRoute(s: string, e: string) { return `Fastest: ${s} -> ${e}`; }
-}
-
-class ScenicRoute implements RouteStrategy {
-  buildRoute(s: string, e: string) { return `Scenic: ${s} -> ${e}`; }
-}
-
-class Navigator {
-  constructor(private strategy: RouteStrategy) {}
-  navigate(a: string, b: string) { return this.strategy.buildRoute(a, b); }
-}
-```
-
----
-
-#### Q54: How do you implement the Factory Pattern in TypeScript?
-**Answer:**
-```typescript
-interface NotificationSender {
-  send(message: string): void;
-}
-
-class EmailSender implements NotificationSender {
-  send(msg: string) { console.log(`Email: ${msg}`); }
-}
-
-class SmsSender implements NotificationSender {
-  send(msg: string) { console.log(`SMS: ${msg}`); }
-}
-
-class NotificationFactory {
-  static create(type: "email" | "sms"): NotificationSender {
-    switch (type) {
-      case "email": return new EmailSender();
-      case "sms": return new SmsSender();
+class BankAccount {
+  constructor(
+    public readonly accountNumber: string,
+    private balance: number
+  ) {
+    if (balance < 0) {
+      throw new Error("Initial balance cannot be negative");
     }
   }
+
+  public getBalance(): number {
+    return this.balance;
+  }
+}
+```
+
+**Line-by-line explanation:**
+- Properties are assigned automatically *before* the constructor body executes, so `balance` is available for validation immediately.
+
+---
+
+### 8. Common mistakes
+
+#### Mistake 1: Declaring the property twice
+
+**Wrong code:**
+```typescript
+class User {
+  id: string; // Redundant declaration!
+  constructor(public id: string) {} // Error: Duplicate identifier 'id'.
+}
+```
+
+**Why it happens:**
+Writing `public id: string` in the constructor automatically declares the property on the class. Declaring it above the constructor creates a duplicate definition.
+
+---
+
+### 9. Rules to remember
+1. Prepend `public`, `protected`, `private`, or `readonly` to a constructor argument to create a parameter property.
+2. Parameter properties eliminate the need for manual `this.prop = prop` assignments.
+3. Do not declare the property outside the constructor when using parameter properties.
+
+---
+
+### 10. Exercises
+
+#### Question 1 (Predict the compile result)
+Will `console.log(b.title)` compile?
+```typescript
+class Book {
+  constructor(title: string) {}
+}
+const b = new Book("TypeScript Guide");
+console.log(b.title);
+```
+
+#### Question 2 (Find and fix the bug)
+Fix the duplicate identifier error:
+```typescript
+class Car {
+  speed: number;
+  constructor(public speed: number) {}
+}
+```
+
+#### Question 3 (Write code from scratch)
+Write a class `ServerConfig` using parameter properties that takes `public host: string`, `public port: number`, and `readonly isSecure: boolean`.
+
+#### Question 4 (Explain in your own words)
+Why are parameter properties preferred in production TypeScript code over manual field assignments?
+
+---
+
+### Solutions
+
+#### Solution to Question 1
+**Hint 1**: Did `title` have an access modifier?
+
+**Answer**:
+No, it fails. Without an access modifier, `title` is not stored as a class property.
+
+#### Solution to Question 2
+**Hint 1**: Remove the top declaration `speed: number;`.
+
+**Answer**:
+```typescript
+class Car {
+  constructor(public speed: number) {}
+}
+```
+
+#### Solution to Question 3
+**Hint 1**: Declare all three in the constructor parameters.
+
+**Answer**:
+```typescript
+class ServerConfig {
+  constructor(
+    public host: string,
+    public port: number,
+    public readonly isSecure: boolean
+  ) {}
+}
+```
+
+#### Solution to Question 4
+**Hint 1**: How many lines of code are saved per property?
+
+**Answer**:
+Parameter properties eliminate boilerplate code. Instead of repeating each property name three times (class declaration, constructor parameter, and `this.x = x` assignment), parameter properties declare and assign the field in a single clean line.
+
+---
+
+### 11. Recall
+
+1. What keywords turn a constructor argument into a parameter property?
+2. Does `constructor(name: string)` create a property on the class?
+3. Where is `this.prop = prop` generated?
+
+**If you remember only one thing:**
+Add `public`, `private`, or `readonly` to a constructor parameter to declare and assign the property in one line.
+
+---
+
+# Topic 5: `readonly` Properties and Class Getters/Setters
+
+### 1. What is it?
+- A `readonly` class property can only be assigned during declaration or inside the class `constructor`. Once construction finishes, it cannot be reassigned.
+- **Getters** (`get`) and **Setters** (`set`) define accessor methods that look like standard properties from the outside, but execute functions when read or written.
+
+### 2. Why does it exist?
+- `readonly` protects immutable identifiers (like an entity ID or creation date) from being accidentally altered after instantiation.
+- Getters and setters allow you to encapsulate validation logic, computed properties, and lazy evaluations without changing how callers access the property.
+
+### 3. Basic example
+
+```typescript
+class Circle {
+  readonly id: string;
+  private _radius: number;
+
+  constructor(id: string, radius: number) {
+    this.id = id; // Allowed in constructor
+    this._radius = radius;
+  }
+
+  // Getter: computed property
+  get radius(): number {
+    return this._radius;
+  }
+
+  // Setter: validation logic
+  set radius(value: number) {
+    if (value <= 0) {
+      throw new Error("Radius must be positive");
+    }
+    this._radius = value;
+  }
+
+  get area(): number {
+    return Math.PI * this._radius ** 2;
+  }
+}
+
+const c = new Circle("c1", 5);
+console.log(c.area); // 78.53... (Accessed like a property, runs the getter!)
+c.radius = 10;       // Valid: runs the setter
+// c.radius = -5;    // Throws Error at runtime!
+// c.id = "c2";      // Compile Error: Cannot assign to 'id' because it is a read-only property.
+```
+
+**Line-by-line explanation:**
+- `readonly id: string`: Can be assigned in the constructor. Calling `c.id = "c2"` after construction fails at compile time.
+- `get radius()`: When reading `c.radius`, this function runs and returns `this._radius`.
+- `set radius(value)`: When writing `c.radius = 10`, this function runs, validates the input, and updates `this._radius`.
+- `get area()`: Read-only computed property (no setter is provided).
+
+---
+
+### 4. How it works inside TypeScript
+1. **Getter Only = Readonly**: If a property has a `get` accessor but no `set` accessor, TypeScript automatically infers it as `readonly`. Reassigning it triggers a compile error.
+2. **Setter Type Alignment**: In TypeScript 4.3+, getters and setters can have different types, as long as the setter's input type is assignable to the getter's return type.
+
+---
+
+### 5. Think first
+
+What happens if you try to assign a value to `c.area` in the example above? Decide first.
+
+```typescript
+c.area = 100;
+```
+
+---
+
+**Answer and Reason:**
+
+This code fails to compile:
+
+```
+Cannot assign to 'area' because it is a read-only property.
+```
+
+**Reason**: `area` only has a `get` accessor, with no corresponding `set` accessor. TypeScript automatically marks getter-only properties as read-only.
+
+---
+
+### 6. Try it yourself
+Create a class `Temperature` with a private field `_celsius: number`. Create a getter and setter for `celsius`. Add a getter `fahrenheit` that computes `(_celsius * 9/5) + 32`.
+
+---
+
+### 7. More examples
+
+#### Example A: Readonly Arrays vs Readonly Properties (Medium)
+
+```typescript
+class Team {
+  readonly members: string[] = ["Alex"];
+}
+
+const team = new Team();
+// team.members = ["Jordan"]; // Error: Cannot reassign 'members'!
+team.members.push("Jordan");   // Allowed! The reference is readonly, but the array is mutable!
+```
+
+**Line-by-line explanation:**
+- `readonly` on an object or array property prevents reassigning the variable reference (`team.members = ...`). It does NOT freeze the array contents. To freeze the array contents, use `readonly string[]`.
+
+---
+
+### 8. Common mistakes
+
+#### Mistake 1: Infinite recursion inside getters and setters
+
+**Wrong code:**
+```typescript
+class Bad {
+  get count(): number {
+    return this.count; // Infinite recursion! Calls getter again!
+  }
+}
+```
+
+**Why it happens:**
+A getter must read from an internal private field (like `this._count`), not from itself.
+
+---
+
+### 9. Rules to remember
+1. `readonly` properties can only be assigned in declaration or the constructor.
+2. Getter-only properties are automatically treated as read-only.
+3. Accessors run functions behind the scenes while looking like standard properties to callers.
+
+---
+
+### 10. Exercises
+
+#### Question 1 (Predict the compile result)
+Will line 6 compile?
+```typescript
+class User {
+  readonly id: string = "u1";
+}
+const u = new User();
+u.id = "u2";
+```
+
+#### Question 2 (Find and fix the bug)
+Fix the infinite loop in the setter:
+```typescript
+class Account {
+  set balance(val: number) {
+    this.balance = val;
+  }
+}
+```
+
+#### Question 3 (Write code from scratch)
+Write a class `Rectangle` with readonly properties `width: number` and `height: number`, and a getter `perimeter` that returns `2 * (width + height)`.
+
+#### Question 4 (Explain in your own words)
+Why does `readonly members: string[]` still allow calling `members.push()`?
+
+---
+
+### Solutions
+
+#### Solution to Question 1
+**Hint 1**: Is `id` read-only?
+
+**Answer**:
+No, it fails. Cannot assign to `id` because it is a read-only property.
+
+#### Solution to Question 2
+**Hint 1**: Store the value in a private backing property `_balance`.
+
+**Answer**:
+```typescript
+class Account {
+  private _balance: number = 0;
+  set balance(val: number) {
+    this._balance = val;
+  }
+}
+```
+
+#### Solution to Question 3
+**Hint 1**: Use parameter properties and a getter.
+
+**Answer**:
+```typescript
+class Rectangle {
+  constructor(
+    readonly width: number,
+    readonly height: number
+  ) {}
+
+  get perimeter(): number {
+    return 2 * (this.width + this.height);
+  }
+}
+```
+
+#### Solution to Question 4
+**Hint 1**: What does the `readonly` modifier apply to?
+
+**Answer**:
+The `readonly` modifier applies to the property binding on the class instance, preventing the variable reference from being reassigned to a different array. It does not make the underlying array object immutable.
+
+---
+
+### 11. Recall
+
+1. Where can a `readonly` property be assigned?
+2. What happens if a property has a `get` method but no `set` method?
+3. Does `readonly obj: object` prevent mutating properties inside `obj`?
+
+**If you remember only one thing:**
+`readonly` locks the property reference after construction, and getter-only properties are automatically read-only.
+
+---
+
+# Checkpoint Challenge: Topics 1 to 5
+
+### Challenge Scenario
+Build a secure user profile management class:
+
+1. Create a class `UserProfile`:
+   - Use parameter properties to initialize:
+     - `public readonly userId: string`
+     - `private _email: string`
+     - `private _age: number`
+   - Store a native private field `#secretPin: string` initialized to `"0000"`.
+2. Add a getter and setter for `email`:
+   - The setter throws an error if the email does not contain `"@"`.
+3. Add a getter `isAdult: boolean` that returns `true` if `_age >= 18`.
+4. Add a public method `updatePin(oldPin: string, newPin: string): boolean`:
+   - If `oldPin === this.#secretPin`, update `#secretPin = newPin` and return `true`.
+   - Otherwise return `false`.
+5. Instantiate `UserProfile` and test updating the email, checking `isAdult`, and verifying that `userId` cannot be reassigned.
+
+### Challenge Solution
+
+```typescript
+class UserProfile {
+  #secretPin: string = "0000";
+
+  constructor(
+    public readonly userId: string,
+    private _email: string,
+    private _age: number
+  ) {}
+
+  get email(): string {
+    return this._email;
+  }
+
+  set email(newEmail: string) {
+    if (!newEmail.includes("@")) {
+      throw new Error("Invalid email format");
+    }
+    this._email = newEmail;
+  }
+
+  get isAdult(): boolean {
+    return this._age >= 18;
+  }
+
+  public updatePin(oldPin: string, newPin: string): boolean {
+    if (oldPin === this.#secretPin) {
+      this.#secretPin = newPin;
+      return true;
+    }
+    return false;
+  }
+}
+
+const profile = new UserProfile("usr_100", "alex@example.com", 25);
+console.log("Is adult:", profile.isAdult); // true
+profile.email = "alex.new@example.com";     // Valid
+console.log("Pin updated:", profile.updatePin("0000", "1234")); // true
+
+// Compile Error on reassignment:
+// profile.userId = "usr_200"; // Cannot assign to 'userId' because it is a read-only property.
+```
+
+---
+
+# Topic 6: Class Inheritance with `extends` and `super`
+
+### 1. What is it?
+Class inheritance allows a child class (subclass) to inherit all properties and methods from a parent class (superclass) using the `extends` keyword:
+```typescript
+class Child extends Parent {}
+```
+Inside the child class constructor, you must call `super()` before accessing `this` to initialize the parent class.
+
+### 2. Why does it exist?
+Inheritance enables code reuse and subtype polymorphism.
+
+If you have multiple entities (like `AdminUser`, `CustomerUser`, and `GuestUser`) that share common behavior (such as `id`, `name`, and `login()`), you can define those shared features once in a base `User` class. Subclasses inherit those features and add their own specialized behavior.
+
+### 3. Basic example
+
+```typescript
+class Vehicle {
+  constructor(public brand: string, public maxSpeed: number) {}
+
+  startEngine(): void {
+    console.log(`Starting ${this.brand} engine`);
+  }
+}
+
+class ElectricCar extends Vehicle {
+  constructor(brand: string, maxSpeed: number, public batteryLevel: number) {
+    super(brand, maxSpeed); // Calls Vehicle constructor!
+  }
+
+  charge(): void {
+    this.batteryLevel = 100;
+    console.log(`${this.brand} is fully charged`);
+  }
+}
+
+const tesla = new ElectricCar("Tesla", 250, 80);
+tesla.startEngine(); // Inherited method from Vehicle
+tesla.charge();      // Specific method on ElectricCar
+```
+
+**Line-by-line explanation:**
+- `class ElectricCar extends Vehicle`: `ElectricCar` inherits all fields and methods of `Vehicle`.
+- `super(brand, maxSpeed);`: Invokes `Vehicle`'s constructor. This is mandatory before accessing `this` in a subclass.
+- `tesla.startEngine()`: Calls the inherited method defined on `Vehicle`.
+- `tesla.charge()`: Calls the specialized method defined on `ElectricCar`.
+
+---
+
+### 4. How it works inside TypeScript
+1. **Prototype Chaining**: At runtime, JavaScript establishes a prototype link: `ElectricCar.prototype.__proto__ === Vehicle.prototype`.
+2. **Constructor Protocol**: The JavaScript engine requires calling `super()` to construct the instance memory slot before subclass initializers run.
+3. **Subtype Relationship**: An instance of `ElectricCar` is assignable to a variable of type `Vehicle` (`ElectricCar extends Vehicle`).
+
+---
+
+### 5. Think first
+
+What happens if you reference `this` before calling `super()` in a subclass constructor? Decide first.
+
+```typescript
+class Animal { constructor(public name: string) {} }
+
+class Dog extends Animal {
+  constructor(name: string) {
+    this.name = name;
+    super(name);
+  }
 }
 ```
 
 ---
 
-#### Q55: How do you implement the Template Method pattern in TypeScript?
-**Answer:**
-An abstract class defines the invariant skeleton of an algorithm in a concrete method and defers specific variant steps to abstract methods:
+**Answer and Reason:**
+
+This code fails to compile:
+
+```
+'super' must be called before accessing 'this' in the constructor of a derived class.
+```
+
+**Reason**: The JavaScript language specification requires `super()` to be invoked first to initialize the parent object before `this` can be referenced.
+
+---
+
+### 6. Try it yourself
+Create a base class `Notification` with `public message: string` and method `send(): void`. Create a subclass `EmailNotification` that takes an extra `email: string` and overrides `send()` to print `"Sending email to " + email`.
+
+---
+
+### 7. More examples
+
+#### Example A: Calling Super Methods with `super.method()` (Medium)
 
 ```typescript
-abstract class DataMiner {
-  // Invariant Template Method
-  public mine(path: string): void {
-    const raw = this.openFile(path);
-    const parsed = this.parseData(raw);
-    this.saveReport(parsed);
+class Logger {
+  log(msg: string): void {
+    console.log("[LOG]:", msg);
   }
+}
 
-  protected abstract openFile(path: string): string;
-  protected abstract parseData(raw: string): any;
+class TimestampLogger extends Logger {
+  override log(msg: string): void {
+    console.log(new Date().toISOString());
+    super.log(msg); // Calls parent method!
+  }
+}
+```
 
-  protected saveReport(data: any): void {
-    console.log("Report saved.");
+**Line-by-line explanation:**
+- `super.log(msg)` delegates to the parent implementation after adding extra behavior.
+
+---
+
+### 8. Common mistakes
+
+#### Mistake 1: Forgetting to pass parent arguments to `super()`
+
+**Wrong code:**
+```typescript
+class Parent { constructor(public id: string) {} }
+class Child extends Parent {
+  constructor() {
+    // super(); // Error: Expected 1 arguments, but got 0.
   }
 }
 ```
 
 ---
 
-#### Q56: What is the difference between an Entity and a Value Object in Domain-Driven Design (DDD)?
-**Answer:**
-- **Entity**: Defined by a unique continuous identity (`id`) that persists across mutations. Two entities with different IDs are distinct even if their data matches.
-- **Value Object**: Defined solely by its attributes. Immutable with no conceptual identity. Two value objects with identical attributes are equal.
+### 9. Rules to remember
+1. Subclasses inherit from parent classes using `extends`.
+2. Subclass constructors must call `super(...args)` before using `this`.
+3. Use `super.methodName()` to invoke parent methods from a subclass.
 
+---
+
+### 10. Exercises
+
+#### Question 1 (Predict the compile result)
+Will the subclass constructor compile?
 ```typescript
-class Money {
-  constructor(public readonly amount: number, public readonly currency: string) {}
-
-  equals(other: Money): boolean {
-    return this.amount === other.amount && this.currency === other.currency;
+class Shape { constructor(public color: string) {} }
+class Circle extends Shape {
+  constructor(color: string, public radius: number) {
+    super(color);
   }
 }
 ```
 
----
-
-#### Q57: How do you model an Aggregate Root in TypeScript?
-**Answer:**
-An Aggregate Root is the primary Entity in a cluster of domain objects that controls all access, enforces transactional consistency invariants, and records Domain Events:
-
+#### Question 2 (Find and fix the bug)
+Fix the error in the derived class constructor:
 ```typescript
-abstract class AggregateRoot<TId> {
-  protected domainEvents: any[] = [];
-  constructor(public readonly id: TId) {}
-
-  protected recordEvent(event: any): void {
-    this.domainEvents.push(event);
-  }
-
-  public pullEvents(): any[] {
-    const events = [...this.domainEvents];
-    this.domainEvents = [];
-    return events;
+class Base { constructor(public count: number) {} }
+class Sub extends Base {
+  constructor(count: number) {
+    console.log(this.count);
+    super(count);
   }
 }
 ```
 
+#### Question 3 (Write code from scratch)
+Write a base class `Employee` with `name: string` and `salary: number`. Write a subclass `Manager` that adds `department: string` and calls `super()`.
+
+#### Question 4 (Explain in your own words)
+Why does JavaScript require calling `super()` before accessing `this` in a subclass?
+
 ---
 
-#### Q58: What is the Specification Pattern in TypeScript Repositories?
-**Answer:**
-Encapsulating query criteria into a reusable class that evaluates both in-memory and against database queries:
+### Solutions
 
+#### Solution to Question 1
+**Hint 1**: Is `super(color)` called properly?
+
+**Answer**:
+Yes, it compiles cleanly.
+
+#### Solution to Question 2
+**Hint 1**: Move `super(count)` before `console.log(this.count)`.
+
+**Answer**:
 ```typescript
-interface Specification<T> {
-  isSatisfiedBy(candidate: T): boolean;
-}
-
-class ActiveUserSpec implements Specification<{ isActive: boolean }> {
-  isSatisfiedBy(user: { isActive: boolean }): boolean {
-    return user.isActive;
+class Base { constructor(public count: number) {} }
+class Sub extends Base {
+  constructor(count: number) {
+    super(count);
+    console.log(this.count);
   }
 }
 ```
 
----
+#### Solution to Question 3
+**Hint 1**: Use parameter properties and `super(name, salary)`.
 
-#### Q59: Why do class method arrows vs prototype methods affect memory?
-**Answer:**
-- **Prototype Methods**: Defined once on `Class.prototype` and shared across all 1,000,000 instances in memory.
-- **Arrow Function Properties** (`public fn = () => {}`): Creates a unique closure function object per instance, consuming significantly more heap memory.
+**Answer**:
+```typescript
+class Employee {
+  constructor(public name: string, public salary: number) {}
+}
 
----
+class Manager extends Employee {
+  constructor(name: string, salary: number, public department: string) {
+    super(name, salary);
+  }
+}
+```
 
-#### Q60: When should you use Arrow Function Properties on classes?
-**Answer:**
-When passing the method as an un-bound callback to external event listeners or `setTimeout` where you need `this` to remain lexically bound without calling `.bind(this)`.
+#### Solution to Question 4
+**Hint 1**: Think about how instance memory is allocated in the JavaScript engine.
 
----
-
-#### Q61: What is the performance impact of V8 Hidden Classes (Shapes) on class instances?
-**Answer:**
-If properties are added to instances in differing orders or dynamically attached after construction, V8 diverges their Hidden Classes (Shapes), deoptimizing inline caches (ICs) into slower dictionary lookups. Always declare and initialize properties in uniform order inside the constructor.
-
----
-
-#### Q62: Why does `delete instance.prop` hurt performance in classes?
-**Answer:**
-`delete` forces V8 to drop the object's optimized Hidden Class and degrade the instance into slow dictionary mode (hash map lookups). Set properties to `null` or `undefined` instead of using `delete`.
+**Answer**:
+In JavaScript ES6 class semantics, the base class constructor is responsible for allocating the instance memory and binding the prototype chain. The child class constructor cannot access `this` until the base class has created the instance via `super()`.
 
 ---
 
-#### Q63: How do you declare an explicit `this: void` parameter in a class method?
-**Answer:**
-To guarantee that a method cannot access `this` and can safely be passed as an unbound function without runtime binding bugs:
+### 11. Recall
+
+1. What keyword establishes class inheritance?
+2. What function must be called in a derived constructor before `this`?
+3. How do you call a parent method from a subclass?
+
+**If you remember only one thing:**
+Use `extends` to inherit from a parent class, and call `super()` before accessing `this`.
+
+---
+
+# Topic 7: Abstract Classes and Abstract Methods
+
+### 1. What is it?
+An **Abstract Class** is a base class that cannot be instantiated directly with `new`. It is designed strictly to be inherited by concrete subclasses.
+
+An **Abstract Method** is a method signature declared inside an abstract class without any implementation body (`abstract render(): void;`). Concrete subclasses are required to implement every abstract method.
+
+### 2. Why does it exist?
+Often, you want to define a common template or workflow for a family of classes, but certain specific steps cannot be implemented in the base class.
+
+For example, a `DatabaseAdapter` might have concrete shared methods for `connect()` and `disconnect()`, but executing a query (`executeQuery()`) is completely different for PostgreSQL versus SQLite. An abstract class lets you share common code while forcing subclasses to implement the specialized steps.
+
+### 3. Basic example
 
 ```typescript
-class MathUtils {
-  public static add(this: void, a: number, b: number): number {
+abstract class PaymentProcessor {
+  // Concrete shared method:
+  public logTransaction(amount: number): void {
+    console.log(`Processing payment of $${amount}`);
+  }
+
+  // Abstract method: subclasses MUST implement this!
+  abstract processPayment(amount: number): boolean;
+}
+
+// Cannot instantiate abstract class directly:
+// const p = new PaymentProcessor(); // Compile Error!
+
+class CreditCardProcessor extends PaymentProcessor {
+  // Implementing required abstract method:
+  processPayment(amount: number): boolean {
+    this.logTransaction(amount);
+    console.log("Charging credit card");
+    return true;
+  }
+}
+
+const processor = new CreditCardProcessor();
+processor.processPayment(50); // Works!
+```
+
+**Line-by-line explanation:**
+- `abstract class PaymentProcessor`: Marks the class as abstract. Calling `new PaymentProcessor()` triggers a compile error: `Cannot create an instance of an abstract class`.
+- `logTransaction`: A standard concrete method with an implementation body. Inherited by all subclasses.
+- `abstract processPayment(amount: number): boolean;`: Has no body `{}`. Every child class extending `PaymentProcessor` must implement it.
+- `CreditCardProcessor extends PaymentProcessor`: Implements `processPayment`.
+
+---
+
+### 4. How it works inside TypeScript
+1. **Instantiation Block**: The compiler forbids `new AbstractClass()`.
+2. **Abstract Method Contract**: The compiler checks all derived classes. If a derived class fails to implement any abstract method, TypeScript reports an error:
+   ```
+   Non-abstract class 'X' does not implement inherited abstract member 'Y'.
+   ```
+3. **Template Method Pattern**: Enables writing base class workflows that call abstract methods implemented by children.
+
+---
+
+### 5. Think first
+
+What happens if a concrete class extends an abstract class but forgets to implement an abstract method? Decide first.
+
+```typescript
+abstract class Task {
+  abstract execute(): void;
+}
+
+class MyTask extends Task {}
+```
+
+---
+
+**Answer and Reason:**
+
+This code fails to compile:
+
+```
+Non-abstract class 'MyTask' does not implement inherited abstract member 'execute' from class 'Task'.
+```
+
+**Reason**: Concrete subclasses must implement all abstract methods defined in parent abstract classes.
+
+---
+
+### 6. Try it yourself
+Create an `abstract class Storage` with an abstract method `abstract save(key: string, data: string): void`. Create a concrete subclass `LocalStorage` that implements `save`.
+
+---
+
+### 7. More examples
+
+#### Example A: The Template Method Pattern (Medium)
+
+```typescript
+abstract class ReportGenerator {
+  // Concrete workflow method:
+  public generate(): string {
+    const data = this.fetchData(); // Calls abstract step
+    const formatted = this.formatReport(data); // Calls abstract step
+    return formatted;
+  }
+
+  protected abstract fetchData(): string[];
+  protected abstract formatReport(data: string[]): string;
+}
+```
+
+**Line-by-line explanation:**
+- The base class defines the overarching workflow algorithm (`generate()`), while subclasses provide the custom data-fetching and formatting steps.
+
+---
+
+### 8. Common mistakes
+
+#### Mistake 1: Confusing Abstract Classes and Interfaces
+
+**Comparison:**
+- **Interface**: Pure contract. Has zero runtime code. Erased completely at compilation. Cannot contain method implementations.
+- **Abstract Class**: Can contain both abstract contracts AND concrete method implementations that subclasses inherit. Emits a real JavaScript class at runtime.
+
+---
+
+### 9. Rules to remember
+1. Abstract classes cannot be instantiated with `new`.
+2. Abstract methods have no body and must be implemented by concrete subclasses.
+3. Abstract classes can contain both concrete methods and abstract contracts.
+
+---
+
+### 10. Exercises
+
+#### Question 1 (Predict the compile result)
+Will line 5 compile?
+```typescript
+abstract class Animal {
+  abstract makeSound(): void;
+}
+const a = new Animal();
+```
+
+#### Question 2 (Find and fix the bug)
+Fix the error in `Circle`:
+```typescript
+abstract class Shape {
+  abstract getArea(): number;
+}
+class Circle extends Shape {
+  constructor(public radius: number) { super(); }
+}
+```
+
+#### Question 3 (Write code from scratch)
+Write an `abstract class Validator` with an abstract method `validate(input: string): boolean`. Write a concrete subclass `EmailValidator` that returns `true` if `input.includes("@")`.
+
+#### Question 4 (Explain in your own words)
+When should you use an abstract class instead of an interface?
+
+---
+
+### Solutions
+
+#### Solution to Question 1
+**Hint 1**: Can an abstract class be instantiated directly?
+
+**Answer**:
+No, it fails with: `Cannot create an instance of an abstract class`.
+
+#### Solution to Question 2
+**Hint 1**: Implement `getArea(): number`.
+
+**Answer**:
+```typescript
+class Circle extends Shape {
+  constructor(public radius: number) { super(); }
+  getArea(): number {
+    return Math.PI * this.radius ** 2;
+  }
+}
+```
+
+#### Solution to Question 3
+**Hint 1**: Implement `validate` in `EmailValidator`.
+
+**Answer**:
+```typescript
+abstract class Validator {
+  abstract validate(input: string): boolean;
+}
+
+class EmailValidator extends Validator {
+  validate(input: string): boolean {
+    return input.includes("@");
+  }
+}
+```
+
+#### Solution to Question 4
+**Hint 1**: Do you need to share actual code and state among subclasses?
+
+**Answer**:
+Use an interface when you only need a pure type contract with zero implementation or runtime overhead. Use an abstract class when you want to provide shared implementation code, shared state, or default behaviors that all subclasses inherit.
+
+---
+
+### 11. Recall
+
+1. Can an abstract class be instantiated with `new`?
+2. Do abstract methods have a code body `{}` in the abstract class?
+3. What error happens if a subclass forgets to implement an abstract method?
+
+**If you remember only one thing:**
+Abstract classes provide a mix of shared implementation and required abstract contracts that subclasses must implement.
+
+---
+
+# Topic 8: Implementing Interfaces with `implements`
+
+### 1. What is it?
+A class can implement one or more interfaces using the `implements` keyword:
+```typescript
+class User implements Serializable, Loggable {}
+```
+The `implements` clause acts as a compile-time check. It forces the class to define all properties and methods declared in the interfaces.
+
+### 2. Why does it exist?
+In JavaScript, classes can only extend a single parent class (`extends Base`). Multiple inheritance of classes is not allowed.
+
+However, an object often plays multiple roles: it might be `Serializable`, `Auditable`, and `Printable`. The `implements` keyword allows a class to satisfy multiple interface contracts simultaneously.
+
+### 3. Basic example
+
+```typescript
+interface Loggable {
+  log(): void;
+}
+
+interface Serializable {
+  serialize(): string;
+}
+
+// Class implements both interfaces:
+class UserRecord implements Loggable, Serializable {
+  constructor(public id: string, public name: string) {}
+
+  log(): void {
+    console.log(`User ${this.id}: ${this.name}`);
+  }
+
+  serialize(): string {
+    return JSON.stringify({ id: this.id, name: this.name });
+  }
+}
+
+const user = new UserRecord("u1", "Alex");
+user.log();
+console.log(user.serialize());
+```
+
+**Line-by-line explanation:**
+- `class UserRecord implements Loggable, Serializable`: Tells the compiler that `UserRecord` must satisfy both contracts.
+- If `UserRecord` was missing either `log()` or `serialize()`, TypeScript would reject compilation with an error.
+
+---
+
+### 4. How it works inside TypeScript
+1. **Contract Verification**: The compiler checks that the public instance members of the class satisfy all shapes in the `implements` list.
+2. **Type Checking Only**: `implements` does NOT change the runtime behavior of the class, and does NOT generate prototype code.
+3. **Public Requirement**: Properties required by an implemented interface **must be public**. They cannot be `private` or `protected`.
+
+---
+
+### 5. Think first
+
+Does `implements` automatically provide types for your method parameters if you omit them? Decide first.
+
+```typescript
+interface MathOperation {
+  calculate(a: number, b: number): number;
+}
+
+class Adder implements MathOperation {
+  calculate(a, b) {
     return a + b;
   }
 }
@@ -1539,1649 +1692,1599 @@ class MathUtils {
 
 ---
 
-#### Q64: What is F-Bounded Polymorphism in TypeScript classes?
-**Answer:**
-A generic constraint where a type parameter references itself (`T extends Comparable<T>`):
+**Answer and Reason:**
+
+With `noImplicitAny: true`, this code fails to compile:
+
+```
+Parameter 'a' implicitly has an 'any' type.
+Parameter 'b' implicitly has an 'any' type.
+```
+
+**Reason**: `implements` only checks that the class matches the interface. It does **not** automatically annotate method parameters in the class body. You must write parameter types explicitly: `calculate(a: number, b: number)`.
+
+---
+
+### 6. Try it yourself
+Create an interface `Disposable { dispose(): void }`. Write a class `FileStream implements Disposable` that implements the `dispose` method.
+
+---
+
+### 7. More examples
+
+#### Example A: Combining `extends` and `implements` (Medium)
 
 ```typescript
-interface Comparable<T> {
-  compareTo(other: T): number;
+class BaseService {
+  public serviceId = "srv_1";
 }
 
-class PriorityItem implements Comparable<PriorityItem> {
-  constructor(public priority: number) {}
+interface HealthCheck {
+  isHealthy(): boolean;
+}
 
-  compareTo(other: PriorityItem): number {
-    return this.priority - other.priority;
+class AuthService extends BaseService implements HealthCheck {
+  isHealthy(): boolean {
+    return true;
   }
+}
+```
+
+**Line-by-line explanation:**
+- `AuthService` inherits state from `BaseService` while satisfying the `HealthCheck` interface contract.
+
+---
+
+### 8. Common mistakes
+
+#### Mistake 1: Trying to implement an interface using private properties
+
+**Wrong code:**
+```typescript
+interface HasSecret { secret: string; }
+class Vault implements HasSecret {
+  private secret: string = "123"; // Error!
+}
+```
+
+**Why it happens:**
+Interfaces define public contracts. All implemented members must be `public`.
+
+---
+
+### 9. Rules to remember
+1. `class C implements A, B` enforces that class `C` satisfies interfaces `A` and `B`.
+2. A class can implement multiple interfaces, but can only extend one class.
+3. Implemented interface members must always be `public`.
+4. Method parameter types are not automatically inferred by `implements`.
+
+---
+
+### 10. Exercises
+
+#### Question 1 (Predict the compile result)
+Will the class below compile?
+```typescript
+interface Clock { tick(): void }
+class WallClock implements Clock {}
+```
+
+#### Question 2 (Find and fix the bug)
+Fix the accessibility modifier:
+```typescript
+interface Runner { run(): void }
+class Athlete implements Runner {
+  protected run(): void { console.log("Running"); }
+}
+```
+
+#### Question 3 (Write code from scratch)
+Write two interfaces: `Identifiable { id: string }` and `Versioned { version: number }`. Write a class `Document` that implements both.
+
+#### Question 4 (Explain in your own words)
+What is the difference between `extends` and `implements`?
+
+---
+
+### Solutions
+
+#### Solution to Question 1
+**Hint 1**: Does `WallClock` define `tick()`?
+
+**Answer**:
+No, it fails with: `Class 'WallClock' incorrectly implements interface 'Clock'. Property 'tick' is missing`.
+
+#### Solution to Question 2
+**Hint 1**: Change `protected` to `public`.
+
+**Answer**:
+```typescript
+interface Runner { run(): void }
+class Athlete implements Runner {
+  public run(): void { console.log("Running"); }
+}
+```
+
+#### Solution to Question 3
+**Hint 1**: Provide public properties `id` and `version`.
+
+**Answer**:
+```typescript
+interface Identifiable { id: string; }
+interface Versioned { version: number; }
+
+class Document implements Identifiable, Versioned {
+  constructor(
+    public id: string,
+    public version: number
+  ) {}
+}
+```
+
+#### Solution to Question 4
+**Hint 1**: Which one inherits actual code versus which one checks a type contract?
+
+**Answer**:
+`extends` is class inheritance: the child class inherits actual runtime methods, state, and prototype links from the parent class. `implements` is a static type contract check: it does not inherit any code, but forces the class to satisfy the public shape defined by the interface.
+
+---
+
+### 11. Recall
+
+1. Can a class implement more than one interface?
+2. What visibility must implemented interface members have?
+3. Does `implements` emit JavaScript code?
+
+**If you remember only one thing:**
+Use `implements` to force a class to adhere to public interface contracts.
+
+---
+
+# Topic 9: Method Overriding and the `override` Keyword (TS 4.3)
+
+### 1. What is it?
+Introduced in TypeScript 4.3, the `override` keyword explicitly indicates that a method or property in a subclass is intended to override an existing method in its parent class:
+```typescript
+class Child extends Parent {
+  override execute(): void {}
+}
+```
+
+### 2. Why does it exist?
+In large codebases, developers frequently override methods. Two common bugs occur:
+1. **Misspelled Override**: You intend to override `saveUser()`, but you accidentally name it `saveUsers()`. The compiler silently creates a new method, and the parent method is never overridden.
+2. **Parent Method Renamed**: A developer renames or deletes `render()` in the parent class. The subclass's `render()` method is now an orphaned method without warning.
+
+The `override` keyword forces the compiler to verify that a method with the exact same name actually exists on the parent class.
+
+### 3. Basic example
+
+```typescript
+class BaseService {
+  start(): void {
+    console.log("Base service started");
+  }
+}
+
+class AuthService extends BaseService {
+  // Explicitly marked as overriding:
+  override start(): void {
+    console.log("Auth service starting with security checks");
+  }
+
+  // Typo caught immediately!
+  // override starrt(): void {}
+  // Compile Error: This member cannot have an 'override' modifier because it is not declared in the base class 'BaseService'.
+}
+```
+
+**Line-by-line explanation:**
+- `override start(): void`: Tells the compiler that `start` exists on `BaseService`.
+- If someone renames `start()` on `BaseService` in the future, TypeScript will immediately flag an error on `AuthService`.
+- A typo like `starrt` is caught immediately because `starrt` does not exist on `BaseService`.
+
+---
+
+### 4. How it works inside TypeScript
+1. **Parent Hierarchy Check**: The compiler inspects the prototype chain of the superclass.
+2. **Existence Verification**: If no matching member exists in the parent class, error TS4113 is raised.
+3. **`noImplicitOverride` Compiler Flag**: When enabled in `tsconfig.json`, TypeScript **requires** you to use `override` on any subclass member that shadows a parent member.
+
+---
+
+### 5. Think first
+
+What happens when you use `override` on a class that does NOT extend any parent class? Decide first.
+
+```typescript
+class Standalone {
+  override run() {}
 }
 ```
 
 ---
 
-#### Q65: Why can `instanceof` fail in multi-realm environments (iframes, Web Workers, Node vm)?
-**Answer:**
-`instanceof` checks if the constructor's `.prototype` matches in the prototype chain. If an object is created in an iframe or different `vm.Context`, its constructor prototype belongs to that realm and is NOT strictly equal (`!==`) to the main realm's prototype.
+**Answer and Reason:**
+
+This code fails to compile:
+
+```
+This member cannot have an 'override' modifier because it is not declared in the base class.
+```
+
+**Reason**: `Standalone` does not extend a parent class. It has no parent method to override.
 
 ---
 
-#### Q66: How do you defend against multi-realm `instanceof` failures?
-**Answer:**
-Use Symbol branding with `Symbol.hasInstance`:
+### 6. Try it yourself
+Create a parent class `Writer` with method `write(text: string): void`. Create a subclass `HtmlWriter` that uses `override` on `write(text: string)`.
+
+---
+
+### 7. More examples
+
+#### Example A: Overriding Properties (Medium)
 
 ```typescript
-const REALM_BRAND = Symbol("REALM_BRAND");
+class Component {
+  name: string = "BaseComponent";
+}
 
-class CrossRealmEntity {
-  public [REALM_BRAND] = true;
-
-  static [Symbol.hasInstance](instance: any): boolean {
-    return Boolean(instance && instance[REALM_BRAND]);
-  }
+class Button extends Component {
+  override name: string = "ButtonComponent";
 }
 ```
 
+**Line-by-line explanation:**
+- `override` can also be applied to properties that shadow parent properties.
+
 ---
 
-#### Q67: How do you customize JSON serialization of a class?
-**Answer:**
-Implement the `toJSON()` method. When `JSON.stringify(instance)` is called, JavaScript automatically calls `toJSON()`:
+### 8. Common mistakes
 
+#### Mistake 1: Changing the parameter types incompatibly when overriding
+
+**Wrong code:**
 ```typescript
-class UserAccount {
-  #passwordHash: string = "secret_hash";
-  constructor(public id: string, public email: string) {}
-
-  toJSON() {
-    return { id: this.id, email: this.email };
-  }
+class Parent {
+  process(x: string): void {}
 }
-
-const u = new UserAccount("1", "user@test.com");
-console.log(JSON.stringify(u)); // {"id":"1","email":"user@test.com"}
-```
-
----
-
-#### Q68: Why does `JSON.stringify` ignore `#private` fields?
-**Answer:**
-Because ECMAScript `#private` fields are completely invisible to property enumeration, `Object.keys()`, and reflection. `JSON.stringify` only serializes enumerable string-keyed own properties.
-
----
-
-#### Q69: How do you prevent instances of a class from being modified?
-**Answer:**
-Call `Object.freeze(this)` at the end of the constructor:
-
-```typescript
-class ImmutableRecord {
-  constructor(public readonly key: string, public readonly value: string) {
-    Object.freeze(this);
-  }
+class Child extends Parent {
+  // override process(x: number): void {} // Error: Incompatible signature!
 }
 ```
 
+**Why it happens:**
+Subclass methods must remain compatible with the parent class signature according to the Liskov Substitution Principle.
+
 ---
 
-#### Q70: What is the Adapter Pattern and when do you use it?
-**Answer:**
-It converts the interface of a class into another interface clients expect, enabling classes with incompatible interfaces to work together:
+### 9. Rules to remember
+1. `override` tells the compiler that a member must exist on the parent class.
+2. Catches typos and orphaned methods if parent classes are refactored.
+3. Enable `noImplicitOverride: true` in `tsconfig.json` to make `override` mandatory.
 
+---
+
+### 10. Exercises
+
+#### Question 1 (Predict the compile result)
+Will `Child` compile?
 ```typescript
-interface TargetPaymentGateway {
-  pay(cents: number): Promise<void>;
-}
-
-class LegacyPaymentSystem {
-  makePayment(dollars: number): void {}
-}
-
-class PaymentAdapter implements TargetPaymentGateway {
-  constructor(private legacy: LegacyPaymentSystem) {}
-
-  async pay(cents: number): Promise<void> {
-    this.legacy.makePayment(cents / 100);
-  }
+class Parent { render(): void {} }
+class Child extends Parent {
+  override render(): void {}
 }
 ```
 
----
-
-#### Q71: How do you implement the Command Pattern with Undo support?
-**Answer:**
+#### Question 2 (Find and fix the bug)
+Fix the error caught by `override`:
 ```typescript
-interface Command {
-  execute(): void;
-  undo(): void;
-}
-
-class TextEditor {
-  public content: string = "";
-}
-
-class AppendCommand implements Command {
-  constructor(private editor: TextEditor, private text: string) {}
-
-  execute(): void { this.editor.content += this.text; }
-  undo(): void { this.editor.content = this.editor.content.slice(0, -this.text.length); }
-}
-```
-
----
-
-#### Q72: How do you type an Inversion of Control (IoC) Service Token?
-**Answer:**
-```typescript
-export interface ServiceToken<T> {
-  symbol: symbol;
-  _type?: T;
-}
-
-export function createToken<T>(description: string): ServiceToken<T> {
-  return { symbol: Symbol(description) };
-}
-```
-
----
-
-#### Q73: What is the difference between Transient, Scoped, and Singleton service lifetimes in IoC?
-**Answer:**
-- **Transient**: A new instance is constructed every time it is injected.
-- **Scoped**: A single instance is constructed per request/transaction scope and reused within that scope.
-- **Singleton**: Only one instance is constructed for the entire lifetime of the application.
-
----
-
-#### Q74: How do you prevent circular dependency crashes in class hierarchies?
-**Answer:**
-1. Avoid mutual imports between base and derived class files.
-2. Abstract shared dependencies into independent interfaces.
-3. Use property/method dependency injection rather than constructor instantiations.
-
----
-
-#### Q75: What is the difference between `class` and `interface` for API DTOs?
-**Answer:**
-- `interface`: Has zero runtime footprint; ideal when parsing raw JSON responses directly without instantiation.
-- `class`: Enables runtime validation, default property values, and instance methods; requires an explicit instantiation step (`new DTO(data)` or `plainToInstance`).
-
----
-
-#### Q76: How do you safely rehydrate JSON into class instances with prototype chains intact?
-**Answer:**
-Use `Object.assign(new TargetClass(), json)` or custom mapper constructors:
-
-```typescript
-class UserProfile {
-  public name: string = "";
-  public getInitials(): string { return this.name.charAt(0); }
-
-  static fromJSON(json: Record<string, any>): UserProfile {
-    const inst = new UserProfile();
-    inst.name = json.name;
-    return inst;
-  }
-}
-```
-
----
-
-#### Q77: How do you implement the Observer Pattern in TypeScript classes?
-**Answer:**
-```typescript
-interface Observer<T> {
-  update(data: T): void;
-}
-
-class Subject<T> {
-  private observers: Observer<T>[] = [];
-
-  subscribe(obs: Observer<T>): () => void {
-    this.observers.push(obs);
-    return () => { this.observers = this.observers.filter((o) => o !== obs); };
-  }
-
-  notify(data: T): void {
-    for (const obs of this.observers) obs.update(data);
-  }
-}
-```
-
----
-
-#### Q78: How do you implement the Decorator/Wrapper Pattern without inheritance?
-**Answer:**
-Wrap an existing object that implements an interface and delegate calls, adding behavior before or after:
-
-```typescript
-interface HttpHandler {
-  handle(req: any): Promise<any>;
-}
-
-class LoggingHttpDecorator implements HttpHandler {
-  constructor(private inner: HttpHandler) {}
-
-  async handle(req: any): Promise<any> {
-    console.log(`[REQ] ${req.url}`);
-    const res = await this.inner.handle(req);
-    console.log(`[RES] status: ${res.status}`);
-    return res;
-  }
-}
-```
-
----
-
-#### Q79: How do you create an immutable Step-Builder with compile-time type states?
-**Answer:**
-By tracking builder progress in a generic type parameter and returning new builder instances at each step:
-
-```typescript
-class RequestBuilder<HasUrl extends boolean = false, HasMethod extends boolean = false> {
-  private url?: string;
-  private method?: string;
-
-  setUrl(url: string): RequestBuilder<true, HasMethod> {
-    const next = new RequestBuilder<true, HasMethod>();
-    next.url = url;
-    next.method = this.method;
-    return next;
-  }
-
-  setMethod(method: string): RequestBuilder<HasUrl, true> {
-    const next = new RequestBuilder<HasUrl, true>();
-    next.url = this.url;
-    next.method = method;
-    return next;
-  }
-
-  // Only callable when both URL and Method are provided!
-  build(this: RequestBuilder<true, true>): { url: string; method: string } {
-    return { url: this.url!, method: this.method! };
-  }
-}
-```
-
----
-
-#### Q80: How does TypeScript type-check class getters without explicit return types?
-**Answer:**
-TypeScript infers the getter's return type from the return expression inside the getter body. If a matching setter exists, the setter parameter type is automatically inferred from the getter return type unless annotated.
-
----
-
-#### Q81: What is the Curiously Recurring Template Pattern (CRTP) in TypeScript?
-**Answer:**
-A derived class passes itself as a type parameter to its base class:
-
-```typescript
-abstract class Clonable<Derived> {
-  abstract clone(): Derived;
-}
-
-class DocumentNode extends Clonable<DocumentNode> {
-  override clone(): DocumentNode {
-    return new DocumentNode();
-  }
-}
-```
-
----
-
-#### Q82: Can an `interface` extend a `class` in TypeScript?
-**Answer:**
-Yes! An interface extending a class inherits all public, protected, and private members of the class, but without their implementations. Only the class itself or a subclass of it can implement such an interface!
-
-```typescript
-class Control {
-  private state: any;
-}
-
-interface SelectableControl extends Control {
-  select(): void;
-}
-```
-
----
-
-#### Q83: How do you enforce that a class instance can only be created via a factory method?
-**Answer:**
-Make the constructor `private`:
-
-```typescript
-class SecureToken {
-  private constructor(public readonly token: string) {}
-
-  public static generate(): SecureToken {
-    return new SecureToken("sec_" + Math.random());
-  }
-}
-```
-
----
-
-#### Q84: What happens if a derived class constructor omits `super()` when the base class has no constructor?
-**Answer:**
-If the base class has no constructor, the derived class must still call `super()` if it declares its own constructor.
-
----
-
-#### Q85: How do you implement a Type-Safe Dynamic Class Registry?
-**Answer:**
-```typescript
-type PluginConstructor = new () => any;
-
-class PluginRegistry {
-  private static plugins = new Map<string, PluginConstructor>();
-
-  public static register(name: string, ctor: PluginConstructor): void {
-    this.plugins.set(name, ctor);
-  }
-
-  public static create(name: string): any {
-    const Ctor = this.plugins.get(name);
-    if (!Ctor) throw new Error(`Unknown plugin: ${name}`);
-    return new Ctor();
-  }
-}
-```
-
----
-
-#### Q86: What are the three layers of Clean Architecture and how are classes organized?
-**Answer:**
-1. **Domain Layer**: Pure Entities, Value Objects, and Domain Events (no external framework dependencies).
-2. **Use Case / Application Layer**: Application Services and Ports (Abstract Repositories/Gateways).
-3. **Infrastructure / Adapter Layer**: Concrete DB Repositories, Controllers, and External HTTP Adapters.
-
----
-
-#### Q87: How do you mock a class dependency cleanly in unit tests without Jest `jest.mock()`?
-**Answer:**
-By relying on interface abstractions and passing an in-memory test double class:
-
-```typescript
-class InMemoryUserRepo implements UserRepository {
-  public users: User[] = [];
-  async save(user: User): Promise<void> { this.users.push(user); }
-}
-```
-
----
-
-#### Q88: How do you detect whether an object is a class constructor function at runtime?
-**Answer:**
-Check `typeof obj === 'function'` and whether `Function.prototype.toString.call(obj).startsWith('class ')`.
-
----
-
-#### Q89: Can a class implement an intersection of multiple types?
-**Answer:**
-Yes: `class MyClass implements (InterfaceA & InterfaceB) { ... }`.
-
----
-
-#### Q90: How do you enforce strict immutability across an entire domain entity hierarchy?
-**Answer:**
-1. Mark all properties as `public readonly`.
-2. Wrap all collections in `ReadonlyArray<T>` or `ReadonlyMap<K, V>`.
-3. Freeze instances in constructors via `Object.freeze(this)`.
-4. Perform state updates by returning fresh cloned instances (Copy-on-Write).
-
-
----
-
-## 4. Output Prediction Puzzles (15 Puzzles with Step-by-Step Traces)
-
-Test your mental model of TypeScript's class internals, prototype chains, static block execution order, `#private` encapsulation, and polymorphic `this` resolution.
-
----
-
-### Puzzle 1: Static vs Instance Symbol Resolution
-
-```typescript
-class Widget {
-  public static count: number = 10;
-  public count: number = 5;
-
-  public getCount(): number {
-    return this.count;
-  }
-}
-
-const W: typeof Widget = Widget;
-const w: Widget = new Widget();
-
-// Question: What are the values of W.count and w.getCount()?
-```
-
-**Step-by-Step Evaluation Trace:**
-1. `Widget` introduces both an instance type (`Widget`) and a constructor value (`typeof Widget`).
-2. `W` is bound to the constructor function `Widget`. `W.count` accesses the static property on the constructor object -> `10`.
-3. `w` is an instance of `Widget`. `w.count` is `5`.
-4. `w.getCount()` returns `this.count` which resolves to the instance property `5`.
-5. **Output Values:** `W.count = 10`, `w.getCount() = 5`.
-
----
-
-### Puzzle 2: Reflection Visibility of `#private` vs `private`
-
-```typescript
-class Vault {
-  private softKey: string = "soft_123";
-  #hardKey: string = "hard_456";
-
-  public getKeys(): string[] {
-    return Object.keys(this);
-  }
-}
-
-const vault = new Vault();
-const keys = vault.getKeys();
-// Question: What array is returned by vault.getKeys()?
-```
-
-**Step-by-Step Evaluation Trace:**
-1. TypeScript's `private softKey` compiles down to an ordinary JavaScript property `this.softKey = "soft_123"`. It is an own enumerable property.
-2. ECMAScript `#hardKey` uses private brand slots managed by the engine. It is completely invisible to `Object.keys()`, `Object.getOwnPropertyNames()`, and `Reflect.ownKeys()`.
-3. `Object.keys(this)` iterates over own enumerable string keys of the instance.
-4. Only `"softKey"` is found.
-5. **Output Value:** `["softKey"]`.
-
----
-
-### Puzzle 3: Polymorphic `this` Across Three Levels of Inheritance
-
-```typescript
-class StepOne {
-  public alpha(): this { return this; }
-}
-
-class StepTwo extends StepOne {
-  public beta(): this { return this; }
-}
-
-class StepThree extends StepTwo {
-  public gamma(): this { return this; }
-}
-
-const result = new StepThree().alpha().beta().gamma();
-// Question: What is the compile-time type of 'result'?
-```
-
-**Step-by-Step Evaluation Trace:**
-1. `new StepThree()` has type `StepThree`.
-2. `.alpha()` is defined on `StepOne` returning `this`. Because `this` is polymorphic, the return type is dynamically bound to the calling subtype (`StepThree`).
-3. `.beta()` is defined on `StepTwo` returning `this` -> still typed as `StepThree`.
-4. `.gamma()` is called on `StepThree`, returning `StepThree`.
-5. Without casting, the type flows seamlessly across all 3 levels.
-6. **Output Type:** `StepThree`.
-
----
-
-### Puzzle 4: The `implements` Parameter Type Erasure Trap
-
-```typescript
-interface StringTransformer {
-  transform(input: string): string;
-}
-
-class Capitalizer implements StringTransformer {
-  transform(input) {
-    return input.toUpperCase();
-  }
-}
-
-const c = new Capitalizer();
-// Question: Under strict mode (noImplicitAny: true), does this compile?
-```
-
-**Step-by-Step Evaluation Trace:**
-1. `StringTransformer` specifies `transform(input: string): string`.
-2. `Capitalizer implements StringTransformer` declares that the class matches the interface contract.
-3. However, TypeScript does **NOT** infer parameter types for methods implemented from an interface.
-4. Parameter `input` has no type annotation.
-5. Under strict mode (`noImplicitAny: true`), TypeScript flags:
-   `TS7006: Parameter 'input' implicitly has an 'any' type.`
-6. **Result:** Compilation Error `TS7006`. Parameter types must be explicitly typed!
-
----
-
-### Puzzle 5: Static Initialization Blocks Execution Order
-
-```typescript
-const executionOrder: string[] = [];
-
-class Base {
-  static {
-    executionOrder.push("Base Static Block");
-  }
-  public static baseProp = executionOrder.push("Base Static Prop");
-}
-
-class Derived extends Base {
-  public static derivedProp = executionOrder.push("Derived Static Prop");
-  static {
-    executionOrder.push("Derived Static Block");
-  }
-}
-
-// Question: What is executionOrder after Derived class is defined?
-```
-
-**Step-by-Step Evaluation Trace:**
-1. The engine evaluates `Base` first:
-   - `static { ... }` block in `Base` executes -> pushes `"Base Static Block"`.
-   - `baseProp` initializer runs -> pushes `"Base Static Prop"`.
-2. Next, the engine evaluates `Derived`:
-   - `derivedProp` initializer runs -> pushes `"Derived Static Prop"`.
-   - `static { ... }` block in `Derived` runs -> pushes `"Derived Static Block"`.
-3. **Output Array:**
-   ```javascript
-   [
-     "Base Static Block",
-     "Base Static Prop",
-     "Derived Static Prop",
-     "Derived Static Block"
-   ]
-   ```
-
----
-
-### Puzzle 6: Prototype Method vs Arrow Function Callback Binding
-
-```typescript
-class Processor {
-  public name: string = "PrimaryProcessor";
-
-  public protoMethod(): string {
-    return this.name;
-  }
-
-  public arrowMethod = (): string => {
-    return this.name;
-  };
-}
-
-const p = new Processor();
-const fn1 = p.protoMethod;
-const fn2 = p.arrowMethod;
-
-// Case A: fn2()
-// Case B: fn1()
-```
-
-**Step-by-Step Evaluation Trace:**
-1. `protoMethod` is defined on `Processor.prototype`. When extracted (`fn1 = p.protoMethod`) and invoked unbound (`fn1()`), `this` is `undefined` in strict mode. Invoking `fn1()` throws:
-   `TypeError: Cannot read properties of undefined (reading 'name')`.
-2. `arrowMethod` is an own property initialized as an arrow function closed over `this` (the instance `p`). When invoked unbound (`fn2()`), `this` remains strictly bound to `p`.
-3. `fn2()` returns `"PrimaryProcessor"`.
-4. **Result:** `fn2()` returns `"PrimaryProcessor"`; `fn1()` throws runtime `TypeError`.
-
----
-
-### Puzzle 7: Dual-Linkage Static Inheritance
-
-```typescript
-class SuperLogger {
-  public static appPrefix: string = "[CORE]";
-  public static log(msg: string): string {
-    return `${this.appPrefix} ${msg}`;
-  }
-}
-
+class SuperLogger { log(msg: string): void {} }
 class SubLogger extends SuperLogger {
-  public static override appPrefix: string = "[SUB]";
+  override print(msg: string): void {}
 }
-
-const out1 = SuperLogger.log("Started");
-const out2 = SubLogger.log("Running");
 ```
 
-**Step-by-Step Evaluation Trace:**
-1. `SuperLogger.log("Started")`: `this` is `SuperLogger`. `this.appPrefix` is `"[CORE]"`. Returns `"[CORE] Started"`.
-2. `SubLogger.log("Running")`: `SubLogger` inherits the static method `log` via `SubLogger.__proto__ === SuperLogger`.
-3. Inside `SubLogger.log()`, `this` is `SubLogger`!
-4. `this.appPrefix` on `SubLogger` resolves to `"[SUB]"`.
-5. Returns `"[SUB] Running"`.
-6. **Output Values:** `out1 = "[CORE] Started"`, `out2 = "[SUB] Running"`.
+#### Question 3 (Write code from scratch)
+Write a base class `Notification` with `send(): void`. Write a subclass `PushNotification` using `override send(): void` that logs `"Sending push"`.
+
+#### Question 4 (Explain in your own words)
+Why is the `noImplicitOverride` tsconfig flag recommended for large engineering teams?
 
 ---
 
-### Puzzle 8: Mixin Class Inheritance Order
+### Solutions
+
+#### Solution to Question 1
+**Hint 1**: Does `render` exist on `Parent`?
+
+**Answer**:
+Yes, it compiles without error.
+
+#### Solution to Question 2
+**Hint 1**: Change `print` to `log`.
+
+**Answer**:
+```typescript
+class SuperLogger { log(msg: string): void {} }
+class SubLogger extends SuperLogger {
+  override log(msg: string): void {}
+}
+```
+
+#### Solution to Question 3
+**Hint 1**: Use `override send(): void`.
+
+**Answer**:
+```typescript
+class Notification {
+  send(): void { console.log("Sending"); }
+}
+
+class PushNotification extends Notification {
+  override send(): void {
+    console.log("Sending push");
+  }
+}
+```
+
+#### Solution to Question 4
+**Hint 1**: What happens during large refactors when parent class methods are renamed?
+
+**Answer**:
+In large teams, an engineer might rename a method in a base class without knowing that other developers created subclasses overriding that method. Without `noImplicitOverride`, the subclasses silently stop overriding the method and introduce runtime bugs. With `noImplicitOverride`, the compiler immediately catches all subclasses and requires them to be updated.
+
+---
+
+### 11. Recall
+
+1. What keyword explicitly marks a subclass method as overriding a parent method?
+2. Which TypeScript version introduced the `override` keyword?
+3. What compiler flag requires `override` on all shadowed methods?
+
+**If you remember only one thing:**
+Use `override` to ensure you are actually overriding a parent method, catching typos and refactoring bugs.
+
+---
+
+# Topic 10: Polymorphic `this` Type for Fluent Chaining
+
+### 1. What is it?
+In TypeScript classes, the special type `this` represents the **current subtype** of the class, rather than the base class itself.
+
+When a method returns `this`, method calls on a subclass automatically return the subclass type, allowing seamless method chaining (fluent builders).
+
+### 2. Why does it exist?
+Consider building a query builder or fluent API with inheritance:
+- Base class `QueryBuilder` has `.where()`.
+- Subclass `UserQueryBuilder` adds `.withRoles()`.
+
+If `.where()` returned the base type `QueryBuilder`, calling `userQuery.where("...").withRoles()` would fail because `.where()` returned the base class! Returning `this` ensures the chained return type remains `UserQueryBuilder`.
+
+### 3. Basic example
 
 ```typescript
-type GConstructor<T = {}> = new (...args: any[]) => T;
+class BasicBuilder {
+  protected query: string = "";
 
-function WithA<TBase extends GConstructor>(Base: TBase) {
+  where(condition: string): this {
+    this.query += ` WHERE ${condition}`;
+    return this; // Returns 'this'
+  }
+}
+
+class UserQueryBuilder extends BasicBuilder {
+  withRoles(role: string): this {
+    this.query += ` AND role = '${role}'`;
+    return this;
+  }
+
+  build(): string {
+    return this.query;
+  }
+}
+
+// Fluent method chaining across inheritance:
+const sql = new UserQueryBuilder()
+  .where("active = true") // Returns UserQueryBuilder!
+  .withRoles("admin")     // Accessible because return type was not lost!
+  .build();
+
+console.log(sql);
+```
+
+**Line-by-line explanation:**
+- `where(condition: string): this`: The return type is not `BasicBuilder`; it is the polymorphic `this` type.
+- When called on `UserQueryBuilder`, `this` evaluates to `UserQueryBuilder`.
+- Chaining `.withRoles()` works seamlessly because the subclass methods are preserved.
+
+---
+
+### 4. How it works inside TypeScript
+1. **Dynamic Subtype Binding**: `this` dynamically represents whatever subclass instance the method was invoked on.
+2. **Subclass Compatibility**: In a subclass, `this` is a subtype of the parent's `this`.
+3. **Builder Pattern Support**: Allows fluent, chainable method calls across multiple levels of inheritance.
+
+---
+
+### 5. Think first
+
+What would happen if `where()` returned `BasicBuilder` instead of `this`? Decide first.
+
+```typescript
+class BasicBuilder {
+  where(condition: string): BasicBuilder {
+    return this;
+  }
+}
+class UserQueryBuilder extends BasicBuilder {
+  withRoles(): this { return this; }
+}
+
+const b = new UserQueryBuilder().where("x = 1").withRoles();
+```
+
+---
+
+**Answer and Reason:**
+
+This code fails to compile:
+
+```
+Property 'withRoles' does not exist on type 'BasicBuilder'.
+```
+
+**Reason**: `where` explicitly returned `BasicBuilder`. The subclass methods on `UserQueryBuilder` were lost in the chain. Returning `this` prevents this error.
+
+---
+
+### 6. Try it yourself
+Create a class `Calculator` with methods `add(n: number): this` and `multiply(n: number): this`. Chain calls `new Calculator().add(5).multiply(2)`.
+
+---
+
+### 7. More examples
+
+#### Example A: Multi-Level Builder Hierarchy (Medium)
+
+```typescript
+class BaseRequest {
+  setUrl(url: string): this { return this; }
+}
+
+class AuthenticatedRequest extends BaseRequest {
+  setToken(token: string): this { return this; }
+}
+
+class JsonRequest extends AuthenticatedRequest {
+  setPayload(data: object): this { return this; }
+}
+
+// Chains across 3 inheritance levels:
+new JsonRequest()
+  .setUrl("/api")
+  .setToken("tok_123")
+  .setPayload({ ok: true });
+```
+
+---
+
+### 8. Common mistakes
+
+#### Mistake 1: Returning the class name instead of `this` in chainable methods
+
+**Wrong code:**
+```typescript
+class StepBuilder {
+  stepOne(): StepBuilder { return this; }
+}
+```
+
+**Why it happens:**
+If someone extends `StepBuilder`, `stepOne()` will drop subclass methods. Always use `: this`.
+
+---
+
+### 9. Rules to remember
+1. Returning `: this` preserves the derived subclass type during method chaining.
+2. Enables fluent builders that work across multiple levels of inheritance.
+3. Prefer `: this` over `: ClassName` for all chainable methods.
+
+---
+
+### 10. Exercises
+
+#### Question 1 (Predict the compile result)
+What is the return type of `builder.setA(1)` when called on an instance of `ChildBuilder`?
+```typescript
+class ParentBuilder { setA(n: number): this { return this; } }
+class ChildBuilder extends ParentBuilder {}
+```
+
+#### Question 2 (Find and fix the bug)
+Fix the return type so subclasses can chain methods:
+```typescript
+class Pipeline {
+  pipe(step: string): Pipeline { return this; }
+}
+```
+
+#### Question 3 (Write code from scratch)
+Write a class `FluentString` with a private `val: string`. Add chainable methods `append(s: string): this` and `trim(): this`, and a terminal method `toString(): string`.
+
+#### Question 4 (Explain in your own words)
+Why is the polymorphic `this` type different from writing the class's own name as the return type?
+
+---
+
+### Solutions
+
+#### Solution to Question 1
+**Hint 1**: `this` represents the derived instance.
+
+**Answer**:
+The return type is `ChildBuilder`.
+
+#### Solution to Question 2
+**Hint 1**: Change `Pipeline` to `this`.
+
+**Answer**:
+```typescript
+class Pipeline {
+  pipe(step: string): this { return this; }
+}
+```
+
+#### Solution to Question 3
+**Hint 1**: Return `this` on `append` and `trim`.
+
+**Answer**:
+```typescript
+class FluentString {
+  constructor(private val: string = "") {}
+
+  append(s: string): this {
+    this.val += s;
+    return this;
+  }
+
+  trim(): this {
+    this.val = this.val.trim();
+    return this;
+  }
+
+  toString(): string {
+    return this.val;
+  }
+}
+```
+
+#### Solution to Question 4
+**Hint 1**: What happens when a subclass extends the class?
+
+**Answer**:
+Writing the class's own name (e.g. `: BasicBuilder`) hardcodes the return type to the base class, slicing off any methods added by derived subclasses. The polymorphic `this` type dynamically represents the exact subtype of the object at the call site, keeping derived methods accessible in chains.
+
+---
+
+### 11. Recall
+
+1. What return type preserves derived subclasses during method chaining?
+2. What pattern commonly uses polymorphic `this`?
+3. If `Child extends Parent`, what does `parentMethod(): this` return on a `Child` instance?
+
+**If you remember only one thing:**
+Return `this` from chainable methods to support fluent method calls across class inheritance.
+
+---
+
+# Checkpoint Challenge: Topics 6 to 10
+
+### Challenge Scenario
+Build an extensible SQL query builder using inheritance, abstract methods, and polymorphic `this`:
+
+1. Define an `abstract class BaseQuery`:
+   - Store `protected table: string`.
+   - Store `protected conditions: string[] = []`.
+   - Add a chainable method `where(clause: string): this` that pushes to `conditions` and returns `this`.
+   - Declare an abstract method `abstract build(): string`.
+2. Create a concrete subclass `SelectQuery extends BaseQuery`:
+   - Add a constructor taking `table: string` and `public fields: string[] = ["*"]`.
+   - Add a chainable method `limit(count: number): this`.
+   - Implement `override build(): string` that returns `"SELECT " + fields.join(", ") + " FROM " + this.table + ...`.
+3. Test chaining `.where("id = 1").limit(10).build()`.
+
+### Challenge Solution
+
+```typescript
+abstract class BaseQuery {
+  protected conditions: string[] = [];
+
+  constructor(protected table: string) {}
+
+  where(clause: string): this {
+    this.conditions.push(clause);
+    return this;
+  }
+
+  abstract build(): string;
+}
+
+class SelectQuery extends BaseQuery {
+  private limitCount?: number;
+
+  constructor(table: string, public fields: string[] = ["*"]) {
+    super(table);
+  }
+
+  limit(count: number): this {
+    this.limitCount = count;
+    return this;
+  }
+
+  override build(): string {
+    let sql = `SELECT ${this.fields.join(", ")} FROM ${this.table}`;
+    if (this.conditions.length > 0) {
+      sql += ` WHERE ${this.conditions.join(" AND ")}`;
+    }
+    if (this.limitCount !== undefined) {
+      sql += ` LIMIT ${this.limitCount}`;
+    }
+    return sql;
+  }
+}
+
+const query = new SelectQuery("users", ["id", "name"])
+  .where("active = 1")
+  .where("age > 18")
+  .limit(5)
+  .build();
+
+console.log("Generated SQL:", query);
+// "SELECT id, name FROM users WHERE active = 1 AND age > 18 LIMIT 5"
+```
+
+---
+
+# Topic 11: Class Mixins and Functional Composition
+
+### 1. What is it?
+A **Mixin** is a function that takes a class constructor as an input argument and returns a new class constructor that extends it with new properties and methods:
+```typescript
+function Timestamped<TBase extends Constructor>(Base: TBase) {
   return class extends Base {
-    public tag: string = "A";
+    timestamp = Date.now();
+  };
+}
+```
+
+### 2. Why does it exist?
+JavaScript does not support multiple class inheritance: a class cannot write `class User extends Model, Loggable, Disposable`.
+
+Mixins allow you to compose reusable behaviors across unrelated classes cleanly without deep, rigid inheritance hierarchies.
+
+### 3. Basic example
+
+```typescript
+type Constructor<T = {}> = new (...args: any[]) => T;
+
+// 1. Mixin adding a timestamp:
+function Timestamped<TBase extends Constructor>(Base: TBase) {
+  return class extends Base {
+    createdAt = new Date();
   };
 }
 
-function WithB<TBase extends GConstructor>(Base: TBase) {
+// 2. Mixin adding an activator flag:
+function Activatable<TBase extends Constructor>(Base: TBase) {
   return class extends Base {
-    public tag: string = "B";
+    isActive = false;
+    activate() {
+      this.isActive = true;
+    }
   };
 }
 
-class Root {}
-class TestClass extends WithB(WithA(Root)) {}
+// 3. Base class:
+class User {
+  constructor(public name: string) {}
+}
 
-const inst = new TestClass();
-// Question: What is inst.tag?
+// 4. Compose mixins:
+const AdvancedUser = Activatable(Timestamped(User));
+
+const u = new AdvancedUser("Alex");
+console.log(u.name);      // From User
+console.log(u.createdAt); // From Timestamped mixin
+u.activate();             // From Activatable mixin
+console.log(u.isActive);  // true
 ```
 
-**Step-by-Step Evaluation Trace:**
-1. `WithA(Root)` produces an intermediate class `ClassA` with `this.tag = "A"`.
-2. `WithB(ClassA)` produces `ClassB` extending `ClassA`, where constructor initializes `this.tag = "B"`.
-3. `TestClass` extends `ClassB`.
-4. When `new TestClass()` runs:
-   - `super()` calls `ClassB`'s constructor.
-   - `ClassB` calls `super()`, running `ClassA`'s constructor (`tag = "A"`).
-   - Execution returns to `ClassB`'s constructor body, assigning `this.tag = "B"`.
-5. Property `tag` is overwritten by the outer mixin (`WithB`).
-6. **Output Value:** `inst.tag = "B"`.
+**Line-by-line explanation:**
+- `type Constructor<T>`: A generic constructor signature.
+- `Timestamped(Base)`: Returns an anonymous class extending `Base` with `createdAt`.
+- `Activatable(Base)`: Returns an anonymous class extending `Base` with `isActive` and `activate()`.
+- `Activatable(Timestamped(User))`: Chains the mixins to produce a combined class.
 
 ---
 
-### Puzzle 9: Definite Assignment Assertion vs Constructor Timing
+### 4. How it works inside TypeScript
+1. **Higher-Order Class**: The function creates a dynamic class extension at runtime.
+2. **Type Intersection**: TypeScript infers the returned constructor type as an intersection of the base class and the added properties.
+3. **Constructor Forwarding**: Any arguments passed to the composed constructor are forwarded down the chain via `...args`.
+
+---
+
+### 5. Think first
+
+What is the type of `u` in `const u = new AdvancedUser("Alex")`? Decide first.
+
+---
+
+**Answer and Reason:**
+
+The type of `u` is an intersection:
 
 ```typescript
-class DataService {
-  public data!: string[];
-
-  constructor() {
-    this.init();
-  }
-
-  private init(): void {
-    this.data = ["ready"];
-  }
-}
-
-const svc = new DataService();
-// Question: Does TS compile this, and what is svc.data?
+User & { createdAt: Date } & { isActive: boolean; activate(): void }
 ```
 
-**Step-by-Step Evaluation Trace:**
-1. `public data!: string[];` has definite assignment assertion `!`, suppressing `TS2564`.
-2. At runtime, `new DataService()` calls `this.init()`.
-3. `this.init()` assigns `this.data = ["ready"]`.
-4. The property is populated synchronously.
-5. **Output Value:** `svc.data = ["ready"]`.
+**Reason**: TypeScript infers the compound instance type by combining the members of the base class and all applied mixins.
 
 ---
 
-### Puzzle 10: Private Constructor Singleton and Subclassing
+### 6. Try it yourself
+Write a mixin `Tagging<TBase extends Constructor>(Base: TBase)` that adds an array `tags: string[] = []` and a method `addTag(tag: string)`. Apply it to a `Post` class.
+
+---
+
+### 7. More examples
+
+#### Example A: Mixin with Constrained Base Classes (Medium)
 
 ```typescript
-class SingletonMaster {
-  private constructor() {}
+interface HasId {
+  id: string;
 }
 
-class AttemptedSub extends SingletonMaster {
-  // Question: Does AttemptedSub compile?
-}
-```
-
-**Step-by-Step Evaluation Trace:**
-1. A derived class must implicitly or explicitly call `super()`.
-2. In `SingletonMaster`, the constructor is marked `private`.
-3. A `private` constructor can only be called from inside `SingletonMaster`. Subclasses are forbidden from invoking `super()`.
-4. TypeScript flags:
-   `TS2675: Cannot extend a class 'SingletonMaster'. Class constructor is marked as private.`
-5. **Result:** Compilation Error `TS2675`.
-
----
-
-### Puzzle 11: Getter / Setter Type Asymmetry
-
-```typescript
-class NumericInput {
-  private _val: number = 0;
-
-  get value(): number {
-    return this._val;
-  }
-
-  set value(v: number | string) {
-    this._val = typeof v === "string" ? parseFloat(v) : v;
-  }
-}
-
-const input = new NumericInput();
-input.value = "100.5";
-const num: number = input.value;
-```
-
-**Step-by-Step Evaluation Trace:**
-1. The setter accepts `number | string`. Assigning `"100.5"` is strictly valid.
-2. The setter executes, parsing `"100.5"` to `100.5`.
-3. The getter returns `number`. Reading `input.value` produces type `number`.
-4. Assigning to `num: number` compiles without error.
-5. **Output Value:** `num = 100.5`.
-
----
-
-### Puzzle 12: `instanceof` with `Symbol.hasInstance` Customization
-
-```typescript
-class NumberLike {
-  public static [Symbol.hasInstance](instance: any): boolean {
-    return typeof instance === "number" || instance instanceof Number;
-  }
-}
-
-const val1: any = 42;
-const val2: any = "42";
-
-const check1 = val1 instanceof (NumberLike as any);
-const check2 = val2 instanceof (NumberLike as any);
-```
-
-**Step-by-Step Evaluation Trace:**
-1. The `instanceof` operator delegates to `Constructor[Symbol.hasInstance](value)` if defined.
-2. For `val1 = 42`: `typeof 42 === "number"` is true -> returns `true`.
-3. For `val2 = "42"`: string is not number -> returns `false`.
-4. **Output Values:** `check1 = true`, `check2 = false`.
-
----
-
-### Puzzle 13: `override` with `noImplicitOverride` Guard
-
-```typescript
-class BaseController {
-  public handleRequest(req: any): void {}
-}
-
-class ApiController extends BaseController {
-  public handlRequest(req: any): void {}
-}
-// With noImplicitOverride: true and 'override' modifier rules
-```
-
-**Step-by-Step Evaluation Trace:**
-1. The developer intended to override `handleRequest` but made a typo (`handlRequest`).
-2. Without `override`, the developer accidentally declares a brand new method.
-3. If the developer wrote `public override handlRequest()`, TypeScript immediately flags:
-   `TS4113: This member cannot have an 'override' modifier because it is not declared in the base class.`
-4. The typo is caught instantly at build time!
-
----
-
-### Puzzle 14: Method Parameter Contravariance under `strictFunctionTypes`
-
-```typescript
-class Animal { name = "Animal"; }
-class Dog extends Animal { bark() {} }
-
-class AnimalHandler {
-  public handle: (a: Animal) => void = (a) => console.log(a.name);
-}
-
-class DogHandler extends AnimalHandler {
-  // Can DogHandler narrow the parameter to Dog?
-  // public override handle: (d: Dog) => void = (d) => d.bark();
-}
-```
-
-**Step-by-Step Evaluation Trace:**
-1. `AnimalHandler.handle` expects any `Animal`.
-2. If `DogHandler` overrides `handle` with `(d: Dog) => void`, what happens if a caller has an `AnimalHandler` reference and passes a `Cat`?
-3. Passing a `Cat` to a function expecting `Dog` crashes when calling `d.bark()`!
-4. Function parameters are **contravariant** (or invariant). A derived class CANNOT narrow parameter types.
-5. TypeScript flags `TS2322: Type '(d: Dog) => void' is not assignable to type '(a: Animal) => void'.`
-
----
-
-### Puzzle 15: `using` Resource Disposal Execution Order
-
-```typescript
-const logs: string[] = [];
-
-class Resource implements Disposable {
-  constructor(private id: string) {}
-
-  [Symbol.dispose](): void {
-    logs.push(`Disposed ${this.id}`);
-  }
-}
-
-function execute() {
-  using r1 = new Resource("First");
-  using r2 = new Resource("Second");
-  logs.push("Work done");
-}
-
-execute();
-// Question: What is the sequence in 'logs'?
-```
-
-**Step-by-Step Evaluation Trace:**
-1. `r1` is acquired, then `r2` is acquired.
-2. `"Work done"` is pushed.
-3. As execution leaves the scope, `using` declarations are disposed in **reverse order of declaration** (LIFO / Stack order):
-   - `r2` is disposed first -> `"Disposed Second"`.
-   - `r1` is disposed second -> `"Disposed First"`.
-4. **Output Sequence:**
-   ```javascript
-   [
-     "Work done",
-     "Disposed Second",
-     "Disposed First"
-   ]
-   ```
-
-
----
-
-## 5. Four Complete Runnable Production Projects with Test Assertions
-
-Every project below is a fully functional, self-contained TypeScript engine demonstrating production OOP patterns, clean architecture, and SOLID design. All class properties are explicitly declared for strict Node.js compatibility (`--experimental-strip-types`).
-
----
-
-### Project 1: Enterprise Domain-Driven Design (DDD) Entity & Aggregate Root Engine
-
-#### Architectural Overview
-```
-+-------------------------------------------------------------------------+
-|                  Enterprise Domain-Driven Design Engine                 |
-+-------------------------------------------------------------------------+
-|  [Entity<TId>] ──► Identity Equality & Optimistic Concurrency Version   |
-|         │                                                               |
-|         ▼                                                               |
-|  [AggregateRoot<TId>] ──► Encapsulates Domain Events & Consistency      |
-|         │                                                               |
-|  [OrderAggregate]                                                       |
-|    ├── addItem(sku, price, qty): void                                   |
-|    ├── markPaid(txId): void                                             |
-|    └── pullDomainEvents(): DomainEvent[]                                |
-+-------------------------------------------------------------------------+
-```
-
-#### Complete Implementation & Verification Suite
-```typescript
-import assert from "node:assert";
-
-export interface DomainEvent {
-  eventName: string;
-  occurredOn: Date;
-  aggregateId: string;
-  payload: any;
-}
-
-export abstract class Entity<TId> {
-  public readonly id: TId;
-  private _version: number;
-
-  constructor(id: TId, initialVersion: number = 1) {
-    this.id = id;
-    this._version = initialVersion;
-  }
-
-  public get version(): number {
-    return this._version;
-  }
-
-  protected incrementVersion(): void {
-    this._version++;
-  }
-
-  public equals(other: Entity<TId> | null | undefined): boolean {
-    if (other === null || other === undefined) return false;
-    if (this === other) return true;
-    return this.id === other.id;
-  }
-}
-
-export abstract class AggregateRoot<TId extends string> extends Entity<TId> {
-  private _domainEvents: DomainEvent[];
-
-  constructor(id: TId, initialVersion: number = 1) {
-    super(id, initialVersion);
-    this._domainEvents = [];
-  }
-
-  protected recordEvent(eventName: string, payload: any): void {
-    this.incrementVersion();
-    this._domainEvents.push({
-      eventName,
-      occurredOn: new Date(),
-      aggregateId: this.id,
-      payload,
-    });
-  }
-
-  public pullDomainEvents(): DomainEvent[] {
-    const events = [...this._domainEvents];
-    this._domainEvents = [];
-    return events;
-  }
-}
-
-// Concrete Domain Aggregate
-export interface OrderItem {
-  sku: string;
-  unitPrice: number;
-  quantity: number;
-}
-
-export class OrderAggregate extends AggregateRoot<string> {
-  private _items: OrderItem[];
-  private _status: "pending" | "paid" | "shipped" | "cancelled";
-  private _transactionId?: string;
-
-  constructor(orderId: string) {
-    super(orderId);
-    this._items = [];
-    this._status = "pending";
-  }
-
-  public get status(): string {
-    return this._status;
-  }
-
-  public get items(): ReadonlyArray<OrderItem> {
-    return this._items;
-  }
-
-  public get totalAmount(): number {
-    return this._items.reduce((sum, item) => sum + item.unitPrice * item.quantity, 0);
-  }
-
-  public addItem(sku: string, unitPrice: number, quantity: number): void {
-    if (this._status !== "pending") {
-      throw new Error(`Cannot add items to order in ${this._status} status`);
+// Restrict mixin so it can ONLY be applied to classes that have 'id':
+function Deletable<TBase extends Constructor<HasId>>(Base: TBase) {
+  return class extends Base {
+    deleteRecord(): void {
+      console.log("Deleting record with ID:", this.id);
     }
-    if (quantity <= 0) {
-      throw new Error("Quantity must be positive");
-    }
-
-    this._items.push({ sku, unitPrice, quantity });
-    this.recordEvent("ItemAddedToOrder", { sku, quantity, unitPrice });
-  }
-
-  public markAsPaid(transactionId: string): void {
-    if (this._status !== "pending") {
-      throw new Error(`Cannot pay for order in ${this._status} status`);
-    }
-    if (this._items.length === 0) {
-      throw new Error("Cannot pay for an empty order");
-    }
-
-    this._status = "paid";
-    this._transactionId = transactionId;
-    this.recordEvent("OrderPaid", { transactionId, totalAmount: this.totalAmount });
-  }
+  };
 }
-
-// Verification Assertions
-const order = new OrderAggregate("ord_9901");
-assert.strictEqual(order.version, 1);
-assert.strictEqual(order.status, "pending");
-
-order.addItem("SKU-KEYBOARD", 120, 1);
-order.addItem("SKU-MOUSE", 60, 2);
-
-assert.strictEqual(order.totalAmount, 240);
-assert.strictEqual(order.version, 3); // 2 increments
-
-order.markAsPaid("tx_stripe_abc");
-assert.strictEqual(order.status, "paid");
-assert.strictEqual(order.version, 4);
-
-// Pull and verify domain events
-const events = order.pullDomainEvents();
-assert.strictEqual(events.length, 3);
-assert.strictEqual(events[0].eventName, "ItemAddedToOrder");
-assert.strictEqual(events[2].eventName, "OrderPaid");
-assert.strictEqual(events[2].payload.totalAmount, 240);
-
-// Events should be purged after pull
-assert.strictEqual(order.pullDomainEvents().length, 0);
-
-// Immutability of items array
-assert.throws(() => {
-  (order.items as any).push({ sku: "HACK", unitPrice: 0, quantity: 1 });
-  // Verify encapsulated status prevents modification
-  order.addItem("SKU-FAIL", 10, 1);
-}, /Cannot add items to order in paid status/);
-
-console.log("Project 1 (DDD Aggregate Root Engine) passed all assertions.");
 ```
 
 ---
 
-### Project 2: Extensible Role-Based Access Control (RBAC) & Policy Engine
+### 8. Common mistakes
 
-#### Architectural Overview
-```
-+-------------------------------------------------------------------------+
-|                  Enterprise RBAC & Policy Enforcement Engine            |
-+-------------------------------------------------------------------------+
-|  [Permission]: { action: string, resource: string }                     |
-|         │                                                               |
-|  [Role]: Encapsulates hierarchical permissions                          |
-|         │                                                               |
-|  [Subject]: User with assigned Roles                                    |
-|         │                                                               |
-|  [PolicyEngine]                                                         |
-|    ├── registerRole(role)                                               |
-|    ├── can(subject, action, resource): boolean                          |
-|    └── enforce(subject, action, resource): void                         |
-+-------------------------------------------------------------------------+
-```
+#### Mistake 1: Trying to use private `#` fields across mixin boundaries
 
-#### Complete Implementation & Verification Suite
+**Wrong assumption:**
+Expecting a mixin to access private `#` fields of the base class.
+
+**Reality:**
+Native `#` private fields are strictly scoped to the class that declared them. A mixin cannot access private fields of its base class.
+
+---
+
+### 9. Rules to remember
+1. Mixins are functions that accept a constructor and return an extended class.
+2. Syntax: `function Mixin<TBase extends Constructor>(Base: TBase) { return class extends Base { ... }; }`.
+3. Mixins allow multiple inheritance of behavior through functional composition.
+
+---
+
+### 10. Exercises
+
+#### Question 1 (Predict the compile result)
+Will `item.id` and `item.count` be available?
 ```typescript
-import assert from "node:assert";
+class Base { id = 1; }
+function AddCount<T extends Constructor>(B: T) {
+  return class extends B { count = 0; };
+}
+const Mixed = AddCount(Base);
+const item = new Mixed();
+```
 
-export interface Permission {
-  action: string;
-  resource: string;
+#### Question 2 (Find and fix the bug)
+Fix the constructor constraint so `Base` can accept arguments:
+```typescript
+type BadConstructor = new () => {};
+```
+
+#### Question 3 (Write code from scratch)
+Write a mixin `Disposable` that adds `isDisposed: boolean` and `dispose(): void`.
+
+#### Question 4 (Explain in your own words)
+Why are class mixins preferred over deep multi-level inheritance hierarchies?
+
+---
+
+### Solutions
+
+#### Solution to Question 1
+**Hint 1**: The mixin combines both.
+
+**Answer**:
+Yes, both `item.id` (from `Base`) and `item.count` (from `AddCount`) are available.
+
+#### Solution to Question 2
+**Hint 1**: Add `...args: any[]`.
+
+**Answer**:
+```typescript
+type Constructor<T = {}> = new (...args: any[]) => T;
+```
+
+#### Solution to Question 3
+**Hint 1**: Return `class extends Base { ... }`.
+
+**Answer**:
+```typescript
+function Disposable<TBase extends Constructor>(Base: TBase) {
+  return class extends Base {
+    isDisposed = false;
+    dispose(): void {
+      this.isDisposed = true;
+    }
+  };
+}
+```
+
+#### Solution to Question 4
+**Hint 1**: Think about the "diamond problem" and rigid class hierarchies.
+
+**Answer**:
+Deep inheritance chains create brittle architectures where changes to a base class unintentionally break all descendants. Mixins allow you to compose discrete, independent behaviors on demand, keeping classes small and loosely coupled without rigid parent-child dependencies.
+
+---
+
+### 11. Recall
+
+1. What is a TypeScript class mixin?
+2. What generic constraint describes a class constructor?
+3. Can multiple mixins be applied to a single class?
+
+**If you remember only one thing:**
+Mixins compose reusable behaviors onto classes via higher-order functions without deep inheritance trees.
+
+---
+
+# Topic 12: The Single Responsibility (S) and Open/Closed (O) Principles
+
+### 1. What is it?
+The **SOLID** principles are five design rules for writing maintainable object-oriented software:
+- **S (Single Responsibility Principle)**: A class should have only one reason to change. It should do one job well.
+- **O (Open/Closed Principle)**: Software entities should be open for extension, but closed for modification. You should be able to add new behavior without altering existing, tested code.
+
+### 2. Why does it exist?
+- Violating **SRP** creates "God classes" that handle business logic, database queries, and email formatting all in one file. Changing the email template can accidentally break the database query!
+- Violating **OCP** means modifying a giant `switch` statement every time a new feature is added, which risks breaking existing features.
+
+### 3. Basic example
+
+#### S: Single Responsibility Principle
+
+```typescript
+// VIOLATION: User class handles data AND database persistence AND email sending
+class BadUser {
+  constructor(public email: string) {}
+  saveToDb() { /* DB code */ }
+  sendWelcomeEmail() { /* Email code */ }
 }
 
-export class Role {
-  public readonly name: string;
-  private permissions: Set<string>;
-  private inheritedRoles: Role[];
+// ADHERENCE: Separate responsibilities into specialized classes
+class User {
+  constructor(public email: string) {}
+}
 
-  constructor(name: string) {
-    this.name = name;
-    this.permissions = new Set();
-    this.inheritedRoles = [];
-  }
-
-  public grant(action: string, resource: string): this {
-    this.permissions.add(`${action}:${resource}`);
-    return this;
-  }
-
-  public inherit(role: Role): this {
-    this.inheritedRoles.push(role);
-    return this;
-  }
-
-  public hasPermission(action: string, resource: string): boolean {
-    const target = `${action}:${resource}`;
-    const wildcardTarget = `*:${resource}`;
-    const globalWildcard = `*:*`;
-
-    if (
-      this.permissions.has(target) ||
-      this.permissions.has(wildcardTarget) ||
-      this.permissions.has(globalWildcard)
-    ) {
-      return true;
-    }
-
-    for (const inherited of this.inheritedRoles) {
-      if (inherited.hasPermission(action, resource)) {
-        return true;
-      }
-    }
-
-    return false;
+class UserRepository {
+  save(user: User): void {
+    console.log("Saving user to DB:", user.email);
   }
 }
 
-export class UserSubject {
-  public readonly id: string;
-  private roles: Role[];
-
-  constructor(id: string) {
-    this.id = id;
-    this.roles = [];
-  }
-
-  public assignRole(role: Role): this {
-    this.roles.push(role);
-    return this;
-  }
-
-  public can(action: string, resource: string): boolean {
-    for (const role of this.roles) {
-      if (role.hasPermission(action, resource)) {
-        return true;
-      }
-    }
-    return false;
-  }
-
-  public enforce(action: string, resource: string): void {
-    if (!this.can(action, resource)) {
-      throw new Error(`AccessDenied: User '${this.id}' cannot perform '${action}' on '${resource}'`);
-    }
+class EmailService {
+  sendWelcome(user: User): void {
+    console.log("Sending welcome email to:", user.email);
   }
 }
+```
 
-// Verification Assertions
-const viewerRole = new Role("viewer")
-  .grant("read", "document")
-  .grant("read", "report");
+#### O: Open/Closed Principle
 
-const editorRole = new Role("editor")
-  .inherit(viewerRole)
-  .grant("create", "document")
-  .grant("update", "document");
+```typescript
+// VIOLATION: Adding a new shape requires editing calculateArea with new switch cases!
+// ADHERENCE: Define an interface. New shapes extend behavior without modifying existing code.
+interface Shape {
+  getArea(): number;
+}
 
-const adminRole = new Role("admin")
-  .grant("*", "*");
+class Rectangle implements Shape {
+  constructor(public width: number, public height: number) {}
+  getArea(): number { return this.width * this.height; }
+}
 
-const bob = new UserSubject("usr_bob").assignRole(viewerRole);
-const alice = new UserSubject("usr_alice").assignRole(editorRole);
-const root = new UserSubject("usr_root").assignRole(adminRole);
+class Circle implements Shape {
+  constructor(public radius: number) {}
+  getArea(): number { return Math.PI * this.radius ** 2; }
+}
 
-// Bob (Viewer)
-assert.strictEqual(bob.can("read", "document"), true);
-assert.strictEqual(bob.can("update", "document"), false);
+// Adding a Triangle never touches Rectangle or Circle!
+class Triangle implements Shape {
+  constructor(public base: number, public height: number) {}
+  getArea(): number { return 0.5 * this.base * this.height; }
+}
 
-// Alice (Editor inherits Viewer)
-assert.strictEqual(alice.can("read", "document"), true); // Inherited
-assert.strictEqual(alice.can("update", "document"), true); // Direct
-assert.strictEqual(alice.can("delete", "document"), false);
-
-// Root (Admin wildcard)
-assert.strictEqual(root.can("delete", "server"), true);
-
-// Enforcement assertion
-alice.enforce("create", "document"); // Passes cleanly
-assert.throws(() => {
-  bob.enforce("delete", "document");
-}, /AccessDenied: User 'usr_bob' cannot perform 'delete' on 'document'/);
-
-console.log("Project 2 (RBAC Policy Engine) passed all assertions.");
+function printTotalArea(shapes: Shape[]): number {
+  return shapes.reduce((sum, s) => sum + s.getArea(), 0);
+}
 ```
 
 ---
 
-### Project 3: Type-Safe Finite State Machine (FSM) & Workflow Engine
+### 4. How it works inside TypeScript
+1. **SRP**: High cohesion and small classes. Each class encapsulates one cohesive concept.
+2. **OCP via Polymorphism**: Polymorphic interfaces allow new implementations to be passed to existing consumer functions without changing the consumer's code.
 
-#### Architectural Overview
-```
-+-------------------------------------------------------------------------+
-|                  Type-Safe Finite State Machine (FSM)                   |
-+-------------------------------------------------------------------------+
-|  States: "Draft" | "Review" | "Approved" | "Published"                  |
-|  Events: "SUBMIT" | "APPROVE" | "REJECT" | "PUBLISH"                    |
-|         │                                                               |
-|  [Transition Definition]: from, event, to, guardFn, actionFn            |
-|         │                                                               |
-|  [StateMachine<TState, TEvent>]                                         |
-|    ├── transition(event, context): void                                 |
-|    └── getState(): TState                                               |
-+-------------------------------------------------------------------------+
-```
+---
 
-#### Complete Implementation & Verification Suite
+### 5. Think first
+
+If you need to add a discounts feature to an order system, which approach satisfies the Open/Closed Principle?
+- **Approach A**: Add an `if/else` inside `Order.calculatePrice()` for every discount code.
+- **Approach B**: Create a `DiscountStrategy` interface and pass discount implementations into `calculatePrice()`.
+Decide first.
+
+---
+
+**Answer and Reason:**
+
+**Approach B** satisfies OCP.
+
+**Reason**: Approach B allows adding 50 new discount strategies in new files without ever editing or risking bugs in `Order.calculatePrice()`.
+
+---
+
+### 6. Try it yourself
+Create an interface `PaymentMethod { pay(amount: number): void }`. Create `CreditCardPayment` and `PayPalPayment`. Write a function `checkout(p: PaymentMethod, amount: number)`. Verify that adding a third payment method requires zero changes to `checkout`.
+
+---
+
+### 7. More examples
+
+#### Example A: Notification Service following SRP and OCP (Medium)
+
 ```typescript
-import assert from "node:assert";
-
-export interface Transition<TState extends string, TEvent extends string, TCtx> {
-  from: TState;
-  event: TEvent;
-  to: TState;
-  guard?: (ctx: TCtx) => boolean;
-  action?: (ctx: TCtx) => void;
+interface Notifier {
+  send(message: string): void;
 }
 
-export class FiniteStateMachine<TState extends string, TEvent extends string, TCtx> {
-  private currentState: TState;
-  private transitions: Transition<TState, TEvent, TCtx>[];
-  private context: TCtx;
-
-  constructor(initialState: TState, initialContext: TCtx) {
-    this.currentState = initialState;
-    this.context = initialContext;
-    this.transitions = [];
-  }
-
-  public addTransition(transition: Transition<TState, TEvent, TCtx>): this {
-    this.transitions.push(transition);
-    return this;
-  }
-
-  public getState(): TState {
-    return this.currentState;
-  }
-
-  public getContext(): TCtx {
-    return this.context;
-  }
-
-  public trigger(event: TEvent): boolean {
-    for (const t of this.transitions) {
-      if (t.from === this.currentState && t.event === event) {
-        if (t.guard && !t.guard(this.context)) {
-          return false; // Guard rejected transition
-        }
-
-        if (t.action) {
-          t.action(this.context);
-        }
-
-        this.currentState = t.to;
-        return true;
-      }
-    }
-
-    throw new Error(`InvalidTransition: No valid transition from '${this.currentState}' on event '${event}'`);
-  }
+class SmsNotifier implements Notifier {
+  send(msg: string) { console.log("SMS:", msg); }
 }
 
-// Verification Assertions
-type DocumentState = "draft" | "under_review" | "approved" | "published";
-type DocumentEvent = "SUBMIT" | "APPROVE" | "REJECT" | "PUBLISH";
-
-interface DocumentContext {
-  title: string;
-  reviewerScore: number;
-  publishedUrl?: string;
+class SlackNotifier implements Notifier {
+  send(msg: string) { console.log("Slack:", msg); }
 }
 
-const fsm = new FiniteStateMachine<DocumentState, DocumentEvent, DocumentContext>(
-  "draft",
-  { title: "TS OOP Guide", reviewerScore: 0 }
-);
+class AlertManager {
+  constructor(private notifiers: Notifier[]) {}
 
-fsm
-  .addTransition({
-    from: "draft",
-    event: "SUBMIT",
-    to: "under_review",
-    action: (ctx) => { ctx.reviewerScore = 85; },
-  })
-  .addTransition({
-    from: "under_review",
-    event: "APPROVE",
-    to: "approved",
-    guard: (ctx) => ctx.reviewerScore >= 80,
-  })
-  .addTransition({
-    from: "under_review",
-    event: "REJECT",
-    to: "draft",
-  })
-  .addTransition({
-    from: "approved",
-    event: "PUBLISH",
-    to: "published",
-    action: (ctx) => { ctx.publishedUrl = `https://docs.ts.com/${ctx.title.toLowerCase().replace(/\s+/g, "-")}`; },
-  });
-
-assert.strictEqual(fsm.getState(), "draft");
-
-// Transition: draft -> under_review
-assert.strictEqual(fsm.trigger("SUBMIT"), true);
-assert.strictEqual(fsm.getState(), "under_review");
-assert.strictEqual(fsm.getContext().reviewerScore, 85);
-
-// Transition: under_review -> approved (score 85 satisfies guard >= 80)
-assert.strictEqual(fsm.trigger("APPROVE"), true);
-assert.strictEqual(fsm.getState(), "approved");
-
-// Transition: approved -> published
-assert.strictEqual(fsm.trigger("PUBLISH"), true);
-assert.strictEqual(fsm.getState(), "published");
-assert.strictEqual(fsm.getContext().publishedUrl, "https://docs.ts.com/ts-oop-guide");
-
-// Disallowed transition throws error
-assert.throws(() => {
-  fsm.trigger("SUBMIT");
-}, /InvalidTransition: No valid transition from 'published' on event 'SUBMIT'/);
-
-console.log("Project 3 (Finite State Machine) passed all assertions.");
+  notifyAll(msg: string) {
+    for (const n of this.notifiers) n.send(msg);
+  }
+}
 ```
 
 ---
 
-### Project 4: Enterprise Notification Dispatcher with Composition & SOLID Pipeline
+### 8. Common mistakes
 
-#### Architectural Overview
-```
-+-------------------------------------------------------------------------+
-|                  Enterprise Notification Dispatcher                     |
-+-------------------------------------------------------------------------+
-|  [NotificationStrategy Interface]: send(msg): Promise<boolean>          |
-|         │                                                               |
-|  [Concrete Strategies]: EmailStrategy, SmsStrategy, WebhookStrategy     |
-|         │                                                               |
-|  [RateLimiterDecorator]: Prevents API quota exhaustion                  |
-|         │                                                               |
-|  [FallbackPipeline]: Tries primary channel -> fallbacks on failure      |
-+-------------------------------------------------------------------------+
-```
+#### Mistake 1: Editing core classes instead of using polymorphism
 
-#### Complete Implementation & Verification Suite
+**Wrong approach:**
+Modifying existing class methods every time a new business requirement appears.
+
+---
+
+### 9. Rules to remember
+1. Single Responsibility: One class = one responsibility.
+2. Open/Closed: Open for extension (via interfaces/inheritance), closed for modification.
+3. Polymorphism is the primary tool for implementing OCP.
+
+---
+
+### 10. Exercises
+
+#### Question 1 (Predict the compile result)
+Does `printTotalArea([new Rectangle(2, 3), new Circle(5)])` compile?
+
+#### Question 2 (Find and fix the bug)
+Refactor the class below to satisfy the Single Responsibility Principle:
 ```typescript
-import assert from "node:assert";
+class Order {
+  constructor(public id: string) {}
+  printInvoice() { /* print logic */ }
+}
+```
 
-export interface NotificationMessage {
-  recipient: string;
-  subject: string;
-  body: string;
+#### Question 3 (Write code from scratch)
+Write an interface `FilterStrategy<T> { isMatch(item: T): boolean }`. Write a function `filterItems<T>(items: T[], strategy: FilterStrategy<T>): T[]`.
+
+#### Question 4 (Explain in your own words)
+Why does violating the Single Responsibility Principle make code harder to test?
+
+---
+
+### Solutions
+
+#### Solution to Question 1
+**Hint 1**: Both implement `Shape`.
+
+**Answer**:
+Yes, it compiles and runs cleanly.
+
+#### Solution to Question 2
+**Hint 1**: Move printing to an `InvoicePrinter` class.
+
+**Answer**:
+```typescript
+class Order {
+  constructor(public id: string) {}
 }
 
-// 1. Core Abstraction (ISP & DIP)
-export interface NotificationChannel {
-  name: string;
-  send(message: NotificationMessage): Promise<boolean>;
-}
-
-// 2. Concrete Channel Strategies (OCP & SRP)
-export class EmailChannel implements NotificationChannel {
-  public readonly name: string = "Email";
-  public sentMessages: NotificationMessage[];
-
-  constructor() {
-    this.sentMessages = [];
+class InvoicePrinter {
+  print(order: Order): void {
+    console.log("Invoice for order:", order.id);
   }
+}
+```
 
-  public async send(message: NotificationMessage): Promise<boolean> {
-    this.sentMessages.push(message);
+#### Solution to Question 3
+**Hint 1**: Use `items.filter(item => strategy.isMatch(item))`.
+
+**Answer**:
+```typescript
+interface FilterStrategy<T> {
+  isMatch(item: T): boolean;
+}
+
+function filterItems<T>(items: T[], strategy: FilterStrategy<T>): T[] {
+  return items.filter((item) => strategy.isMatch(item));
+}
+```
+
+#### Solution to Question 4
+**Hint 1**: What dependencies must you mock when a class does multiple jobs?
+
+**Answer**:
+When a class does multiple jobs (e.g. business logic, database queries, and email transport), testing a simple calculation requires mocking databases, network connections, and email servers. Classes with a single responsibility have minimal dependencies, making unit tests fast, isolated, and simple.
+
+---
+
+### 11. Recall
+
+1. What does SRP stand for?
+2. What does OCP stand for?
+3. What language feature enables OCP without modifying existing code?
+
+**If you remember only one thing:**
+Give each class one job, and use interfaces so new features can be added without modifying existing code.
+
+---
+
+# Topic 13: Liskov Substitution (L) and Interface Segregation (I) Principles
+
+### 1. What is it?
+- **L (Liskov Substitution Principle - LSP)**: Subtypes must be substitutable for their base types without altering the correctness of the program. If class `B` extends `A`, any code expecting `A` must function correctly with `B`.
+- **I (Interface Segregation Principle - ISP)**: Clients should not be forced to depend on interfaces they do not use. Split fat interfaces into small, specific ones.
+
+### 2. Why does it exist?
+- Violating **LSP** happens when a subclass breaks expectations (for example, throwing an error on an inherited method or changing return contracts). Code that expects the base class crashes unexpectedly.
+- Violating **ISP** creates bloated interfaces where classes are forced to write dummy empty methods (`throw new Error("Not implemented")`) for methods they don't support.
+
+### 3. Basic example
+
+#### L: Liskov Substitution Principle
+
+```typescript
+// VIOLATION: Square breaks the behavior of Rectangle!
+class Rectangle {
+  constructor(public width: number, public height: number) {}
+  setWidth(w: number) { this.width = w; }
+  setHeight(h: number) { this.height = h; }
+  getArea() { return this.width * this.height; }
+}
+
+class BadSquare extends Rectangle {
+  override setWidth(w: number) { this.width = w; this.height = w; }
+  override setHeight(h: number) { this.width = h; this.height = h; }
+}
+
+function resize(r: Rectangle) {
+  r.setWidth(5);
+  r.setHeight(4);
+  // Expects 5 * 4 = 20. But with BadSquare, it produces 4 * 4 = 16! Bug!
+}
+
+// ADHERENCE: Separate Square and Rectangle or use a shared Shape interface
+interface Shape { getArea(): number; }
+```
+
+#### I: Interface Segregation Principle
+
+```typescript
+// VIOLATION: Bloated interface forces unnecessary methods
+interface BadWorker {
+  work(): void;
+  eat(): void;
+  sleep(): void;
+}
+
+// A RobotWorker cannot eat or sleep!
+// ADHERENCE: Segregate into small, focused interfaces:
+interface Workable {
+  work(): void;
+}
+
+interface Feedable {
+  eat(): void;
+}
+
+class HumanWorker implements Workable, Feedable {
+  work() { console.log("Working"); }
+  eat() { console.log("Eating"); }
+}
+
+class RobotWorker implements Workable {
+  work() { console.log("Working without food or sleep"); }
+}
+```
+
+---
+
+### 4. How it works inside TypeScript
+1. **LSP**: Subclass method parameters must be contravariant/bivariant, and return types must be covariant. Do not throw unexpected errors in overridden methods.
+2. **ISP**: Favor composing multiple small interfaces (`implements A, B`) over implementing a single monolithic interface.
+
+---
+
+### 5. Think first
+
+Why does `throw new Error("Method not supported")` in an overridden method almost always indicate a violation of the Liskov Substitution Principle? Decide first.
+
+---
+
+**Answer and Reason:**
+
+**Reason**: Callers expecting the base class contract expect the method to execute successfully. If a subclass throws an unsupported error, it cannot safely substitute for the base class, violating LSP.
+
+---
+
+### 6. Try it yourself
+Create interfaces `Readable { read(): string }` and `Writable { write(data: string): void }`. Create a class `ReadOnlyFile implements Readable`. Verify it does not need to implement `write`.
+
+---
+
+### 7. More examples
+
+#### Example A: Segregated Printer Interfaces (Medium)
+
+```typescript
+interface Printer { print(): void; }
+interface Scanner { scan(): void; }
+interface Fax { fax(): void; }
+
+class SimplePrinter implements Printer {
+  print() { console.log("Printing"); }
+}
+
+class AllInOneMachine implements Printer, Scanner, Fax {
+  print() { console.log("Printing"); }
+  scan() { console.log("Scanning"); }
+  fax() { console.log("Faxing"); }
+}
+```
+
+---
+
+### 8. Common mistakes
+
+#### Mistake 1: Creating one giant interface with 20 methods
+
+**Wrong approach:**
+Creating a `Repository` interface that forces read-only queries to implement `insert`, `update`, and `delete`.
+
+---
+
+### 9. Rules to remember
+1. Subclasses must safely substitute for their parents without breaking behavior (LSP).
+2. Avoid throwing "not supported" exceptions in overridden methods.
+3. Split large interfaces into small, cohesive interfaces (ISP).
+
+---
+
+### 10. Exercises
+
+#### Question 1 (Predict the compile result)
+Can `SimplePrinter` be passed to `function test(p: Printer)`?
+
+#### Question 2 (Find and fix the bug)
+Segregate the bloated interface below:
+```typescript
+interface AudioPlayer {
+  play(): void;
+  burnToCd(): void;
+}
+```
+
+#### Question 3 (Write code from scratch)
+Write an interface `CanFly { fly(): void }` and `CanSwim { swim(): void }`. Write a class `Duck` implementing both.
+
+#### Question 4 (Explain in your own words)
+How does the Interface Segregation Principle prevent dummy or stub implementations?
+
+---
+
+### Solutions
+
+#### Solution to Question 1
+**Hint 1**: Does `SimplePrinter` implement `Printer`?
+
+**Answer**:
+Yes, it satisfies `Printer` and compiles cleanly.
+
+#### Solution to Question 2
+**Hint 1**: Separate playback from CD burning.
+
+**Answer**:
+```typescript
+interface Playable { play(): void; }
+interface CdBurnable { burnToCd(): void; }
+```
+
+#### Solution to Question 3
+**Hint 1**: Implement both interfaces.
+
+**Answer**:
+```typescript
+interface CanFly { fly(): void; }
+interface CanSwim { swim(): void; }
+
+class Duck implements CanFly, CanSwim {
+  fly() { console.log("Flying"); }
+  swim() { console.log("Swimming"); }
+}
+```
+
+#### Solution to Question 4
+**Hint 1**: What happens when an interface contains methods a class cannot support?
+
+**Answer**:
+When an interface is bloated, implementing classes are forced to write dummy stubs or throw errors for methods they cannot support. Segregating interfaces into small, targeted capabilities ensures that classes only implement methods they actually use.
+
+---
+
+### 11. Recall
+
+1. What does LSP stand for?
+2. What does ISP stand for?
+3. What is the danger of giant interfaces?
+
+**If you remember only one thing:**
+Subclasses must safely replace their parents, and interfaces should be small and specific.
+
+---
+
+# Topic 14: Dependency Inversion Principle (D) and Inversion of Control
+
+### 1. What is it?
+The **Dependency Inversion Principle (DIP)** states:
+1. High-level modules should not import or depend on low-level modules directly. Both should depend on **abstractions** (interfaces).
+2. Abstractions should not depend on details. Details (implementations) should depend on abstractions.
+
+**Inversion of Control (IoC)** is the pattern where dependencies are injected from the outside (Dependency Injection) rather than instantiated internally with `new`.
+
+### 2. Why does it exist?
+If a high-level `OrderService` directly instantiates `new MySqlDatabase()` and `new SmtpEmailClient()`, the code is tightly coupled.
+
+You cannot unit test `OrderService` without running a real MySQL server and sending real emails! If you switch to PostgreSQL, you have to rewrite `OrderService`.
+By depending on interfaces (`Database` and `EmailClient`), `OrderService` becomes completely decoupled, easily testable with mock data, and flexible.
+
+### 3. Basic example
+
+```typescript
+// 1. Abstraction (Contract):
+interface DatabaseConnection {
+  save(key: string, value: string): void;
+}
+
+// 2. Low-level Implementations:
+class PostgresConnection implements DatabaseConnection {
+  save(key: string, value: string): void {
+    console.log(`[Postgres] Saving ${key}: ${value}`);
+  }
+}
+
+class MockTestConnection implements DatabaseConnection {
+  public store = new Map<string, string>();
+  save(key: string, value: string): void {
+    this.store.set(key, value);
+  }
+}
+
+// 3. High-level Module (Depends ONLY on abstraction):
+class UserService {
+  // Dependency is injected from outside!
+  constructor(private db: DatabaseConnection) {}
+
+  registerUser(id: string, name: string): void {
+    this.db.save(id, name);
+  }
+}
+
+// Production execution:
+const prodService = new UserService(new PostgresConnection());
+prodService.registerUser("u1", "Alex");
+
+// Unit test execution (Zero database needed!):
+const mockDb = new MockTestConnection();
+const testService = new UserService(mockDb);
+testService.registerUser("u2", "Jordan");
+console.log(mockDb.store.get("u2")); // "Jordan" (Fast, isolated test!)
+```
+
+**Line-by-line explanation:**
+- `interface DatabaseConnection`: The abstraction defining the contract.
+- `PostgresConnection` and `MockTestConnection`: Concrete details implementing the contract.
+- `constructor(private db: DatabaseConnection)`: `UserService` depends on the abstraction, not any concrete class.
+- Dependencies are passed in from the outside (Inversion of Control).
+
+---
+
+### 4. How it works inside TypeScript
+1. **Inverted Dependency Arrow**: Instead of high-level code pointing to low-level code, both point to the shared interface.
+2. **Compile-Time Decoupling**: You can change, swap, or mock the database without recompiling or altering `UserService`.
+3. **Foundation for DI Containers**: Frameworks like NestJS, Angular, and InversifyJS build on this exact principle.
+
+---
+
+### 5. Think first
+
+What happens to unit testing if a class writes `private db = new PostgresDatabase()` inside its constructor? Decide first.
+
+---
+
+**Answer and Reason:**
+
+Unit tests cannot run without a live, running Postgres database!
+
+**Reason**: The class is tightly coupled to the concrete `PostgresDatabase` implementation. You cannot inject a mock database for tests.
+
+---
+
+### 6. Try it yourself
+Create an interface `Logger { log(msg: string): void }`. Create a class `ConsoleLogger` and a class `FileLogger`. Create a class `App` that accepts `Logger` in its constructor and logs `"App started"`.
+
+---
+
+### 7. More examples
+
+#### Example A: Swapping Cloud Storage Providers (Medium)
+
+```typescript
+interface FileStorage {
+  upload(fileName: string, buffer: Buffer): Promise<string>;
+}
+
+class S3Storage implements FileStorage {
+  async upload(name: string): Promise<string> { return `https://s3.amazonaws.com/${name}`; }
+}
+
+class GoogleCloudStorage implements FileStorage {
+  async upload(name: string): Promise<string> { return `https://storage.googleapis.com/${name}`; }
+}
+
+class UploadManager {
+  constructor(private storage: FileStorage) {}
+  async process(file: string) {
+    return this.storage.upload(file, Buffer.from(""));
+  }
+}
+```
+
+---
+
+### 8. Common mistakes
+
+#### Mistake 1: Using `new ConcreteClass()` inside high-level business services
+
+**Wrong code:**
+```typescript
+class OrderService {
+  private db = new MySQL(); // Hard dependency!
+}
+```
+
+**Correct code:**
+Inject via constructor:
+```typescript
+class OrderService {
+  constructor(private db: Database) {}
+}
+```
+
+---
+
+### 9. Rules to remember
+1. High-level modules should depend on interfaces, not concrete implementations.
+2. Inject dependencies through constructors (Dependency Injection).
+3. Decoupled code is easy to test, maintain, and refactor.
+
+---
+
+### 10. Exercises
+
+#### Question 1 (Predict the compile result)
+Can `new UserService(new MockTestConnection())` compile?
+
+#### Question 2 (Find and fix the bug)
+Refactor `Notifier` to depend on an abstraction:
+```typescript
+class NotificationManager {
+  private emailClient = new SmtpEmailClient();
+  send(msg: string) { this.emailClient.send(msg); }
+}
+```
+
+#### Question 3 (Write code from scratch)
+Write an interface `PaymentGateway { charge(amount: number): boolean }`. Write a class `CheckoutService` that receives `PaymentGateway` via its constructor.
+
+#### Question 4 (Explain in your own words)
+Why is the Dependency Inversion Principle called "inversion"? What is being inverted?
+
+---
+
+### Solutions
+
+#### Solution to Question 1
+**Hint 1**: Does `MockTestConnection` implement `DatabaseConnection`?
+
+**Answer**:
+Yes, it compiles and runs cleanly.
+
+#### Solution to Question 2
+**Hint 1**: Define an interface and inject it.
+
+**Answer**:
+```typescript
+interface EmailClient {
+  send(msg: string): void;
+}
+
+class NotificationManager {
+  constructor(private emailClient: EmailClient) {}
+  send(msg: string) { this.emailClient.send(msg); }
+}
+```
+
+#### Solution to Question 3
+**Hint 1**: Accept `gateway: PaymentGateway`.
+
+**Answer**:
+```typescript
+interface PaymentGateway {
+  charge(amount: number): boolean;
+}
+
+class CheckoutService {
+  constructor(private gateway: PaymentGateway) {}
+
+  pay(amount: number): boolean {
+    return this.gateway.charge(amount);
+  }
+}
+```
+
+#### Solution to Question 4
+**Hint 1**: Think about the direction of dependency arrows.
+
+**Answer**:
+In traditional procedural design, high-level business policies directly depend on low-level technical utilities (high-level points to low-level). In Dependency Inversion, this direction is inverted: low-level utilities and high-level policies both depend on shared abstractions (interfaces). The control of dependencies is inverted from internal creation to external injection.
+
+---
+
+### 11. Recall
+
+1. What does DIP stand for?
+2. Should high-level modules depend on concrete classes or abstractions?
+3. How are dependencies passed into classes in Dependency Injection?
+
+**If you remember only one thing:**
+Depend on interfaces, not concrete classes, and inject dependencies from the outside.
+
+---
+
+# Final Checkpoint Challenge: Topics 11 to 14
+
+### Challenge Scenario
+Build a fully decoupled, SOLID-compliant user notification architecture:
+
+1. Define an interface `NotificationChannel`:
+   - `send(recipient: string, message: string): boolean`
+2. Create two implementations:
+   - `EmailChannel implements NotificationChannel`
+   - `SmsChannel implements NotificationChannel`
+3. Write an interface `AuditLogger`:
+   - `log(action: string): void`
+4. Write a class `UserService`:
+   - Inject `NotificationChannel` and `AuditLogger` via constructor (DIP).
+   - Method `notifyUser(user: { phone: string; email: string }, msg: string)` sends the notification and logs the action (SRP).
+5. Demonstrate swapping `EmailChannel` for `SmsChannel` without modifying `UserService` (OCP & LSP).
+
+### Challenge Solution
+
+```typescript
+// 1. Abstractions:
+interface NotificationChannel {
+  send(recipient: string, message: string): boolean;
+}
+
+interface AuditLogger {
+  log(action: string): void;
+}
+
+// 2. Concrete Channels:
+class EmailChannel implements NotificationChannel {
+  send(recipient: string, message: string): boolean {
+    console.log(`[Email to ${recipient}]: ${message}`);
     return true;
   }
 }
 
-export class SmsChannel implements NotificationChannel {
-  public readonly name: string = "SMS";
-  public sentMessages: NotificationMessage[];
-  public shouldSimulateFailure: boolean;
-
-  constructor(shouldFail: boolean = false) {
-    this.sentMessages = [];
-    this.shouldSimulateFailure = shouldFail;
-  }
-
-  public async send(message: NotificationMessage): Promise<boolean> {
-    if (this.shouldSimulateFailure) {
-      return false; // Gateway error
-    }
-    this.sentMessages.push(message);
+class SmsChannel implements NotificationChannel {
+  send(recipient: string, message: string): boolean {
+    console.log(`[SMS to ${recipient}]: ${message}`);
     return true;
   }
 }
 
-// 3. Decorator Pattern: Rate Limiting & Audit Logging
-export class RateLimitedChannel implements NotificationChannel {
-  public readonly name: string;
-  private inner: NotificationChannel;
-  private maxRequests: number;
-  private requestCount: number;
-
-  constructor(inner: NotificationChannel, maxRequests: number) {
-    this.inner = inner;
-    this.name = `${inner.name} (RateLimited)`;
-    this.maxRequests = maxRequests;
-    this.requestCount = 0;
-  }
-
-  public async send(message: NotificationMessage): Promise<boolean> {
-    if (this.requestCount >= this.maxRequests) {
-      return false; // Rate limit exceeded
-    }
-    this.requestCount++;
-    return this.inner.send(message);
+class ConsoleAuditLogger implements AuditLogger {
+  log(action: string): void {
+    console.log(`[Audit]: ${action}`);
   }
 }
 
-// 4. Notification Dispatcher with Fallback Pipeline (Composition)
-export class NotificationDispatcher {
-  private channels: NotificationChannel[];
-  private auditLog: { channel: string; recipient: string; success: boolean }[];
+// 3 & 4. Decoupled Service:
+class UserService {
+  constructor(
+    private channel: NotificationChannel,
+    private logger: AuditLogger
+  ) {}
 
-  constructor(channels: NotificationChannel[]) {
-    this.channels = channels;
-    this.auditLog = [];
-  }
-
-  public async dispatchWithFallback(message: NotificationMessage): Promise<string> {
-    for (const channel of this.channels) {
-      try {
-        const success = await channel.send(message);
-        this.auditLog.push({ channel: channel.name, recipient: message.recipient, success });
-        if (success) {
-          return channel.name;
-        }
-      } catch (err) {
-        this.auditLog.push({ channel: channel.name, recipient: message.recipient, success: false });
-      }
+  notifyUser(recipient: string, msg: string): void {
+    const success = this.channel.send(recipient, msg);
+    if (success) {
+      this.logger.log(`Notification sent to ${recipient}`);
     }
-
-    throw new Error(`DispatchFailed: All notification channels failed for ${message.recipient}`);
-  }
-
-  public getAuditLogs(): ReadonlyArray<{ channel: string; recipient: string; success: boolean }> {
-    return this.auditLog;
   }
 }
 
-// Verification Assertions
-const smsPrimary = new SmsChannel(true); // Fails
-const emailFallback = new EmailChannel();
-const rateLimitedEmail = new RateLimitedChannel(emailFallback, 2);
+// 5. Interchangeable Channels:
+const logger = new ConsoleAuditLogger();
 
-const dispatcher = new NotificationDispatcher([smsPrimary, rateLimitedEmail]);
+// Email notification:
+const emailService = new UserService(new EmailChannel(), logger);
+emailService.notifyUser("alex@example.com", "Your order has shipped");
 
-const msg: NotificationMessage = {
-  recipient: "user@enterprise.corp",
-  subject: "Account Alert",
-  body: "Suspicious login attempt detected.",
-};
-
-// Dispatch message: SMS fails -> falls back to Email
-const successfulChannel = await dispatcher.dispatchWithFallback(msg);
-assert.strictEqual(successfulChannel, "Email (RateLimited)");
-assert.strictEqual(emailFallback.sentMessages.length, 1);
-
-// Send second message within rate limit
-await dispatcher.dispatchWithFallback(msg);
-assert.strictEqual(emailFallback.sentMessages.length, 2);
-
-// Third message exceeds rate limit -> pipeline exhausts
-await assert.rejects(async () => {
-  await dispatcher.dispatchWithFallback(msg);
-}, /DispatchFailed: All notification channels failed/);
-
-assert.strictEqual(dispatcher.getAuditLogs().length, 6); // 3 attempts * 2 channels
-
-console.log("Project 4 (Notification Dispatcher & SOLID Pipeline) passed all assertions.");
+// SMS notification (zero code changes to UserService!):
+const smsService = new UserService(new SmsChannel(), logger);
+smsService.notifyUser("+15551234567", "Your verification code is 4242");
 ```
-
-
----
-
-## 6. Enterprise Best Practices: 20 DOs and DON'Ts
-
-| # | Rule | Bad Practice (DON'T) | Best Practice (DO) | Architectural Impact |
-|---|------|----------------------|--------------------|----------------------|
-| 1 | **Explicit Property Declarations** | Relying on parameter properties `constructor(public x: number)` | Explicitly declare properties on class bodies | Guarantees zero-transpile compatibility with Node.js `--experimental-strip-types`. |
-| 2 | **True Runtime Privacy** | Using TypeScript `private` for sensitive API secrets or encryption keys | Use ECMAScript `#private` fields (`#secretKey`) | Prevents runtime reflection bypass via bracket notation `(inst as any)['secretKey']`. |
-| 3 | **Mandatory Override Guard** | Overriding base class methods without the `override` keyword | Enable `noImplicitOverride: true` and mark overridden methods with `override` | Prevents silent phantom overrides when base class contracts evolve. |
-| 4 | **Annotate `implements` Parameters** | Omitting parameter type annotations when implementing interfaces | Always explicitly annotate method parameter types | `implements` does NOT infer method parameter types; omitting annotations introduces implicit `any`. |
-| 5 | **Avoid Dynamic Property Injection** | Dynamically attaching properties to instances after construction | Initialize all properties in consistent order in the constructor | Prevents V8 from de-optimizing Hidden Classes (Shapes) into slow dictionary mode. |
-| 6 | **Avoid `delete` on Class Instances** | Using `delete this.prop` to clear instance fields | Assign properties to `null` or `undefined` | `delete` permanently mutates the V8 hidden class shape, degrading inline caches. |
-| 7 | **Prefer Composition over Deep Inheritance** | Creating 5-level inheritance hierarchies (`Animal -> Mammal -> Canine -> Dog -> Bulldog`) | Compose focused strategy components via constructor injection | Eliminates Fragile Base Class problems and tight compile-time coupling. |
-| 8 | **Polymorphic `this` Chaining** | Returning base class type `Builder` from fluent methods | Return polymorphic `this` | Preserves the concrete derived type across arbitrary subclass method chains. |
-| 9 | **Explicit Resource Cleanup** | Relying on manual cleanup calls that callers can forget | Implement `Disposable` with `[Symbol.dispose]()` and consume via `using` | Guarantees deterministic, automatic cleanup when execution leaves scope. |
-| 10 | **Definite Assignment Safety** | Sprinkling definite assignment assertion `!` without out-of-band initialization | Initialize properties inline or inside constructor | Prevents runtime `TypeError: Cannot read properties of undefined`. |
-| 11 | **Decouple Domain from Infrastructure** | Embedding SQL queries or Axios HTTP calls directly inside Entity classes | Inject abstract Repository and Gateway interfaces (DIP) | Allows instantaneous unit testing using in-memory test doubles. |
-| 12 | **Granular Role Interfaces** | Defining monolithic 20-method interfaces | Segregate into small, focused role interfaces (ISP) | Prevents implementers from being forced to stub unused methods. |
-| 13 | **Contravariant Method Parameters** | Narrowing method parameter types in derived class overrides | Keep parameter types identical or broaden them (LSP) | Violating parameter contravariance breaks runtime substitution assumptions. |
-| 14 | **Covariant Return Types** | Widening return types in derived class overrides | Keep return types identical or narrow to specific subtypes | Maintains caller contract guarantees while providing richer derived return values. |
-| 15 | **Prototype vs Arrow Method Memory** | Declaring every class method as an arrow function property | Use standard prototype methods unless passing unbound callbacks | Arrow function properties duplicate function instances across every object in heap memory. |
-| 16 | **Protected Modifiers for Extensibility** | Marking base class helper fields `private` when subclasses need them | Mark them `protected` or provide protected accessors | Avoids forcing subclasses to reinvent duplicate internal state. |
-| 17 | **Immutable Value Objects** | Allowing public setters on Value Objects | Declare properties `public readonly` and freeze in constructor | Guarantees domain integrity and prevents subtle side-effect mutations. |
-| 18 | **Aggregate Root Encapsulation** | Exposing mutable internal arrays directly via getters | Return readonly copies `[...this._items]` or `ReadonlyArray<T>` | Prevents external callers from mutating aggregate invariants out-of-band. |
-| 19 | **Static Initialization Safety** | Writing complex multi-step static initialization directly on property declarations | Encapsulate multi-statement setup inside `static { ... }` blocks | Provides proper error handling and access to private static fields. |
-| 20 | **Multi-Realm `instanceof` Defense** | Relying purely on `instanceof` across iframes or worker threads | Implement `Symbol.hasInstance` with structural or Symbol branding | Prevents false negative type assertions caused by divergent prototype realms. |
-
----
-
-## 7. Real-World Case Study: Enterprise Core Banking & Ledger Engine with Strict SOLID Compliance
-
-### Problem Context
-A financial technology platform requires a high-throughput, multi-currency ledger engine. Financial transactions must adhere to strict regulatory double-entry accounting rules:
-1. Every transaction must consist of balanced Debit and Credit entries ($\sum \text{Debits} = \sum \text{Credits}$).
-2. Once posted, ledger entries must be strictly immutable.
-3. System must support pluggable audit loggers, fraud detection strategies, and currency conversion providers without mutating core transaction logic (Open/Closed Principle).
-
-### Architectural Solution
-We construct the Core Ledger Engine using strict OOP and SOLID principles:
-- **SRP**: `LedgerTransaction` models domain invariants; `LedgerRepository` handles persistence; `FraudDetector` evaluates compliance.
-- **OCP**: Pluggable `FraudRule` strategies are registered dynamically.
-- **LSP**: All specialized accounts (Checking, Savings, Escrow) satisfy base `Account` contracts.
-- **ISP**: Separate `BalanceReader` from `TransactionPoster`.
-- **DIP**: `LedgerService` depends exclusively on abstract interfaces.
-
-```typescript
-// Core Domain Entities & Value Objects
-export class Money {
-  constructor(public readonly cents: number, public readonly currency: string) {
-    if (!Number.isInteger(cents)) throw new Error("Cents must be an integer");
-    Object.freeze(this);
-  }
-
-  public equals(other: Money): boolean {
-    return this.cents === other.cents && this.currency === other.currency;
-  }
-}
-
-export interface LedgerEntry {
-  accountId: string;
-  amount: Money;
-  direction: "DEBIT" | "CREDIT";
-}
-
-export class LedgerTransaction {
-  public readonly id: string;
-  private readonly _entries: LedgerEntry[];
-  public readonly timestamp: Date;
-
-  constructor(id: string, entries: LedgerEntry[]) {
-    this.id = id;
-    this.timestamp = new Date();
-    this._entries = [...entries];
-    this.validateBalance();
-    Object.freeze(this);
-  }
-
-  public get entries(): ReadonlyArray<LedgerEntry> {
-    return this._entries;
-  }
-
-  private validateBalance(): void {
-    if (this._entries.length < 2) {
-      throw new Error("Transaction must have at least 2 entries");
-    }
-
-    const balances = new Map<string, number>();
-    for (const entry of this._entries) {
-      const curr = balances.get(entry.amount.currency) ?? 0;
-      const signedAmount = entry.direction === "DEBIT" ? entry.amount.cents : -entry.amount.cents;
-      balances.set(entry.amount.currency, curr + signedAmount);
-    }
-
-    for (const [currency, balance] of balances.entries()) {
-      if (balance !== 0) {
-        throw new Error(`Unbalanced ledger transaction for currency ${currency}: net ${balance}`);
-      }
-    }
-  }
-}
-```
-
----
-
-## 8. Practice Drills (75 Drills across 5 Progression Tiers)
-
-### Tier 1: Class Syntax, Constructors & Access Modifiers (Drills 1–15)
-1. Declare a class `User` with explicit properties `id: string` and `email: string` and an explicit constructor.
-2. Demonstrate why parameter properties fail in strip-only mode by writing both versions.
-3. Create a class with `public`, `protected`, and `private` properties and verify access limits.
-4. Implement ECMAScript `#private` fields and prove that `Object.keys()` cannot detect them.
-5. Create a class with a `readonly` property and verify that modification inside a method throws a compile error.
-6. Demonstrate that pushing to a `readonly string[]` property succeeds at runtime.
-7. Implement a class getter and setter with asymmetric types (`get width(): number`, `set width(v: string | number)`).
-8. Enable `strictPropertyInitialization` and fix an uninitialized property error.
-9. Use the definite assignment assertion `!` on a property initialized in an `init()` method.
-10. Implement a Singleton class with a `private constructor` and static `getInstance()`.
-11. Implement a class with a `protected constructor` and extend it in a subclass.
-12. Create a class method that returns polymorphic `this` and test fluent chaining.
-13. Write a class with overloaded method signatures and a single implementation signature.
-14. Implement custom serialization by adding `toJSON()` to a class with private fields.
-15. Freeze a class instance in its constructor using `Object.freeze(this)`.
-
-### Tier 2: Inheritance, Abstract Classes & Overrides (Drills 16–30)
-16. Define an `abstract class BaseWorker` with an abstract method `execute(): void` and a concrete method `log(): void`.
-17. Attempt to instantiate `new BaseWorker()` and document the TypeScript error.
-18. Implement a concrete subclass `PrintWorker` extending `BaseWorker`.
-19. Enable `noImplicitOverride: true` and override a base class method using the `override` keyword.
-20. Demonstrate what happens when the base class deletes the overridden method.
-21. Call `super.execute()` inside an overridden derived method.
-22. Verify constructor execution timing: what happens if you access `this` before `super()`?
-23. Create an abstract constructor type `abstract new (...args: any[]) => any`.
-24. Implement an interface using `implements` and verify that parameter types must be annotated explicitly.
-25. Implement three distinct interfaces on a single class.
-26. Demonstrate return type covariance in an overridden method.
-27. Demonstrate that derived class methods cannot narrow parameter types under `strictFunctionTypes`.
-28. Implement a type guard method on a base class returning `this is DerivedClass`.
-29. Use `this.constructor` inside a base class method to instantiate derived instances.
-30. Write a class that extends another class while implementing two interfaces.
-
-### Tier 3: Static Internals, Mixins & Polymorphic `this` (Drills 31–45)
-31. Write a class with static properties and demonstrate that derived classes inherit them.
-32. Write a static initialization block (`static { ... }`) that catches an exception during setup.
-33. Access a private static field `#cache` from inside a `static { ... }` block.
-34. Trace the execution order of static blocks and property initializers across two classes.
-35. Implement a generic `Constructor<T = {}>` type.
-36. Write a `Timestamped` mixin adding `createdAt: Date` to any base class.
-37. Write a `Serializable` mixin adding `serialize(): string`.
-38. Compose both mixins on a concrete `BlogPost` class.
-39. Write a fluent Query Builder supporting `.select()`, `.where()`, and `.orderBy()` using polymorphic `this`.
-40. Extend the Query Builder with `.limit()` in a subclass and verify that earlier methods return the subclass type.
-41. Implement `[Symbol.iterator]` on a custom collection class.
-42. Implement `[Symbol.dispose]` on a class and consume it via `using`.
-43. Implement `[Symbol.asyncDispose]` on a class and consume it via `await using`.
-44. Trace the LIFO cleanup order of multiple `using` declarations in a single block.
-45. Implement nominal branding on two structurally identical classes using `#brand`.
-
-### Tier 4: SOLID Principles & Design Patterns (Drills 46–60)
-46. Refactor an SRP-violating class handling validation, formatting, and DB persistence into three separate classes.
-47. Implement the Strategy Pattern with three payment strategies (CreditCard, PayPal, Crypto).
-48. Demonstrate an LSP violation with the Rectangle/Square problem and refactor to clean shapes.
-49. Split a monolithic `Repository<T>` interface into `Reader<T>` and `Writer<T>` (ISP).
-50. Implement Dependency Inversion by injecting an interface into an `OrderService`.
-51. Implement the Adapter Pattern adapting a third-party legacy logging library.
-52. Implement the Decorator Pattern wrapping an HTTP client with retry logic.
-53. Implement the Observer Pattern with typed events using classes.
-54. Implement the Command Pattern supporting `execute()` and `undo()`.
-55. Implement the Template Method Pattern with invariant execution steps.
-56. Implement a Step-Builder pattern with type-states enforcing sequential configuration.
-57. Build a dynamic plugin registry using a static class factory.
-58. Implement the Curiously Recurring Template Pattern (CRTP) for a cloneable interface.
-59. Write an in-memory repository implementing an abstract repository interface for unit tests.
-60. Defend against multi-realm `instanceof` failure using `Symbol.hasInstance`.
-
-### Tier 5: Enterprise Domain Architecture & Clean Engineering (Drills 61–75)
-61. Build an Entity base class with continuous identity equality and version tracking.
-62. Build an AggregateRoot base class with encapsulated domain event collection.
-63. Implement an immutable `Money` Value Object with currency matching assertions.
-64. Construct a Role-Based Access Control (RBAC) hierarchy with wildcard permission support.
-65. Build a Type-Safe Finite State Machine enforcing valid state transitions.
-66. Construct a multi-channel notification dispatcher with rate limiting and fallback chains.
-67. Design a Clean Architecture Domain Entity free of framework or library dependencies.
-68. Build a Data Mapper separating the domain model from database schema mapping.
-69. Implement optimistic concurrency checks using entity version comparisons.
-70. Build an audit-logging decorator that wraps aggregate command execution.
-71. Construct a Specification Pattern evaluator checking domain criteria on entity collections.
-72. Implement custom JSON deserialization re-instantiating complete prototype chains.
-73. Build a type-safe IoC Container service token and registration mapper.
-74. Implement a double-entry ledger transaction validator with balanced debit/credit checks.
-75. Design a complete Domain-Driven Architecture with Aggregates, Repositories, and Unit of Work.
-
-
----
-
