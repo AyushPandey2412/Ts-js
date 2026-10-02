@@ -1,2687 +1,2764 @@
-# Module TS-05: Template Literal Types, Type Parsers, & Compile-Time DSLs
+# Module TS-05: Template Literal Types & Type Parsers
 
-> **Track**: TypeScript Production Engineering Masterclass (TS 5.x)  
-> **Prerequisites**: [TS-00](file:///C:/Users/ayush/OneDrive/Desktop/js-learning/TS-00-QUEUE-AND-INDEX.md), [TS-01](file:///C:/Users/ayush/OneDrive/Desktop/js-learning/TS-01-TYPE-ARCHITECTURE-AND-STRUCTURAL-SUBTYPING.md), [TS-02](file:///C:/Users/ayush/OneDrive/Desktop/js-learning/TS-02-GENERICS-AND-TYPE-OPERATORS.md), [TS-03](file:///C:/Users/ayush/OneDrive/Desktop/js-learning/TS-03-CONDITIONAL-TYPES-AND-INFERENCE.md), [TS-04](file:///C:/Users/ayush/OneDrive/Desktop/js-learning/TS-04-MAPPED-TYPES-AND-METAPROGRAMMING.md)  
-> **Target Audience**: Principal Engineers, Framework Authors, Full-Stack Architects  
-> **Universal Specification**: Complete Technical Treatise, 90 Real-World Interview Q&As with Runnable Code, 15 Prediction Puzzles with Step-by-Step Traces, 4 Complete Runnable Production Projects with Test Assertions, 20 DOs & DON'Ts, Real-World Enterprise Case Study, 75 Practice Drills (5 Tiers).
+Welcome to TypeScript Template Literal Types and Type Parsers. This module teaches how to build compile-time string patterns, manipulate text at the type level, extract route parameters, and build type-safe path accessors.
 
 ---
 
-# Module TS-05: Template Literal Types, Type Parsers, & Compile-Time DSLs
+# Topic 1: What Are Template Literal Types? (`${Prefix}_${Suffix}`)
 
-## 1. Architectural Deep-Dive & Specification Foundations
+### 1. What is it?
+Introduced in TypeScript 4.1, a template literal type uses the same backtick syntax as JavaScript template strings (`` `hello ${name}` ``), but operates entirely in type space.
 
-### 1.1 The Template Literal Type Grammar (TS 4.1+)
-
-Template Literal Types introduce ECMAScript template literal syntax (`${...}`) directly into the TypeScript type system. Rather than treating strings as monolithic opaque primitives (`string`) or static literals (`"user_profile"`), template literal types allow you to model structured string grammars, perform string pattern matching, and synthesize types via combinatorial interpolation.
-
-```typescript
-type Protocol = "http" | "https";
-type Domain = "example.com" | "internal.net";
-type Port = 80 | 443 | 8080;
-
-// Cartesian product of union interpolations:
-// 2 * 2 * 3 = 12 distinct literal union members!
-type WebUrl = `${Protocol}://${Domain}:${Port}`;
-```
-
-#### The Type Lattice & Combinatorial Explosion Rules
-When unions are interpolated into template literals, TypeScript computes the Cartesian product across all placeholder positions:
-$$\text{Cardinality} = \prod_{i=1}^{N} |U_i|$$
-Where $|U_i|$ is the number of union members in the $i$-th interpolation slot.
-If the resulting cardinality exceeds **100,000 members**, the TypeScript compiler halts evaluation and triggers:
-`TS2590: Expression produces a union type that is too complex to represent.`
-
-```typescript
-// Architectural Warning: Beware unchecked union explosions
-type Digit = "0" | "1" | "2" | "3" | "4" | "5" | "6" | "7" | "8" | "9";
-type TwoDigit = `${Digit}${Digit}`; // 100 members
-type FourDigit = `${TwoDigit}${TwoDigit}`; // 10,000 members
-// type EightDigit = `${FourDigit}${FourDigit}`; // 100,000,000 members -> TS2590 ERROR!
-```
-
----
-
-### 1.2 Compiler-Level String Intrinsics
-
-TypeScript 4.1 introduced four built-in keyword types for character case conversions. Unlike standard type aliases, these are implemented directly inside the TypeScript compiler (`src/compiler/checker.ts`) as intrinsic operations leveraging V8 string manipulation methods:
-
-```typescript
-// 1. Uppercase<StringType>
-type Shout = Uppercase<"hello world">; // "HELLO WORLD"
-
-// 2. Lowercase<StringType>
-type Whisper = Lowercase<"SYSTEM_FAILURE">; // "system_failure"
-
-// 3. Capitalize<StringType>
-type CamelToPascal = Capitalize<"orderService">; // "OrderService"
-
-// 4. Uncapitalize<StringType>
-type PascalToCamel = Uncapitalize<"OrderService">; // "orderService"
-```
-
-#### Specification Behavior on Special Characters & Unicode:
-1. **Locale Independence**: Intrinsics use standard Unicode case mappings without locale awareness (e.g., standard uppercase of `"i"` is `"I"`, unlike Turkish dotted/dotless rules).
-2. **Distribution over Unions**: Intrinsics distribute over unions:
-   `Capitalize<"foo" | "bar">` evaluates to `"Foo" | "Bar"`.
-3. **Idempotence**: `Capitalize<Capitalize<T>> === Capitalize<T>`.
-
----
-
-### 1.3 Pattern Matching & Inference with `infer`
-
-When combined with conditional types, template literal types allow recursive string parsing by extracting substrings via `infer`.
-
-```typescript
-type SplitHeadTail<S extends string, Delimiter extends string> =
-  S extends `${infer Head}${Delimiter}${infer Tail}`
-    ? [Head, Tail]
-    : [S, null];
-
-type Res1 = SplitHeadTail<"users/123/profile", "/">;
-// ["users", "123/profile"]
-```
-
-#### Greedy vs Non-Greedy Matching Mechanics
-TypeScript's string pattern matcher evaluates template literal patterns from **left to right**:
-1. When two `infer` variables are separated by a static delimiter (e.g. `${infer A}/${infer B}`), `A` matches non-greedily up to the **first occurrence** of `/`.
-2. `B` captures everything remaining (greedy).
-3. If two `infer` variables are adjacent without a delimiter (e.g. `${infer A}${infer B}`), `A` matches **only the single first character**, and `B` captures the rest!
-
-```typescript
-type AdjacentInfer<S extends string> = S extends `${infer First}${infer Rest}`
-  ? { first: First; rest: Rest }
-  : never;
-
-type SingleCharStep = AdjacentInfer<"TypeScript">;
-// { first: "T", rest: "ypeScript" }
-```
-
----
-
-### 1.4 Type-Level Numeric Parsing (`infer N extends number`, TS 4.8+)
-
-Prior to TypeScript 4.8, `infer N` in a template string always inferred `N` as a string (`"42"`). Starting in TS 4.8, `infer N extends number` enables compile-time string-to-number parsing:
-
-```typescript
-type ParseInt<S extends string> = S extends `${infer N extends number}` ? N : never;
-
-type Num1 = ParseInt<"42">;     // 42
-type Num2 = ParseInt<"-100">;   // -100
-type Num3 = ParseInt<"3.1415">; // 3.1415
-type Num4 = ParseInt<"0x1F">;   // never (hex string literals not supported by numeric infer)
-type Num5 = ParseInt<"NaN">;    // never
-```
-
-#### Parsing Booleans and BigInts
-TypeScript 4.8 also supports `infer B extends boolean` and `infer B extends bigint`:
-```typescript
-type ParseBool<S extends string> = S extends `${infer B extends boolean}` ? B : never;
-type B1 = ParseBool<"true">;  // true
-type B2 = ParseBool<"false">; // false
-type B3 = ParseBool<"yes">;   // never
-
-type ParseBigInt<S extends string> = S extends `${infer N extends bigint}` ? N : never;
-type BI1 = ParseBigInt<"9007199254740991">; // 9007199254740991n
-```
-
----
-
-### 1.5 String Length and Character Counting via Tuple Accumulators
-
-Because TypeScript types cannot perform raw arithmetic or measure string length directly, string algorithms employ tuple recursion where the length of a tuple represents the accumulator:
-
-```typescript
-type StringToTuple<S extends string, Acc extends any[] = []> =
-  S extends `${infer First}${infer Rest}`
-    ? StringToTuple<Rest, [...Acc, First]>
-    : Acc;
-
-type StringLength<S extends string> = StringToTuple<S>['length'];
-
-type Len1 = StringLength<"">;           // 0
-type Len2 = StringLength<"TypeScript">; // 10
-type Len3 = StringLength<"Cloud-Native Architecture">; // 23
-```
-
-
----
-
-## 2. Advanced Type Parsers, Case Converters, & Compile-Time DSLs
-
-### 2.1 Complete Case Conversion Suite
-
-Transforming casing between API boundaries, database schemas, and application domain models at the type level:
-
-```typescript
-// 1. snake_case to camelCase
-export type SnakeToCamel<S extends string> = S extends `${infer P1}_${infer P2}${infer Rest}`
-  ? `${Lowercase<P1>}${Uppercase<P2>}${SnakeToCamel<Rest>}`
-  : Lowercase<S>;
-
-type TestCamel = SnakeToCamel<"user_account_id">; // "userAccountId"
-
-// 2. camelCase to snake_case
-export type CamelToSnake<S extends string> = S extends `${infer Head}${infer Rest}`
-  ? `${Head extends Uppercase<Head> ? `_${Lowercase<Head>}` : Head}${CamelToSnake<Rest>}`
-  : S;
-
-type TestSnake = CamelToSnake<"userAccountId">; // "user_account_id"
-
-// 3. kebab-case to camelCase
-export type KebabToCamel<S extends string> = S extends `${infer P1}-${infer P2}${infer Rest}`
-  ? `${Lowercase<P1>}${Uppercase<P2>}${KebabToCamel<Rest>}`
-  : Lowercase<S>;
-
-type TestKebabToCamel = KebabToCamel<"content-security-policy">; // "contentSecurityPolicy"
-
-// 4. camelCase to kebab-case
-export type CamelToKebab<S extends string> = S extends `${infer Head}${infer Rest}`
-  ? `${Head extends Uppercase<Head> ? `-${Lowercase<Head>}` : Head}${CamelToKebab<Rest>}`
-  : S;
-
-type TestCamelToKebab = CamelToKebab<"contentSecurityPolicy">; // "content-security-policy"
-```
-
----
-
-### 2.2 Enterprise URL Route Param Extractor
-
-Modern routing libraries (Express, Fastify, Next.js App Router, Hono) extract route parameters dynamically:
-
-```typescript
-export type ExtractRouteParams<Path extends string> =
-  Path extends `${infer _Start}:${infer Param}/${infer Rest}`
-    ? { [K in Param | keyof ExtractRouteParams<`/${Rest}`>]: string }
-    : Path extends `${infer _Start}:${infer Param}`
-    ? { [K in Param]: string }
-    : {};
-
-type Route1 = ExtractRouteParams<"/api/v1/users/:userId/posts/:postId">;
-// { userId: string; postId: string; }
-
-type Route2 = ExtractRouteParams<"/health">;
-// {}
-
-type Route3 = ExtractRouteParams<"/orgs/:orgId/members/:memberId/roles/:roleId">;
-// { orgId: string; memberId: string; roleId: string; }
-```
-
----
-
-### 2.3 Query String Type Parser
-
-Parsing URL search params into typed key-value pairs at compile time:
-
-```typescript
-type ParseQueryPair<P extends string> =
-  P extends `${infer Key}=${infer Val}`
-    ? { [K in Key]: Val }
-    : { [K in P]: true };
-
-export type ParseQueryString<Q extends string> =
-  Q extends `?${infer Rest}`
-    ? ParseQueryString<Rest>
-    : Q extends `${infer Pair}&${infer Rest}`
-    ? ParseQueryPair<Pair> & ParseQueryString<Rest>
-    : Q extends `${infer Pair}`
-    ? ParseQueryPair<Pair>
-    : {};
-
-type QueryParsed = ParseQueryString<"?page=1&limit=25&sort=desc">;
-// { page: "1" } & { limit: "25" } & { sort: "desc" }
-```
-
----
-
-### 2.4 Type-Safe `sprintf` Format String Parser
-
-Enforcing argument count and types corresponding to format specifiers (`%s`, `%d`, `%j`):
-
-```typescript
-type SpecifierType<T extends string> =
-  T extends "s" ? string :
-  T extends "d" | "i" ? number :
-  T extends "j" ? object :
-  T extends "b" ? boolean :
-  never;
-
-export type ExtractFormatArgs<S extends string> =
-  S extends `${infer _Pre}%${infer Spec}${infer Rest}`
-    ? [SpecifierType<Spec>, ...ExtractFormatArgs<Rest>]
-    : [];
-
-export function sprintf<S extends string>(
-  format: S,
-  ...args: ExtractFormatArgs<S>
-): string {
-  let result = format;
-  for (const arg of args) {
-    result = result.replace(/%[sdijb]/, String(arg));
-  }
-  return result;
-}
-
-// Compile-Time Verification:
-// sprintf("Hello %s, your balance is %d", "Alice", 450); // OK
-// sprintf("Hello %s, your balance is %d", "Alice", "NaN"); // TS2345: string not assignable to number!
-```
-
----
-
-### 2.5 i18n Parameter Interpolation Parser
-
-Validating translation key parameters at compile time:
-
-```typescript
-type ExtractInterpolationKeys<S extends string> =
-  S extends `${infer _Start}{${infer Key}}${infer Rest}`
-    ? Key | ExtractInterpolationKeys<Rest>
-    : never;
-
-export type I18nParams<S extends string> =
-  [ExtractInterpolationKeys<S>] extends [never]
-    ? []
-    : [params: { [K in ExtractInterpolationKeys<S>]: string | number }];
-
-export function translate<
-  Schema extends Record<string, string>,
-  Key extends keyof Schema
->(
-  schema: Schema,
-  key: Key,
-  ...args: I18nParams<Schema[Key]>
-): string {
-  let text = schema[key];
-  if (args.length > 0 && args[0]) {
-    const params = args[0] as Record<string, string | number>;
-    for (const [k, v] of Object.entries(params)) {
-      text = text.replace(new RegExp(`{${k}}`, "g"), String(v));
-    }
-  }
-  return text;
-}
-```
-
----
-
-### 2.6 Compile-Time SQL Query Syntax & Projection Parser
-
-Extracting projected columns and verifying table names at compile time:
-
-```typescript
-export interface AppDatabaseSchema {
-  users: { id: number; username: string; email: string; is_admin: boolean };
-  orders: { id: string; user_id: number; total: number; status: string };
-}
-
-type SplitColumns<S extends string> =
-  S extends `${infer Col}, ${infer Rest}`
-    ? Col | SplitColumns<Rest>
-    : S;
-
-export type ParseSelectQuery<
-  Query extends string,
-  Schema extends Record<string, Record<string, any>>
-> =
-  Query extends `SELECT ${infer Cols} FROM ${infer Table}`
-    ? Table extends keyof Schema
-      ? Cols extends "*"
-        ? Schema[Table]
-        : { [K in SplitColumns<Cols> as K extends keyof Schema[Table] ? K : never]: Schema[Table][K & keyof Schema[Table]] }
-      : { error: `Table '${Table}' does not exist in database schema` }
-    : { error: "Invalid SQL SELECT syntax" };
-
-type UserProjection = ParseSelectQuery<"SELECT id, username FROM users", AppDatabaseSchema>;
-// { id: number; username: string; }
-
-type InvalidTable = ParseSelectQuery<"SELECT id FROM nonexistent", AppDatabaseSchema>;
-// { error: "Table 'nonexistent' does not exist in database schema" }
-```
-
-
----
-
-## 3. 90 Real-World Technical Interview Q&As (Part 1: Q1–Q45)
-
----
-
-#### Q1: What are Template Literal Types and what version of TypeScript introduced them?
-**Answer:**
-Template Literal Types were introduced in **TypeScript 4.1**. They allow string literals to be combined using ECMAScript template literal interpolation syntax (`${...}`). They can be used to generate new string literal types from unions, extract substrings using `infer`, and construct compile-time domain-specific languages (DSLs).
-
+It allows you to concatenate string literals, enforce string formatting rules, and construct new string types dynamically:
 ```typescript
 type World = "world";
-type Greeting = `hello ${World}`; // Type: "hello world"
+type Greeting = `hello ${World}`; // "hello world"
 ```
 
----
-
-#### Q2: How does TypeScript evaluate unions interpolated into template literals?
-**Answer:**
-When unions are interpolated into template literals, TypeScript calculates the **Cartesian product** across all positions. Every member of each union is combined with every member of every other union.
-
-```typescript
-type Size = "sm" | "md" | "lg";
-type Color = "red" | "blue";
-type Variant = `${Size}-${Color}`;
-// "sm-red" | "sm-blue" | "md-red" | "md-blue" | "lg-red" | "lg-blue" (3 * 2 = 6 members)
-```
-
----
-
-#### Q3: What is the compiler limit on union cardinality in template literals?
-**Answer:**
-The TypeScript compiler limits union expansion to prevent infinite loops and memory exhaustion. If a template literal type expands to more than **100,000 union members**, the compiler throws `TS2590: Expression produces a union type that is too complex to represent`.
-
-```typescript
-type Digit = "0" | "1" | "2" | "3" | "4" | "5" | "6" | "7" | "8" | "9";
-type Hex = Digit | "a" | "b" | "c" | "d" | "e" | "f"; // 16
-type FourHex = `${Hex}${Hex}${Hex}${Hex}`; // 65,536 members (Legal)
-// type FiveHex = `${FourHex}${Hex}`; // 1,048,576 members -> Triggers TS2590!
-```
-
----
-
-#### Q4: What are the four built-in string intrinsics and how do they differ from normal type aliases?
-**Answer:**
-The four intrinsics are `Uppercase<S>`, `Lowercase<S>`, `Capitalize<S>`, and `Uncapitalize<S>`. They are not implemented using TypeScript conditional types; instead, the compiler recognizes them as `intrinsic` keywords and delegates execution directly to internal V8 C++ string manipulation routines.
-
-```typescript
-type A = Uppercase<"status">;     // "STATUS"
-type B = Lowercase<"PORT_8080">;   // "port_8080"
-type C = Capitalize<"service">;    // "Service"
-type D = Uncapitalize<"Service">;  // "service"
-```
-
----
-
-#### Q5: Do built-in string intrinsics distribute over unions?
-**Answer:**
-Yes. String intrinsics automatically distribute over unions.
-
-```typescript
-type Action = "create" | "update" | "delete";
-type UpperAction = Uppercase<Action>;
-// Evaluates to: "CREATE" | "UPDATE" | "DELETE"
-```
-
----
-
-#### Q6: How does pattern matching with `infer` work in template literal types?
-**Answer:**
-When a string type is matched against a template literal pattern with `infer`, TypeScript extracts the matching substring into the inferred type parameter.
-
-```typescript
-type ExtractEventDomain<T extends string> =
-  T extends `${infer Domain}:${infer _Event}` ? Domain : never;
-
-type Domain = ExtractEventDomain<"billing:invoice_created">; // "billing"
-```
+### 2. Why does it exist?
+In JavaScript, strings often follow structured formats (such as CSS units `"10px"`, event names `"on_click"`, or HTTP routes `"/api/users"`).
 
----
+Without template literal types, TypeScript can only treat these values as broad `string`s (which allows typos like `"10p"` or `"on-clck"`) or require you to manually write hundreds of individual string literal types. Template literal types let you declare rules for string formats that the compiler checks automatically.
 
-#### Q7: Is string matching in template literal types greedy or non-greedy?
-**Answer:**
-When two `infer` variables are separated by a static delimiter, the left `infer` variable is **non-greedy** (matches up to the first occurrence of the delimiter), and the right `infer` variable matches the remainder.
+### 3. Basic example
 
 ```typescript
-type Split<S extends string> = S extends `${infer Head}/${infer Tail}` ? [Head, Tail] : never;
-type Result = Split<"a/b/c/d">;
-// Head = "a" (first match)
-// Tail = "b/c/d" (remainder)
-```
-
----
+type Unit = "px" | "em" | "rem";
+type Size = 10 | 20 | 50;
 
-#### Q8: What happens when two `infer` variables are placed adjacent to each other without a delimiter?
-**Answer:**
-The first `infer` variable matches exactly **one character**, while the second `infer` variable matches the entire remaining string.
+// Construct a valid CSS dimension type:
+type Dimension = `${Size}${Unit}`;
 
-```typescript
-type FirstChar<S extends string> = S extends `${infer First}${infer Rest}` ? First : never;
-type F = FirstChar<"JavaScript">; // "J"
+const valid1: Dimension = "10px";  // Allowed
+const valid2: Dimension = "50rem"; // Allowed
+// const invalid: Dimension = "100px"; // Compile Error: 100 is not in Size!
+// const typo: Dimension = "10p";      // Compile Error: '10p' is not valid!
 ```
-
----
 
-#### Q9: How does TypeScript 4.8+ support numeric inference in template strings?
-**Answer:**
-By specifying `infer N extends number`, TypeScript parses a numeric string literal directly into a literal `number` type.
+**Line-by-line explanation:**
+- `type Unit = "px" | "em" | "rem";`: A union of three allowed units.
+- `type Size = 10 | 20 | 50;`: A union of three allowed numeric sizes.
+- `type Dimension = `${Size}${Unit}`;`: Combines them. TypeScript generates all valid combinations: `"10px" | "10em" | "10rem" | "20px" ...`.
+- `valid1` and `valid2` match the generated combinations and compile cleanly.
+- `invalid` and `typo` fail because they are not in the generated set of types.
 
-```typescript
-type ToNumber<S extends string> = S extends `${infer N extends number}` ? N : never;
-type N1 = ToNumber<"42">;     // 42 (literal number, not "42")
-type N2 = ToNumber<"3.14">;   // 3.14
-type N3 = ToNumber<"-99">;    // -99
-type N4 = ToNumber<"invalid">;// never
-```
-
 ---
-
-#### Q10: Does `infer N extends number` parse hexadecimal string literals like `"0xFF"`?
-**Answer:**
-No. The TypeScript compiler's template string parser for numeric inference only recognizes standard decimal format (integers, negative numbers, floats, and scientific notation). `"0xFF"` evaluates to `never`.
 
-```typescript
-type HexNum = ToNumber<"0xFF">; // never
-```
+### 4. How it works inside TypeScript
+1. **Interpolation Expansion**: The compiler evaluates expressions inside `${...}`.
+2. **Type Coercion**: Numbers, strings, booleans, and bigints inside `${...}` are converted to their string representations.
+3. **Set Generation**: If you interpolate union types, TypeScript automatically computes all possible combinations (the Cartesian product).
 
 ---
-
-#### Q11: How do you parse boolean values from strings at compile time?
-**Answer:**
-Using `infer B extends boolean` (TS 4.8+):
-
-```typescript
-type ToBoolean<S extends string> = S extends `${infer B extends boolean}` ? B : never;
-type T = ToBoolean<"true">;  // true
-type F = ToBoolean<"false">; // false
-type X = ToBoolean<"yes">;   // never
-```
 
----
+### 5. Think first
 
-#### Q12: How do you calculate the length of a string literal at compile time?
-**Answer:**
-Since strings do not expose a type-level length property, you recursively decompose the string into a tuple of characters and query the tuple's `.length`.
+What is the resulting type of `Notification` in the code below? Decide first.
 
 ```typescript
-type StringLength<S extends string, Acc extends any[] = []> =
-  S extends `${infer _First}${infer Rest}`
-    ? StringLength<Rest, [...Acc, any]>
-    : Acc['length'];
-
-type Len = StringLength<"TypeScript">; // 10
+type Status = "success" | "error";
+type Notification = `STATUS_${Status}`;
 ```
 
 ---
-
-#### Q13: How do you implement `TrimStart<S>` to remove leading whitespace?
-**Answer:**
-Match against whitespace characters (`" "` | `"\t"` | `"\n"` | `"\r"`) and recurse:
-
-```typescript
-type WhiteSpace = " " | "\t" | "\n" | "\r";
-type TrimStart<S extends string> = S extends `${WhiteSpace}${infer Rest}` ? TrimStart<Rest> : S;
-
-type Trimmed = TrimStart<"   hello">; // "hello"
-```
 
----
+**Answer and Reason:**
 
-#### Q14: How do you implement `TrimEnd<S>` to remove trailing whitespace?
-**Answer:**
-Match trailing whitespace characters and recurse:
+The resulting type is:
 
 ```typescript
-type TrimEnd<S extends string> = S extends `${infer Rest}${WhiteSpace}` ? TrimEnd<Rest> : S;
-
-type Trimmed = TrimEnd<"hello   \n">; // "hello"
+"STATUS_success" | "STATUS_error"
 ```
-
----
-
-#### Q15: How do you implement a complete `Trim<S>` utility?
-**Answer:**
-Compose `TrimStart` and `TrimEnd`:
 
-```typescript
-type Trim<S extends string> = TrimEnd<TrimStart<S>>;
-type Clean = Trim<"   data payload   ">; // "data payload"
-```
+**Reason**: Interpolating the union `"success" | "error"` into `` `STATUS_${Status}` `` distributes across the union, producing two distinct string literal types.
 
 ---
 
-#### Q16: How do you implement `Replace<S, From, To>` for single replacements?
-**Answer:**
-Pattern-match on `${infer Head}${From}${infer Tail}` and substitute `To`:
+### 6. Try it yourself
+Create a type `Color = "red" | "blue"`. Create a type `Shade = "light" | "dark"`. Create a template literal type `ThemedColor = `${Shade}-${Color}``. Test assigning `"light-red"` and `"dark-green"`.
 
-```typescript
-type Replace<S extends string, From extends string, To extends string> =
-  From extends ""
-    ? S
-    : S extends `${infer Head}${From}${infer Tail}`
-    ? `${Head}${To}${Tail}`
-    : S;
-
-type R = Replace<"user_id", "_", "-">; // "user-id"
-```
-
 ---
 
-#### Q17: How do you implement `ReplaceAll<S, From, To>` for global replacements?
-**Answer:**
-Recurse on the `Tail` of the matched pattern:
+### 7. More examples
 
-```typescript
-type ReplaceAll<S extends string, From extends string, To extends string> =
-  From extends ""
-    ? S
-    : S extends `${infer Head}${From}${infer Tail}`
-    ? `${Head}${To}${ReplaceAll<Tail, From, To>}`
-    : S;
-
-type RAll = ReplaceAll<"foo.bar.baz.qux", ".", "/">; // "foo/bar/baz/qux"
-```
-
----
+#### Example A: Hex Color Code Validation (Medium)
 
-#### Q18: How do you split a string into a tuple of substrings (`Split<S, Delimiter>`)?
-**Answer:**
 ```typescript
-type Split<S extends string, Delimiter extends string> =
-  S extends `${infer Head}${Delimiter}${infer Tail}`
-    ? [Head, ...Split<Tail, Delimiter>]
-    : [S];
-
-type S1 = Split<"2026-09-27", "-">; // ["2026", "09", "27"]
-```
-
----
+type HexDigit = "0" | "1" | "2" | "3" | "4" | "5" | "6" | "7" | "8" | "9" | "a" | "b" | "c" | "d" | "e" | "f";
+type ShortHexColor = `#${HexDigit}${HexDigit}${HexDigit}`;
 
-#### Q19: How do you join a tuple of strings with a delimiter (`Join<Tuple, Delimiter>`)?
-**Answer:**
-```typescript
-type Join<T extends string[], Delimiter extends string> =
-  T extends []
-    ? ""
-    : T extends [infer Single extends string]
-    ? Single
-    : T extends [infer First extends string, ...infer Rest extends string[]]
-    ? `${First}${Delimiter}${Join<Rest, Delimiter>}`
-    : string;
-
-type J = Join<["api", "v1", "users"], "/">; // "api/v1/users"
+const color1: ShortHexColor = "#fff"; // Valid
+const color2: ShortHexColor = "#000"; // Valid
+// const bad: ShortHexColor = "#ggg"; // Error: 'g' is not a valid hex digit!
 ```
 
----
-
-#### Q20: How do you convert `snake_case` to `camelCase` at the type level?
-**Answer:**
-```typescript
-type SnakeToCamel<S extends string> =
-  S extends `${infer P1}_${infer P2}${infer Rest}`
-    ? `${Lowercase<P1>}${Uppercase<P2>}${SnakeToCamel<Rest>}`
-    : Lowercase<S>;
-
-type Camel = SnakeToCamel<"order_item_quantity">; // "orderItemQuantity"
-```
+**Line-by-line explanation:**
+- Strictly enforces that the string begins with `#` and contains three valid hex characters.
 
 ---
 
-#### Q21: How do you convert `camelCase` to `snake_case` at the type level?
-**Answer:**
-```typescript
-type CamelToSnake<S extends string> =
-  S extends `${infer Head}${infer Rest}`
-    ? `${Head extends Uppercase<Head> ? `_${Lowercase<Head>}` : Head}${CamelToSnake<Rest>}`
-    : S;
-
-type Snake = CamelToSnake<"orderItemQuantity">; // "order_item_quantity"
-```
+### 8. Common mistakes
 
----
+#### Mistake 1: Trying to interpolate objects or symbols
 
-#### Q22: How do you convert `kebab-case` to `PascalCase`?
-**Answer:**
+**Wrong code:**
 ```typescript
-type KebabToPascal<S extends string> =
-  S extends `${infer P1}-${infer P2}${infer Rest}`
-    ? `${Capitalize<P1>}${Capitalize<P2>}${KebabToPascal<Rest>}`
-    : Capitalize<S>;
-
-type Pascal = KebabToPascal<"order-service-client">; // "OrderServiceClient"
+type Bad = `${{ name: string }}`; // Error!
 ```
 
----
-
-#### Q23: How do you extract route parameters from a URL string like `/users/:userId/posts/:postId`?
-**Answer:**
-```typescript
-type ExtractRouteParams<Path extends string> =
-  Path extends `${infer _Start}:${infer Param}/${infer Rest}`
-    ? { [K in Param | keyof ExtractRouteParams<`/${Rest}`>]: string }
-    : Path extends `${infer _Start}:${infer Param}`
-    ? { [K in Param]: string }
-    : {};
-
-type Params = ExtractRouteParams<"/users/:userId/posts/:postId">;
-// { userId: string; postId: string; }
-```
+**Why it happens:**
+Only primitive types that can be serialized to text (`string`, `number`, `boolean`, `bigint`, `null`, `undefined`) can be placed inside `${...}`.
 
 ---
 
-#### Q24: How do you handle trailing slashes in route parameter extraction?
-**Answer:**
-Strip optional trailing slashes before parsing:
+### 9. Rules to remember
+1. Template literal types use backticks `` `...` `` in type space.
+2. Interpolating unions computes all valid combinations automatically.
+3. Numbers and booleans inside `${...}` are stringified into literal types.
 
-```typescript
-type CleanPath<P extends string> = P extends `${infer Base}/` ? Base : P;
-type SafeRouteParams<P extends string> = ExtractRouteParams<CleanPath<P>>;
-
-type Params2 = SafeRouteParams<"/users/:id/">; // { id: string }
-```
-
 ---
 
-#### Q25: How do you implement a compile-time SemVer string validator?
-**Answer:**
-Check that the string matches `${number}.${number}.${number}`:
+### 10. Exercises
 
+#### Question 1 (Predict the compile result)
+What is the resulting type of `Route`?
 ```typescript
-type IsSemVer<S extends string> =
-  S extends `${infer Major extends number}.${infer Minor extends number}.${infer Patch extends number}`
-    ? true
-    : false;
-
-type V1 = IsSemVer<"1.0.4">; // true
-type V2 = IsSemVer<"v1.0">;  // false
+type Version = 1 | 2;
+type Route = `/v${Version}/api`;
 ```
 
----
-
-#### Q26: How do you implement a compile-time Hex Color validator?
-**Answer:**
+#### Question 2 (Find and fix the bug)
+Fix the syntax error in the template literal type:
 ```typescript
-type HexChar = "0"|"1"|"2"|"3"|"4"|"5"|"6"|"7"|"8"|"9"|"a"|"b"|"c"|"d"|"e"|"f"|"A"|"B"|"C"|"D"|"E"|"F";
-
-type IsHex6<S extends string> =
-  S extends `${HexChar}${HexChar}${HexChar}${HexChar}${HexChar}${HexChar}` ? true : false;
-
-type IsHexColor<S extends string> =
-  S extends `#${infer Rest}` ? IsHex6<Rest> : false;
-
-type C1 = IsHexColor<"#FFFFFF">; // true
-type C2 = IsHexColor<"#123">;    // false (strictly 6-char hex)
+type Event = "on_" + "click"; // Bug: Plus operator does not work in type space!
 ```
 
----
+#### Question 3 (Write code from scratch)
+Define a type `HttpMethod = "get" | "post"`. Create a type `Endpoint = `${Uppercase<HttpMethod>} /api``.
 
-#### Q27: How do you implement a type-safe `StartsWith<S, Prefix>` utility?
-**Answer:**
-```typescript
-type StartsWith<S extends string, Prefix extends string> =
-  S extends `${Prefix}${string}` ? true : false;
-
-type S1 = StartsWith<"https://github.com", "https://">; // true
-type S2 = StartsWith<"http://github.com", "https://">;  // false
-```
+#### Question 4 (Explain in your own words)
+How do template literal types prevent typos in string parameters like CSS units or API routes?
 
 ---
 
-#### Q28: How do you implement a type-safe `EndsWith<S, Suffix>` utility?
-**Answer:**
-```typescript
-type EndsWith<S extends string, Suffix extends string> =
-  S extends `${string}${Suffix}` ? true : false;
-
-type E1 = EndsWith<"image.png", ".png">; // true
-type E2 = EndsWith<"image.jpg", ".png">; // false
-```
+### Solutions
 
----
+#### Solution to Question 1
+**Hint 1**: Substitute each number into the template.
 
-#### Q29: How do you implement `Includes<S, Substring>`?
-**Answer:**
-```typescript
-type Includes<S extends string, Sub extends string> =
-  S extends `${string}${Sub}${string}` ? true : false;
-
-type I1 = Includes<"enterprise-grade", "prise">; // true
-type I2 = Includes<"enterprise-grade", "cloud">; // false
-```
+**Answer**:
+`Route` evaluates to `"/v1/api" | "/v2/api"`.
 
----
+#### Solution to Question 2
+**Hint 1**: Use backtick syntax with `${...}`.
 
-#### Q30: How do you implement a type-safe `Reverse<S>` for strings?
-**Answer:**
+**Answer**:
 ```typescript
-type Reverse<S extends string> =
-  S extends `${infer First}${infer Rest}`
-    ? `${Reverse<Rest>}${First}`
-    : "";
-
-type Rev = Reverse<"hello">; // "olleh"
+type Event = `on_${"click"}`;
 ```
-
----
 
-#### Q31: How do you implement `Repeat<S, N>` at the type level?
-**Answer:**
-Use a tuple accumulator to count repetitions up to `N`:
+#### Solution to Question 3
+**Hint 1**: Combine `Uppercase` with the template literal.
 
+**Answer**:
 ```typescript
-type Repeat<S extends string, N extends number, Acc extends any[] = [], Out extends string = ""> =
-  Acc['length'] extends N
-    ? Out
-    : Repeat<S, N, [...Acc, any], `${Out}${S}`>;
-
-type Rep = Repeat<"*", 5>; // "*****"
+type HttpMethod = "get" | "post";
+type Endpoint = `${Uppercase<HttpMethod>} /api`;
+// "GET /api" | "POST /api"
 ```
 
----
+#### Solution to Question 4
+**Hint 1**: Think about what happens if you pass `"10pxx"` instead of `"10px"`.
 
-#### Q32: How do you resolve a nested object property by its dot path string (`PathValue<T, P>`)?
-**Answer:**
-```typescript
-type PathValue<T, P extends string> =
-  P extends `${infer Key}.${infer Rest}`
-    ? Key extends keyof T
-      ? PathValue<T[Key], Rest>
-      : never
-    : P extends keyof T
-    ? T[P]
-    : never;
-
-interface Config {
-  db: { connection: { pool: number } };
-}
-
-type PoolType = PathValue<Config, "db.connection.pool">; // number
-```
+**Answer**:
+Without template literal types, functions must accept broad `string`s, which allows typos to compile silently and fail at runtime. Template literal types restrict the allowed string values to an exact pattern, so the compiler rejects any misspelled unit or route before the code ever runs.
 
 ---
 
-#### Q33: How do you generate a union of all possible dot-separated paths of an object?
-**Answer:**
-```typescript
-type ObjectPaths<T> = T extends object
-  ? { [K in keyof T & string]: K | `${K}.${ObjectPaths<T[K]>}` }[keyof T & string]
-  : never;
-
-interface UserProfile {
-  name: string;
-  address: {
-    city: string;
-    zip: number;
-  };
-}
-
-type Paths = ObjectPaths<UserProfile>;
-// "name" | "address" | "address.city" | "address.zip"
-```
+### 11. Recall
 
----
+1. What syntax introduces a template literal type?
+2. What happens when you interpolate a union type into a template literal?
+3. Can numbers be interpolated into template literal types?
 
-#### Q34: What is the risk of `ObjectPaths<T>` on objects with circular references?
-**Answer:**
-Without a termination guard, circular object references cause unbounded recursion, triggering:
-`TS2589: Type instantiation is excessively deep and possibly infinite.`
+**If you remember only one thing:**
+Template literal types let you construct and enforce structured string patterns at compile time.
 
 ---
 
-#### Q35: How do you guard `ObjectPaths<T>` against infinite recursion using a depth counter?
-**Answer:**
-Use a tuple counter to cap recursion at a specific depth (e.g., depth 5):
+# Topic 2: Union Distribution and Combinatorial String Generation
 
+### 1. What is it?
+When multiple union types are interpolated into a single template literal type, TypeScript automatically computes the **Cartesian product** (all possible combinations) across all positions:
 ```typescript
-type SafeObjectPaths<T, Depth extends any[] = []> =
-  Depth['length'] extends 5
-    ? never
-    : T extends object
-    ? { [K in keyof T & string]: K | `${K}.${SafeObjectPaths<T[K], [...Depth, any]>}` }[keyof T & string]
-    : never;
+type Vertical = "top" | "bottom";
+type Horizontal = "left" | "right";
+type Position = `${Vertical}-${Horizontal}`;
+// "top-left" | "top-right" | "bottom-left" | "bottom-right"
 ```
 
----
+### 2. Why does it exist?
+In design systems, UI frameworks, and protocol definitions, properties often consist of compound options:
+- Button variants: `("primary" | "secondary")` + `("sm" | "md" | "lg")`.
+- Alignments: `("top" | "center" | "bottom")` + `("left" | "center" | "right")`.
 
-#### Q36: How do template literals support Event Emitter namespaces (e.g. `domain:event`)?
-**Answer:**
-```typescript
-type Entity = "user" | "order" | "product";
-type EventType = "created" | "updated" | "deleted";
-type DomainEvent = `${Entity}:${EventType}`;
-
-function on(event: DomainEvent, callback: () => void): void {}
-// on("user:created", () => {}); // Valid
-// on("user:unknown", () => {}); // TS2345 error!
-```
+Writing all 9 or 12 permutations manually is repetitive and easy to get wrong. Combinatorial string generation synthesizes all valid combinations automatically.
 
----
+### 3. Basic example
 
-#### Q37: How do you implement wildcard event subscriptions (`${string}:*`)?
-**Answer:**
 ```typescript
-type WildcardSubscription<E extends string> =
-  E | `${infer Domain}:*` | "*";
-
-type ValidEvent = WildcardSubscription<"order:paid">;
-// "order:paid" | `${string}:*` | "*"
-```
-
----
+type Speed = "fast" | "slow";
+type Animation = "fade" | "slide" | "zoom";
 
-#### Q38: How do you extract HTTP Method and Route Path from a composite route definition?
-**Answer:**
-```typescript
-type Method = "GET" | "POST" | "PUT" | "DELETE";
-type Endpoint = `${Method} ${string}`;
+type ClassName = `animate-${Animation}-${Speed}`;
 
-type ExtractMethod<E extends Endpoint> = E extends `${infer M extends Method} ${string}` ? M : never;
-type ExtractPath<E extends Endpoint> = E extends `${Method} ${infer P}` ? P : never;
+// Automatically generates 2 * 3 = 6 combinations:
+// "animate-fade-fast"  | "animate-fade-slow"
+// "animate-slide-fast" | "animate-slide-slow"
+// "animate-zoom-fast"  | "animate-zoom-slow"
 
-type M = ExtractMethod<"POST /api/v1/checkout">; // "POST"
-type P = ExtractPath<"POST /api/v1/checkout">;   // "/api/v1/checkout"
+const myClass: ClassName = "animate-slide-fast"; // Valid
+// const badClass: ClassName = "animate-fade-normal"; // Error!
 ```
 
----
-
-#### Q39: How do you enforce CSS Units (e.g., `px`, `rem`, `%`) at compile time?
-**Answer:**
-```typescript
-type CSSUnit = "px" | "rem" | "em" | "%" | "vh" | "vw";
-type CSSDimension = `${number}${CSSUnit}` | "0" | "auto";
-
-function setWidth(width: CSSDimension) {}
-// setWidth("100px");  // OK
-// setWidth("2.5rem"); // OK
-// setWidth("50");     // TS2345: Unit missing!
-```
+**Line-by-line explanation:**
+- `Speed` has 2 members. `Animation` has 3 members.
+- `` `animate-${Animation}-${Speed}` `` multiplies them: $2 \times 3 = 6$ total literal types.
+- Every valid combination is accepted; any other string is rejected.
 
 ---
 
-#### Q40: How do you validate an IPv4 address string at the type level?
-**Answer:**
-```typescript
-type Octet = `${number}`;
-type IPv4 = `${Octet}.${Octet}.${Octet}.${Octet}`;
-
-function bindAddress(ip: IPv4) {}
-// bindAddress("127.0.0.1"); // OK
-// bindAddress("localhost"); // Error
-```
+### 4. How it works inside TypeScript
+1. **Multi-Slot Expansion**: If there are $N$ interpolation slots, the compiler expands each slot independently.
+2. **Permutation Matrix**: It combines every member of slot 1 with every member of slot 2, slot 3, and so on.
+3. **Union Flattening**: All resulting strings are flattened into a single union type.
 
 ---
 
-#### Q41: How do you extract GraphQL Field names from a selection string?
-**Answer:**
-```typescript
-type ExtractFields<Query extends string> =
-  Query extends `{ ${infer Fields} }`
-    ? Split<Fields, " ">[number]
-    : never;
-
-type Fields = ExtractFields<"{ id name email }">; // "id" | "name" | "email"
-```
+### 5. Think first
 
----
+How many members does `AlertKey` have in the code below? Decide first.
 
-#### Q42: How do you implement a type-safe `Join` that preserves empty arrays?
-**Answer:**
 ```typescript
-type SafeJoin<T extends readonly string[], Delimiter extends string> =
-  T extends []
-    ? ""
-    : T extends readonly [infer F extends string]
-    ? F
-    : T extends readonly [infer F extends string, ...infer R extends readonly string[]]
-    ? `${F}${Delimiter}${SafeJoin<R, Delimiter>}`
-    : string;
+type Priority = "low" | "medium" | "high";
+type Category = "system" | "network";
+type AlertKey = `alert:${Category}:${Priority}`;
 ```
-
----
 
-#### Q43: How does TypeScript differentiate `${string}` from `string`?
-**Answer:**
-Inside type relationships and template literal patterns, `${string}` represents an interpolation wildcard that matches any string. In isolation, the type `${string}` is structurally identical to `string`.
-
----
-
-#### Q44: Can template literal types match literal symbols?
-**Answer:**
-No. Symbols cannot be serialized into string template literals. Attempting `${symbol}` produces compile error `TS2469: Symbol' type cannot be serialized in template literal type`.
-
 ---
 
-#### Q45: How do you parse URL hash/fragment identifiers at compile time?
-**Answer:**
-```typescript
-type ExtractHash<Url extends string> =
-  Url extends `${infer _Before}#${infer Fragment}` ? Fragment : null;
+**Answer and Reason:**
 
-type Hash = ExtractHash<"https://docs.ts.com/intro#generics">; // "generics"
-```
+`AlertKey` has **6** members.
 
+**Reason**: 3 priority values multiplied by 2 category values: $3 \times 2 = 6$ distinct string literal combinations.
 
 ---
 
-## 3. 90 Real-World Technical Interview Q&As (Part 2: Q46–Q90)
+### 6. Try it yourself
+Create `type MarginSide = "top" | "bottom" | "left" | "right"`. Create `type MarginSize = 0 | 1 | 2 | 4 | 8`. Create a template literal type `MarginUtility = `m-${MarginSide}-${MarginSize}``. Verify that `"m-top-4"` is valid.
 
 ---
-
-#### Q46: How do you parse query string parameters into an object type (`ParseQueryString<Q>`)?
-**Answer:**
-Iteratively split by `&` and then decompose key-value pairs separated by `=`:
-
-```typescript
-type ParsePair<P extends string> =
-  P extends `${infer K}=${infer V}`
-    ? { [Key in K]: V }
-    : { [Key in P]: true };
-
-type ParseQueryString<Q extends string> =
-  Q extends `?${infer Rest}`
-    ? ParseQueryString<Rest>
-    : Q extends `${infer Pair}&${infer Rest}`
-    ? ParsePair<Pair> & ParseQueryString<Rest>
-    : Q extends `${infer Pair}`
-    ? ParsePair<Pair>
-    : {};
-
-type Query = ParseQueryString<"?role=admin&active=true">;
-// { role: "admin" } & { active: "true" }
-```
 
----
+### 7. More examples
 
-#### Q47: How do you handle multiple identical query keys (e.g. array values `?tag=ts&tag=js`)?
-**Answer:**
-Synthesize existing accumulator properties into a tuple when a duplicate key is detected:
+#### Example A: Grid Coordinates (Medium)
 
 ```typescript
-type MergeParams<Acc, NewPair> = {
-  [K in keyof Acc | keyof NewPair]:
-    K extends keyof Acc
-      ? K extends keyof NewPair
-        ? Acc[K] extends any[]
-          ? [...Acc[K], NewPair[K]]
-          : [Acc[K], NewPair[K]]
-        : Acc[K]
-      : K extends keyof NewPair
-      ? NewPair[K]
-      : never;
-};
-```
-
----
-
-#### Q48: How do you extract placeholder variable names from an i18n string like `"Welcome {username}, you have {count} alerts"`?
-**Answer:**
-Recursively pattern-match against `{${infer Param}}`:
+type Column = "A" | "B" | "C";
+type Row = 1 | 2 | 3;
 
-```typescript
-type ExtractI18nParams<S extends string> =
-  S extends `${infer _Before}{${infer Param}}${infer Rest}`
-    ? Param | ExtractI18nParams<Rest>
-    : never;
-
-type Params = ExtractI18nParams<"Welcome {username}, you have {count} alerts">;
-// "username" | "count"
+type ChessSquare = `${Column}${Row}`;
+// "A1" | "A2" | "A3" | "B1" | "B2" | "B3" | "C1" | "C2" | "C3"
 ```
 
 ---
-
-#### Q49: How do you create a type-safe `t()` translation function requiring all extracted placeholders?
-**Answer:**
-```typescript
-type TranslationArgs<S extends string> =
-  [ExtractI18nParams<S>] extends [never]
-    ? []
-    : [params: Record<ExtractI18nParams<S>, string | number>];
-
-function t<S extends string>(template: S, ...args: TranslationArgs<S>): string {
-  let result: string = template;
-  if (args.length > 0) {
-    for (const [k, v] of Object.entries(args[0])) {
-      result = result.replace(new RegExp(`{${k}}`, "g"), String(v));
-    }
-  }
-  return result;
-}
-
-// t("Hello {name}", { name: "Alice" }); // Valid
-// t("Hello {name}"); // TS2554: Expected 2 arguments, got 1!
-```
 
----
+### 8. Common mistakes
 
-#### Q50: How do you model Tailwind-like utility classes using template literal types?
-**Answer:**
-Combine utility prefixes, scales, and state variants:
+#### Mistake 1: Accidentally creating millions of combinations (Union Explosion)
 
+**Wrong code:**
 ```typescript
-type Variant = "" | "hover:" | "focus:";
-type Property = "p" | "m" | "text";
-type Scale = "sm" | "md" | "lg" | "xl";
-
-type TailwindClass = `${Variant}${Property}-${Scale}`;
-// "p-sm" | "hover:p-sm" | "focus:text-lg" | etc.
+type Char = "a" | "b" | "c" | "d" | "e" | "f" | "g" | "h" | "i" | "j";
+type SixChars = `${Char}${Char}${Char}${Char}${Char}${Char}`;
+// 10 * 10 * 10 * 10 * 10 * 10 = 1,000,000 combinations!
+// Error TS2590: Expression produces a union type that is too complex to represent.
 ```
-
----
 
-#### Q51: How do you extract columns from a SQL `SELECT` statement?
-**Answer:**
-```typescript
-type SplitCols<S extends string> =
-  S extends `${infer Col}, ${infer Rest}`
-    ? Col | SplitCols<Rest>
-    : S;
-
-type ExtractSelectCols<Q extends string> =
-  Q extends `SELECT ${infer Cols} FROM ${string}`
-    ? SplitCols<Cols>
-    : never;
-
-type Columns = ExtractSelectCols<"SELECT id, name, email FROM users">;
-// "id" | "name" | "email"
-```
+**Why it happens:**
+TypeScript caps union complexity at approximately 100,000 members. Multiplying large unions exceeds this limit.
 
 ---
 
-#### Q52: How do you validate an ISO 8601 Date string (`YYYY-MM-DD`) at compile time?
-**Answer:**
-```typescript
-type Digit = "0"|"1"|"2"|"3"|"4"|"5"|"6"|"7"|"8"|"9";
-type Year = `${Digit}${Digit}${Digit}${Digit}`;
-type Month = `${Digit}${Digit}`;
-type Day = `${Digit}${Digit}`;
-type ISODate = `${Year}-${Month}-${Day}`;
-
-function setDate(date: ISODate) {}
-// setDate("2026-09-27"); // OK
-// setDate("27-09-2026"); // Error
-```
+### 9. Rules to remember
+1. Multiple unions in a template literal generate all permutations ($M \times N$).
+2. Total combinations equal the product of the sizes of each union.
+3. Keep union sizes modest to avoid compiler complexity errors (TS2590).
 
 ---
 
-#### Q53: How do you parse and validate a JWT Token structure?
-**Answer:**
-A JWT consists of three Base64URL-encoded strings separated by two periods:
+### 10. Exercises
 
+#### Question 1 (Predict the compile result)
+How many union members are in `Result`?
 ```typescript
-type JWT = `${string}.${string}.${string}`;
-
-function verifyToken(token: JWT) {}
-// verifyToken("header.payload.signature"); // OK
-// verifyToken("invalid-token"); // TS2345
+type A = "x" | "y";
+type B = 1 | 2;
+type C = "alpha" | "beta";
+type Result = `${A}_${B}_${C}`;
 ```
 
----
-
-#### Q54: How do you type a 40-character Git commit SHA?
-**Answer:**
-Using recursive character verification or repeated 4-character chunks:
-
+#### Question 2 (Find and fix the bug)
+The code below is supposed to allow `"btn-primary"` and `"btn-danger"`, but has a syntax error. Fix it:
 ```typescript
-type HexChar = "0"|"1"|"2"|"3"|"4"|"5"|"6"|"7"|"8"|"9"|"a"|"b"|"c"|"d"|"e"|"f";
-type Hex4 = `${HexChar}${HexChar}${HexChar}${HexChar}`;
-type GitSHA = `${Hex4}${Hex4}${Hex4}${Hex4}${Hex4}${Hex4}${Hex4}${Hex4}${Hex4}${Hex4}`; // 40 chars
+type Variant = "primary" | "danger";
+type BtnClass = `btn-${Variant);
 ```
 
----
+#### Question 3 (Write code from scratch)
+Define `type Prefix = "dev" | "prod"` and `type Service = "auth" | "db" | "api"`. Generate a type `ClusterNode = `${Prefix}-${Service}-node``.
 
-#### Q55: How do you parse and validate a MAC Address?
-**Answer:**
-```typescript
-type Hex2 = `${HexChar}${HexChar}`;
-type MACAddress = `${Hex2}:${Hex2}:${Hex2}:${Hex2}:${Hex2}:${Hex2}`;
-
-function registerDevice(mac: MACAddress) {}
-// registerDevice("00:1A:2B:3C:4D:5E"); // OK
-```
+#### Question 4 (Explain in your own words)
+Why does interpolating unions in template literals generate combinations rather than evaluating to a single string?
 
 ---
-
-#### Q56: How do you parse Semantic Version comparison ranges (e.g. `^1.2.3`, `~1.2.3`)?
-**Answer:**
-```typescript
-type SemVerRange<V extends string> =
-  V extends `^${infer Rest}` ? { operator: "^"; version: Rest } :
-  V extends `~${infer Rest}` ? { operator: "~"; version: Rest } :
-  V extends `>=${infer Rest}` ? { operator: ">="; version: Rest } :
-  { operator: "="; version: V };
-
-type R1 = SemVerRange<"^5.4.0">; // { operator: "^"; version: "5.4.0" }
-```
 
----
+### Solutions
 
-#### Q57: How do you validate a type-safe JSON Pointer (RFC 6901)?
-**Answer:**
-A JSON pointer begins with `/` and separates object keys:
+#### Solution to Question 1
+**Hint 1**: Multiply $2 \times 2 \times 2$.
 
-```typescript
-type JsonPointer = `/${string}` | "";
-function resolvePointer<T>(target: T, pointer: JsonPointer) {}
-```
+**Answer**:
+`Result` has 8 union members.
 
----
+#### Solution to Question 2
+**Hint 1**: Close the template interpolation with `}` instead of `)`.
 
-#### Q58: How do you implement a compile-time CSS `rgb()` / `rgba()` validator?
-**Answer:**
+**Answer**:
 ```typescript
-type RGB = `rgb(${number}, ${number}, ${number})`;
-type RGBA = `rgba(${number}, ${number}, ${number}, ${number})`;
-type CSSColor = RGB | RGBA | `#${string}`;
-
-function setColor(c: CSSColor) {}
-// setColor("rgb(255, 0, 128)"); // OK
-// setColor("rgba(0, 0, 0, 0.5)"); // OK
+type Variant = "primary" | "danger";
+type BtnClass = `btn-${Variant}`;
 ```
 
----
+#### Solution to Question 3
+**Hint 1**: Combine `Prefix` and `Service`.
 
-#### Q59: How do you extract keys prefixed with `on` and strip the prefix to lowercase event names?
-**Answer:**
+**Answer**:
 ```typescript
-type ExtractEventNames<T> = {
-  [K in keyof T as K extends `on${infer Event}` ? Uncapitalize<Event> : never]: T[K];
-};
-
-interface DOMEvents {
-  onClick: (e: any) => void;
-  onKeyDown: (e: any) => void;
-  className: string;
-}
-
-type Extracted = ExtractEventNames<DOMEvents>;
-// { click: (e: any) => void; keyDown: (e: any) => void; }
+type Prefix = "dev" | "prod";
+type Service = "auth" | "db" | "api";
+type ClusterNode = `${Prefix}-${Service}-node`;
 ```
 
----
+#### Solution to Question 4
+**Hint 1**: Remember distributive evaluation from earlier modules.
 
-#### Q60: How do you enforce that an interface has NO leading underscores in its properties?
-**Answer:**
-```typescript
-type EnforceNoLeadingUnderscore<T> = {
-  [K in keyof T]: K extends `_${string}` ? never : T[K];
-};
-```
+**Answer**:
+TypeScript distributes operations over unions. When a template literal contains a union, TypeScript evaluates the template for each individual union member across all slots, ensuring that every valid permutation is recognized as a valid type.
 
 ---
 
-#### Q61: How do you convert all object keys from `snake_case` to `camelCase` in a mapped type?
-**Answer:**
-```typescript
-type SnakeToCamelObject<T> = {
-  [K in keyof T as K extends string ? SnakeToCamel<K> : K]: T[K];
-};
-
-interface DBRow {
-  first_name: string;
-  is_verified: boolean;
-}
-
-type CleanRow = SnakeToCamelObject<DBRow>;
-// { firstName: string; isVerified: boolean; }
-```
+### 11. Recall
 
----
+1. What mathematical operation describes how unions combine in template literals?
+2. What error occurs if too many combinations are generated?
+3. How many members does `${"a" | "b"}-${1 | 2}` have?
 
-#### Q62: How do you convert all object keys to UPPERCASE?
-**Answer:**
-```typescript
-type UppercaseKeys<T> = {
-  [K in keyof T as K extends string ? Uppercase<K> : K]: T[K];
-};
-
-type EnvConfig = UppercaseKeys<{ port: number; host: string }>;
-// { PORT: number; HOST: string; }
-```
+**If you remember only one thing:**
+Interpolating multiple unions creates all permutations across all slots automatically.
 
 ---
 
-#### Q63: How do you parse Markdown inline link syntax (`[text](url)`)?
-**Answer:**
-```typescript
-type ParseMarkdownLink<S extends string> =
-  S extends `[${infer Text}](${infer Url})`
-    ? { text: Text; url: Url }
-    : never;
-
-type Link = ParseMarkdownLink<"[TypeScript Docs](https://typescriptlang.org)">;
-// { text: "TypeScript Docs"; url: "https://typescriptlang.org" }
-```
+# Topic 3: Intrinsic String Manipulation Types (`Uppercase`, `Lowercase`, `Capitalize`, `Uncapitalize`)
 
----
+### 1. What is it?
+TypeScript includes four built-in keyword types for manipulating string casing at compile time:
+- `Uppercase<S>`: Converts all characters to uppercase.
+- `Lowercase<S>`: Converts all characters to lowercase.
+- `Capitalize<S>`: Converts the first character to uppercase.
+- `Uncapitalize<S>`: Converts the first character to lowercase.
 
-#### Q64: How do you parse CLI flags with values (e.g. `--port=8080`)?
-**Answer:**
-```typescript
-type ParseFlag<S extends string> =
-  S extends `--${infer Key}=${infer Val extends number}`
-    ? { [K in Key]: Val }
-    : S extends `--${infer Key}=${infer Val}`
-    ? { [K in Key]: Val }
-    : S extends `--${infer Key}`
-    ? { [K in Key]: true }
-    : never;
-
-type Flag1 = ParseFlag<"--port=3000">; // { port: 3000 }
-type Flag2 = ParseFlag<"--verbose">;   // { verbose: true }
-```
+These are called **intrinsic** types because their logic is built directly into the compiler engine.
 
----
+### 2. Why does it exist?
+In JavaScript, naming conventions differ across domains:
+- Constants use `UPPER_SNAKE_CASE`.
+- Properties use `camelCase`.
+- Classes and components use `PascalCase`.
+- Event listeners prepend `on` and capitalize the event name (`onClick`, `onFocus`).
 
-#### Q65: How do you parse environment variable interpolation syntax (e.g. `${PORT:-8080}`)?
-**Answer:**
-```typescript
-type ParseEnvInterpolation<S extends string> =
-  S extends `\${${infer Var}:-${infer Default}}`
-    ? { variable: Var; fallback: Default }
-    : S extends `\${${infer Var}}`
-    ? { variable: Var; fallback: null }
-    : null;
-
-type E1 = ParseEnvInterpolation<"${PORT:-3000}">; // { variable: "PORT"; fallback: "3000" }
-```
+String intrinsic types allow you to transform string types from one casing convention to another without writing manual character conversion tables.
 
----
+### 3. Basic example
 
-#### Q66: How do you parse Kafka/RabbitMQ multi-level topic keys (e.g. `us-east.prod.billing.invoice_paid`)?
-**Answer:**
 ```typescript
-type ParseRoutingKey<K extends string> =
-  K extends `${infer Region}.${infer Env}.${infer Service}.${infer Event}`
-    ? { region: Region; env: Env; service: Service; event: Event }
-    : never;
-
-type Topic = ParseRoutingKey<"eu-west.staging.auth.user_logged_in">;
-// { region: "eu-west"; env: "staging"; service: "auth"; event: "user_logged_in" }
-```
-
----
+type Greeting = "hello world";
 
-#### Q67: How do you construct Redis hierarchical keys with strong types (`tenant:entity:id`)?
-**Answer:**
-```typescript
-type RedisKey<Tenant extends string, Entity extends string, ID extends string | number> =
-  `${Tenant}:${Entity}:${ID}`;
-
-function getCache<T extends string, E extends string, ID extends string | number>(
-  key: RedisKey<T, E, ID>
-) {}
-// getCache("tenant_42:orders:9999"); // Valid
+type Loud = Uppercase<Greeting>;     // "HELLO WORLD"
+type Quiet = Lowercase<"SHOUTING">;  // "shouting"
+type Title = Capitalize<"alex">;     // "Alex"
+type Prop = Uncapitalize<"UserId">;  // "userId"
 ```
-
----
 
-#### Q68: How do you implement a type-safe `printf` format argument extractor?
-**Answer:**
-```typescript
-type PrintfArg<C extends string> =
-  C extends "s" ? string :
-  C extends "d" ? number :
-  C extends "j" ? object :
-  any;
-
-type ExtractPrintfArgs<S extends string> =
-  S extends `${string}%${infer Code}${infer Rest}`
-    ? [PrintfArg<Code>, ...ExtractPrintfArgs<Rest>]
-    : [];
-
-type Args = ExtractPrintfArgs<"Item %s costs %d dollars">;
-// [string, number]
-```
+**Line-by-line explanation:**
+- `Uppercase<"hello world">`: Converts every character, producing `"HELLO WORLD"`.
+- `Lowercase<"SHOUTING">`: Converts every character, producing `"shouting"`.
+- `Capitalize<"alex">`: Uppercases only the first character `"a"` to `"A"`, producing `"Alex"`.
+- `Uncapitalize<"UserId">`: Lowercases only the first character `"U"` to `"u"`, producing `"userId"`.
 
 ---
 
-#### Q69: What is tail-call recursion optimization in template literal type parsers?
-**Answer:**
-When recursive types accumulate their results in an accumulator type parameter in the tail position, TypeScript's compiler can optimize memory usage and evaluate recursion depths of up to **1,000 iterations** without encountering the standard recursion stack limit of ~50.
+### 4. How it works inside TypeScript
+1. **Compiler Intrinsics**: These four types are defined with `type Uppercase<S extends string> = intrinsic;`. The compiler handles them internally.
+2. **Distribution over Unions**: Intrinsics distribute over unions:
+   `Capitalize<"apple" | "banana">` evaluates to `"Apple" | "Banana"`.
+3. **Non-String Handling**: Non-alphabetical characters (numbers, underscores, dashes) are left unchanged.
 
 ---
 
-#### Q70: How do you implement tail-call optimized string splitting?
-**Answer:**
-```typescript
-type SplitTCO<
-  S extends string,
-  Delimiter extends string,
-  Acc extends string[] = []
-> = S extends `${infer Head}${Delimiter}${infer Tail}`
-  ? SplitTCO<Tail, Delimiter, [...Acc, Head]>
-  : [...Acc, S];
-```
+### 5. Think first
 
----
+What is the resulting type of `Result` in the code below? Decide first.
 
-#### Q71: How do you implement tail-call optimized string length measurement?
-**Answer:**
 ```typescript
-type StringLengthTCO<S extends string, Acc extends any[] = []> =
-  S extends `${infer _First}${infer Rest}`
-    ? StringLengthTCO<Rest, [...Acc, any]>
-    : Acc['length'];
+type Action = "start" | "stop";
+type HandlerName = `on${Capitalize<Action>}`;
 ```
 
 ---
 
-#### Q72: How do you check if a string is a palindrome at compile time?
-**Answer:**
-```typescript
-type ReverseStr<S extends string> =
-  S extends `${infer First}${infer Rest}`
-    ? `${ReverseStr<Rest>}${First}`
-    : "";
-
-type IsPalindrome<S extends string> = S extends ReverseStr<S> ? true : false;
-
-type P1 = IsPalindrome<"racecar">; // true
-type P2 = IsPalindrome<"engine">;  // false
-```
+**Answer and Reason:**
 
----
+The resulting type is:
 
-#### Q73: How do you parse and validate a UUID v4 string at the type level?
-**Answer:**
 ```typescript
-type Hex8 = `${Hex4}${Hex4}`;
-type Hex12 = `${Hex4}${Hex4}${Hex4}`;
-type UUID = `${Hex8}-${Hex4}-4${HexChar}${HexChar}${HexChar}-${HexChar}${HexChar}${HexChar}${HexChar}-${Hex12}`;
-
-function findByUUID(id: UUID) {}
-// findByUUID("123e4567-e89b-42d3-a456-426614174000"); // Valid UUID v4
+"onStart" | "onStop"
 ```
 
----
-
-#### Q74: How do you validate a CSS Selector syntax at compile time?
-**Answer:**
-```typescript
-type SimpleSelector = `.${string}` | `#${string}` | `${string} > ${string}` | `${string}:hover`;
-
-function queryEl(selector: SimpleSelector) {}
-// queryEl(".card > .title"); // OK
-// queryEl("plain-text"); // Error
-```
+**Reason**: `Capitalize` distributes over `"start"` and `"stop"`, producing `"Start"` and `"Stop"`. Prepending `"on"` results in `"onStart" | "onStop"`.
 
 ---
 
-#### Q75: How do you enforce that a string contains only numeric digits?
-**Answer:**
-```typescript
-type IsNumeric<S extends string> =
-  S extends ""
-    ? true
-    : S extends `${Digit}${infer Rest}`
-    ? IsNumeric<Rest>
-    : false;
-
-type N1 = IsNumeric<"1234567">; // true
-type N2 = IsNumeric<"123a567">; // false
-```
+### 6. Try it yourself
+Create a type `Status = "pending" | "approved" | "rejected"`. Write a type `EventName = `EVENT_${Uppercase<Status>}``. Verify the result.
 
 ---
 
-#### Q76: How do you enforce that a string contains NO spaces?
-**Answer:**
-```typescript
-type NoSpaces<S extends string> =
-  S extends `${string} ${string}` ? never : S;
-
-function setSlug<T extends string>(slug: NoSpaces<T>) {}
-// setSlug("typescript-guide"); // OK
-// setSlug("typescript guide"); // TS2345: Argument not assignable to never!
-```
+### 7. More examples
 
----
+#### Example A: Normalizing Case for API Headers (Medium)
 
-#### Q77: How do you parse an SQL `INSERT INTO <table> (<cols>)` query?
-**Answer:**
 ```typescript
-type ParseInsert<Q extends string> =
-  Q extends `INSERT INTO ${infer Table} (${infer Cols}) VALUES (${string})`
-    ? { table: Table; columns: Split<Cols, ", "> }
-    : never;
-
-type Ins = ParseInsert<"INSERT INTO users (id, name, email) VALUES (1, 'Alice', 'a@b.com')">;
-// { table: "users"; columns: ["id", "name", "email"] }
+type RawHeader = "content-type" | "authorization" | "x-api-key";
+type EnvVar = `HTTP_${Uppercase<ReplaceAll<RawHeader, "-", "_">>}`;
+// We will learn ReplaceAll in Topic 7!
 ```
 
 ---
-
-#### Q78: How do you implement a compile-time CSS calc() expression validator?
-**Answer:**
-```typescript
-type CalcExpression = `calc(${string} + ${string})` | `calc(${string} - ${string})` | `calc(${string} * ${string})`;
 
-function setCalc(val: CalcExpression) {}
-// setCalc("calc(100% - 20px)"); // OK
-```
+### 8. Common mistakes
 
----
+#### Mistake 1: Expecting locale-specific transformations
 
-#### Q79: How do you parse command line arguments into typed configuration?
-**Answer:**
-```typescript
-type ParseCliArg<Arg extends string> =
-  Arg extends `--${infer Key}=${infer Val}` ? { [K in Key]: Val } : {};
-```
+**Explanation:**
+TypeScript's intrinsics use standard Unicode mappings and do not consider browser locales (such as Turkish dotted/dotless `"i"`).
 
 ---
 
-#### Q80: How do you map a camelCase property to an uppercase SQL column name?
-**Answer:**
-```typescript
-type CamelToScreamingSnake<S extends string> = Uppercase<CamelToSnake<S>>;
-
-type Col = CamelToScreamingSnake<"userId">; // "USER_ID"
-```
+### 9. Rules to remember
+1. Four intrinsics: `Uppercase`, `Lowercase`, `Capitalize`, `Uncapitalize`.
+2. All four automatically distribute across union members.
+3. Non-letter characters remain unchanged.
 
 ---
-
-#### Q81: How do you extract all path parameters enclosed in braces like `/users/{userId}/books/{bookId}`?
-**Answer:**
-```typescript
-type ExtractBraceParams<Path extends string> =
-  Path extends `${string}{${infer Param}}${infer Rest}`
-    ? Param | ExtractBraceParams<Rest>
-    : never;
-
-type P = ExtractBraceParams<"/api/v1/{teamId}/projects/{projectId}">;
-// "teamId" | "projectId"
-```
 
----
+### 10. Exercises
 
-#### Q82: How do you parse nested JSON path queries (e.g. `$.store.book[0].title`)?
-**Answer:**
+#### Question 1 (Predict the compile result)
+What is the resulting type of `T`?
 ```typescript
-type JsonPathTokens<S extends string> =
-  S extends `$.${infer Rest}`
-    ? Split<Rest, ".">
-    : never;
-
-type Tokens = JsonPathTokens<"$.store.inventory.items">;
-// ["store", "inventory", "items"]
+type T = Uncapitalize<"DARK_MODE">;
 ```
-
----
 
-#### Q83: How do you create a type-safe `URLBuilder` with fluent parametric interpolation?
-**Answer:**
+#### Question 2 (Find and fix the bug)
+The code below fails to compile because `Uppercase` received a number. Fix it:
 ```typescript
-class URLBuilder<Pattern extends string> {
-  private pattern: Pattern;
-  constructor(pattern: Pattern) { this.pattern = pattern; }
-
-  public build(params: ExtractRouteParams<Pattern>): string {
-    let url: string = this.pattern;
-    for (const [key, val] of Object.entries(params)) {
-      url = url.replace(`:${key}`, String(val));
-    }
-    return url;
-  }
-}
+type Code = Uppercase<404>;
 ```
 
----
+#### Question 3 (Write code from scratch)
+Write a type `ToGetterName<Prop extends string>` that takes a property name like `"age"` and returns `"getAge"`.
 
-#### Q84: How do you implement a compile-time MIME type validator?
-**Answer:**
-```typescript
-type TopLevelType = "application" | "text" | "image" | "audio" | "video";
-type MimeType = `${TopLevelType}/${string}`;
-
-function setContentType(type: MimeType) {}
-// setContentType("application/json"); // OK
-// setContentType("image/png");        // OK
-// setContentType("unknown-format");   // Error
-```
+#### Question 4 (Explain in your own words)
+Why are `Uppercase`, `Lowercase`, `Capitalize`, and `Uncapitalize` called "intrinsic" types in TypeScript?
 
 ---
 
-#### Q85: How do you prevent template literal types from causing compiler memory degradation?
-**Answer:**
-1. Avoid Cartesian products of large unions ($> 50$ members).
-2. Avoid adjacent unconstrained `infer` parameters.
-3. Use tail-call recursive accumulators.
-4. Add depth recursion guards using tuple counter lengths.
+### Solutions
 
----
+#### Solution to Question 1
+**Hint 1**: Only the very first character is affected by `Uncapitalize`.
 
-#### Q86: Can template literal types pattern-match numbers using negative signs?
-**Answer:**
-Yes, `infer N extends number` parses negative numbers like `"-42"` into literal `-42`.
+**Answer**:
+The type is `"dARK_MODE"`.
 
----
+#### Solution to Question 2
+**Hint 1**: Convert the number to a string literal `"404"`.
 
-#### Q87: How do you map an event handler interface from a list of action names?
-**Answer:**
+**Answer**:
 ```typescript
-type Actions = "login" | "logout" | "register";
-type Handlers = {
-  [A in Actions as `on${Capitalize<A>}`]: () => void;
-};
-// { onLogin: () => void; onLogout: () => void; onRegister: () => void; }
+type Code = Uppercase<"404">;
 ```
 
----
+#### Solution to Question 3
+**Hint 1**: Use `` `get${Capitalize<Prop>}` ``.
 
-#### Q88: How do you implement compile-time String Padding (`PadStart<S, Length, Char>`)?
-**Answer:**
+**Answer**:
 ```typescript
-type PadStart<
-  S extends string,
-  TargetLength extends number,
-  PadChar extends string = " "
-> = StringLength<S> extends TargetLength
-  ? S
-  : PadStart<`${PadChar}${S}`, TargetLength, PadChar>;
-
-type Padded = PadStart<"42", 5, "0">; // "00042"
+type ToGetterName<Prop extends string> = `get${Capitalize<Prop>}`;
+type Test = ToGetterName<"age">; // "getAge"
 ```
-
----
 
-#### Q89: How do template literals integrate with `as const` assertions?
-**Answer:**
-When a template literal expression in runtime JavaScript is tagged with `as const`, TypeScript infers its exact literal template type rather than widening it to `string`.
+#### Solution to Question 4
+**Hint 1**: Where is their logic implemented?
 
-```typescript
-const prefix = "item";
-const id = 101;
-const sku = `${prefix}_${id}` as const; // Type: "item_101" (not string)
-```
+**Answer**:
+They are called intrinsic because their transformation logic is implemented directly within the TypeScript compiler's source code (using JavaScript string methods like `.toUpperCase()`), rather than being defined as standard type aliases in `.d.ts` files.
 
 ---
-
-#### Q90: How do you profile template literal compilation performance in TypeScript?
-**Answer:**
-Run the TypeScript compiler with `--extendedDiagnostics` or `--generateTrace <trace-dir>` to inspect `CheckTime`, `Types`, and `Instantiations`. Large Cartesian products or deep recursive string templates will show up as significant spikes in instantiation counts.
 
+### 11. Recall
 
----
-
-## 4. Output Prediction Puzzles (15 Puzzles with Step-by-Step Traces)
+1. What type capitalizes only the first letter of a string?
+2. What type lowercases only the first letter of a string?
+3. Do intrinsic string types distribute across unions?
 
-Test your mental model of TypeScript's template literal parser, greedy/non-greedy inference, intrinsic distribution, and type-level string grammar evaluation.
+**If you remember only one thing:**
+Use `Capitalize`, `Uncapitalize`, `Uppercase`, and `Lowercase` to transform character casing at compile time.
 
 ---
-
-### Puzzle 1: Cartesian Product Union Explosion
-
-```typescript
-type A = "a" | "b";
-type B = "1" | "2";
-type C = "x" | "y";
-
-type Combined = `${A}_${B}_${C}`;
-// Question: How many union members are in Combined, and what are they?
-```
 
-**Step-by-Step Evaluation Trace:**
-1. Union `A` has cardinality 2 (`"a"`, `"b"`).
-2. Union `B` has cardinality 2 (`"1"`, `"2"`).
-3. Union `C` has cardinality 2 (`"x"`, `"y"`).
-4. TypeScript calculates the Cartesian product: $2 \times 2 \times 2 = 8$ union members.
-5. **Output Type:**
-   ```typescript
-   "a_1_x" | "a_1_y" | "a_2_x" | "a_2_y" | "b_1_x" | "b_1_y" | "b_2_x" | "b_2_y"
-   ```
-
----
+# Topic 4: Pattern Matching Strings with `infer` (`${infer Head}/${infer Tail}`)
 
-### Puzzle 2: Adjacent `infer` Variables Without Delimiters
+### 1. What is it?
+When you combine template literal types with conditional types and the `infer` keyword, you can pattern match inside strings to extract substrings.
 
+For example, you can extract the text before and after a delimiter:
 ```typescript
-type Decompose<S extends string> = S extends `${infer Head}${infer Tail}`
+type Split<S> = S extends `${infer Head}/${infer Tail}`
   ? { head: Head; tail: Tail }
   : never;
-
-type Result2 = Decompose<"GraphQL">;
 ```
 
-**Step-by-Step Evaluation Trace:**
-1. In `${infer Head}${infer Tail}`, there is no separator between `Head` and `Tail`.
-2. TypeScript's parser specifies that the leftmost `infer` captures exactly **one character**.
-3. `Head` captures `"G"`.
-4. `Tail` captures the remainder: `"raphQL"`.
-5. **Output Type:** `{ head: "G"; tail: "raphQL"; }`.
+### 2. Why does it exist?
+Many software configurations and protocols encode structured information into strings:
+- URLs: `"/users/123/profile"`
+- File paths: `"src/components/Button.tsx"`
+- Date strings: `"2026-10-02"`
+
+Before template literal inference, TypeScript could not inspect or parse what was inside a string literal. String pattern matching lets you parse and validate internal substrings at compile time.
+
+### 3. Basic example
+
+```typescript
+type ExtractProtocol<Url extends string> =
+  Url extends `${infer Protocol}://${string}` ? Protocol : never;
+
+type P1 = ExtractProtocol<"https://example.com">; // "https"
+type P2 = ExtractProtocol<"ftp://files.org">;      // "ftp"
+type P3 = ExtractProtocol<"invalid-url">;          // never
+```
+
+**Line-by-line explanation:**
+- `Url extends `${infer Protocol}://${string}``:
+  - Looks for the delimiter `"://"`.
+  - Captures everything *before* `"://"` into the type variable `Protocol`.
+  - Captures everything *after* `"://"` as a generic `string`.
+- `"https://example.com"` matches: `Protocol` is bound to `"https"`.
+- `"invalid-url"` does not contain `"://"`, so the condition evaluates to false and returns `never`.
 
 ---
 
-### Puzzle 3: Numeric Infer vs Hexadecimal Strings
-
-```typescript
-type ParseNumeric<S extends string> = S extends `${infer N extends number}` ? N : "FAILED";
-
-type R3_A = ParseNumeric<"-42.5">;
-type R3_B = ParseNumeric<"0xFF">;
-type R3_C = ParseNumeric<"1e5">;
-```
-
-**Step-by-Step Evaluation Trace:**
-1. For `R3_A`: `"-42.5"` is a valid floating point decimal. TS 4.8+ parses it to literal `-42.5`.
-2. For `R3_B`: `"0xFF"` is hexadecimal. The TypeScript numeric infer engine only parses standard decimal numbers. The match fails -> `"FAILED"`.
-3. For `R3_C`: `"1e5"` is valid scientific decimal notation for 100000. TS parses it to literal `100000`.
-4. **Output Types:**
-   - `R3_A` = `-42.5`
-   - `R3_B` = `"FAILED"`
-   - `R3_C` = `100000`
+### 4. How it works inside TypeScript
+1. **Delimiter Matching**: The compiler searches `Url` from left to right for the static delimiter `"://"`.
+2. **Substring Slicing**:
+   - The portion to the left of the delimiter is bound to `infer Protocol`.
+   - The portion to the right is validated against the remaining pattern.
+3. **Success / Failure**: If the string matches the pattern, the inferred variables become available in the true branch.
 
 ---
 
-### Puzzle 4: Delimiter Non-Greediness
+### 5. Think first
+
+What is the resulting type of `Result` in the code below? Decide first.
 
 ```typescript
-type ExtractSegments<S extends string> = S extends `${infer Left}/${infer Right}`
-  ? [Left, Right]
-  : [S];
+type FirstSegment<Path extends string> =
+  Path extends `/${infer Segment}/${string}` ? Segment : never;
 
-type Result4 = ExtractSegments<"api/v1/users/profile">;
+type Result = FirstSegment<"/users/100/edit">;
 ```
-
-**Step-by-Step Evaluation Trace:**
-1. The static delimiter is `/`.
-2. The left `infer Left` matches non-greedily up to the **first** occurrence of `/`.
-3. First `/` occurs after `"api"`.
-4. `Left` = `"api"`.
-5. `Right` captures the rest of the string: `"v1/users/profile"`.
-6. **Output Type:** `["api", "v1/users/profile"]`.
 
 ---
 
-### Puzzle 5: Intrinsic Distribution Over Unions
+**Answer and Reason:**
+
+The resulting type is:
 
 ```typescript
-type Actions = "user_login" | "user_logout";
-type Remap<T extends string> = `ON_${Uppercase<T>}`;
-
-type Result5 = Remap<Actions>;
+"users"
 ```
 
-**Step-by-Step Evaluation Trace:**
-1. `Uppercase<T>` distributes over the union `Actions`.
-2. `Uppercase<"user_login">` = `"USER_LOGIN"`.
-3. `Uppercase<"user_logout">` = `"USER_LOGOUT"`.
-4. The template literal combines each:
-5. **Output Type:** `"ON_USER_LOGIN" | "ON_USER_LOGOUT"`.
+**Reason**: The pattern matches a leading `"/"`, captures everything up to the next `"/"` into `Segment`, and ignores the rest. `Segment` captures `"users"`.
 
 ---
 
-### Puzzle 6: String Trimming on Empty and Pure Whitespace Strings
-
-```typescript
-type WhiteSpace = " " | "\t" | "\n";
-type TrimStart<S extends string> = S extends `${WhiteSpace}${infer Rest}` ? TrimStart<Rest> : S;
-
-type R6_A = TrimStart<"">;
-type R6_B = TrimStart<"   ">;
-type R6_C = TrimStart<"   foo   ">;
-```
-
-**Step-by-Step Evaluation Trace:**
-1. `R6_A`: `""` does not match `${WhiteSpace}${infer Rest}`. Returns `""`.
-2. `R6_B`: `"   "` matches whitespace recursively until `""` remains, returning `""`.
-3. `R6_C`: Removes leading spaces until `"foo   "` is reached, which does not start with whitespace.
-4. **Output Types:**
-   - `R6_A` = `""`
-   - `R6_B` = `""`
-   - `R6_C` = `"foo   "`
+### 6. Try it yourself
+Write a conditional type `GetFileExtension<FileName extends string>` that captures everything after a dot `.` using `${string}.${infer Ext}`. Test it with `"index.ts"`.
 
 ---
 
-### Puzzle 7: Param Extraction with Colons in URLs
+### 7. More examples
+
+#### Example A: Extracting Query Parameters (Medium)
 
 ```typescript
-type ExtractParam<S extends string> = S extends `${string}:${infer Param}/${string}`
-  ? Param
-  : S extends `${string}:${infer Param}`
-  ? Param
-  : null;
+type ExtractQuery<Url extends string> =
+  Url extends `${string}?${infer Query}` ? Query : "";
 
-type R7_A = ExtractParam<"http://localhost:8080/metrics">;
-type R7_B = ExtractParam<"/api/users/:userId">;
+type Q1 = ExtractQuery<"https://api.com/search?q=typescript">; // "q=typescript"
+type Q2 = ExtractQuery<"https://api.com/home">;                // ""
 ```
-
-**Step-by-Step Evaluation Trace:**
-1. For `R7_A`: The URL is `"http://localhost:8080/metrics"`.
-   - The first colon matches after `"http"`.
-   - `${string}:${infer Param}/${string}` matches:
-   - `Param` matches `//localhost:8080`. (Because `/` appears after `metrics`).
-   - Notice that naive pattern matching without distinguishing scheme colons captures the host!
-2. For `R7_B`: Path is `"/api/users/:userId"`.
-   - No trailing slash, so first branch fails.
-   - Second branch `${string}:${infer Param}` matches -> `Param` = `"userId"`.
-3. **Lesson:** Always use leading slash delimiters like `/:${infer Param}` to isolate URL path parameters!
 
 ---
 
-### Puzzle 8: String Length via Recursive Tuple Length
+### 8. Common mistakes
 
+#### Mistake 1: Placing `infer` without a delimiter between variables
+
+**Wrong code:**
 ```typescript
-type StrLen<S extends string, Acc extends any[] = []> =
-  S extends `${infer _Head}${infer Tail}`
-    ? StrLen<Tail, [...Acc, any]>
-    : Acc['length'];
-
-type Result8 = StrLen<"TS5">;
+type Split<S extends string> = S extends `${infer A}${infer B}` ? [A, B] : never;
+// Does NOT split in the middle!
 ```
 
-**Step-by-Step Evaluation Trace:**
-1. Iteration 1: `S = "TS5"`, `Acc = []`. `Head = "T"`, `Tail = "S5"`. Next: `Acc = [any]`.
-2. Iteration 2: `S = "S5"`, `Acc = [any]`. `Head = "S"`, `Tail = "5"`. Next: `Acc = [any, any]`.
-3. Iteration 3: `S = "5"`, `Acc = [any, any]`. `Head = "5"`, `Tail = ""`. Next: `Acc = [any, any, any]`.
-4. Iteration 4: `S = ""`. Match fails, returns `Acc['length']`.
-5. **Output Type:** `3` (literal number).
+**Why it happens:**
+When two `infer` variables are adjacent without a delimiter, `A` matches only the **first single character**, and `B` captures everything else (covered in Topic 5 and 6).
 
 ---
 
-### Puzzle 9: Query String Trailing Ampersands
-
-```typescript
-type ParsePairs<S extends string> = S extends `${infer Head}&${infer Tail}`
-  ? [Head, ...ParsePairs<Tail>]
-  : [S];
-
-type Result9 = ParsePairs<"a=1&b=2&">;
-```
-
-**Step-by-Step Evaluation Trace:**
-1. Step 1: Matches `Head = "a=1"`, `Tail = "b=2&"`.
-2. Step 2: Matches `Head = "b=2"`, `Tail = ""`.
-3. Step 3: `S = ""` has no `&`, so it yields `[""]`.
-4. Tuple combination: `["a=1", "b=2", ""]`.
-5. Note the trailing empty string `""`! Robust parsers must filter out empty chunks.
+### 9. Rules to remember
+1. Use `${infer Substring}` inside template literal conditions to capture text.
+2. Static delimiters (like `/`, `.`, `?`, `:`) separate the captured parts.
+3. If the string does not match the pattern, the condition falls back to the false branch.
 
 ---
 
-### Puzzle 10: Inverting Mapped Template Names
+### 10. Exercises
 
+#### Question 1 (Predict the compile result)
+What is the type of `Ext`?
 ```typescript
-type DropGetPrefix<T> = {
-  [K in keyof T as K extends `get${infer Name}` ? Uncapitalize<Name> : never]: T[K];
-};
-
-interface GetterService {
-  getUser(): string;
-  getAccountBalance(): number;
-  postMessage(): void;
-}
-
-type Result10 = DropGetPrefix<GetterService>;
+type Extension<S extends string> = S extends `${string}.${infer E}` ? E : never;
+type Ext = Extension<"archive.tar.gz">;
 ```
 
-**Step-by-Step Evaluation Trace:**
-1. For `getUser`: `K extends 'get${infer Name}'` matches with `Name = "User"`. `Uncapitalize<"User">` = `"user"`.
-2. For `getAccountBalance`: `Name = "AccountBalance"`. `Uncapitalize<"AccountBalance">` = `"accountBalance"`.
-3. For `postMessage`: Does not start with `"get"`. Evaluates to `never` (stripped).
-4. **Output Type:**
-   ```typescript
-   {
-     user: () => string;
-     accountBalance: () => number;
-   }
-   ```
+#### Question 2 (Find and fix the bug)
+The type below fails to extract the domain. Fix the delimiter:
+```typescript
+type GetDomain<Email extends string> =
+  Email extends `${string}#${infer Domain}` ? Domain : never;
+```
+
+#### Question 3 (Write code from scratch)
+Write a type `ExtractScope<Pkg extends string>` that extracts the scope from an npm package name (e.g. extracts `"myorg"` from `"@myorg/core"`).
+
+#### Question 4 (Explain in your own words)
+How does TypeScript determine where the inferred substring starts and ends?
 
 ---
 
-### Puzzle 11: Replace with Empty Substring
+### Solutions
+
+#### Solution to Question 1
+**Hint 1**: The pattern looks for the dot `.`.
+
+**Answer**:
+The type is `"tar.gz"` (because `infer E` captures everything after the first dot from the left).
+
+#### Solution to Question 2
+**Hint 1**: Emails use `@`, not `#`.
+
+**Answer**:
+```typescript
+type GetDomain<Email extends string> =
+  Email extends `${string}@${infer Domain}` ? Domain : never;
+```
+
+#### Solution to Question 3
+**Hint 1**: Pattern match on `@${infer Scope}/${string}`.
+
+**Answer**:
+```typescript
+type ExtractScope<Pkg extends string> =
+  Pkg extends `@${infer Scope}/${string}` ? Scope : never;
+
+type S = ExtractScope<"@myorg/core">; // "myorg"
+```
+
+#### Solution to Question 4
+**Hint 1**: Look at the static characters preceding and following the `infer` keyword.
+
+**Answer**:
+TypeScript uses the static literal characters before and after `${infer X}` as boundary delimiters. The inferred variable captures all characters that appear between those static boundaries.
+
+---
+
+### 11. Recall
+
+1. What keyword captures substrings in template literal types?
+2. What happens if a string does not contain the specified delimiter?
+3. In `${infer Head}/${infer Tail}`, what separates `Head` and `Tail`?
+
+**If you remember only one thing:**
+Use `${infer Head}${Delimiter}${infer Tail}` to slice and parse strings at compile time.
+
+---
+
+# Topic 5: Non-Greedy vs Greedy Matching Mechanics in String Inference
+
+### 1. What is it?
+When TypeScript matches string patterns from left to right:
+- An `infer` variable preceding a delimiter is **non-greedy** (it captures the shortest possible match up to the *first* occurrence of the delimiter).
+- An `infer` variable after a delimiter at the end of the pattern is **greedy** (it captures everything remaining).
+
+### 2. Why does it exist?
+Consider splitting a file path with multiple slashes: `"a/b/c"`.
+If you write `${infer Head}/${infer Tail}`:
+- Does `Head` match `"a"` or `"a/b"`?
+Because `Head` is non-greedy, it matches `"a"` (up to the first slash).
+`Tail` captures the rest: `"b/c"`.
+Understanding this rule is essential for writing recursive string parsers.
+
+### 3. Basic example
 
 ```typescript
-type ReplaceEmpty<S extends string> = S extends `${infer Head}${""}${infer Tail}`
+type SplitFirst<S extends string> =
+  S extends `${infer Head}/${infer Tail}`
+    ? { head: Head; tail: Tail }
+    : never;
+
+type Result = SplitFirst<"users/123/profile">;
+// Inferred as:
+// {
+//   head: "users";
+//   tail: "123/profile";
+// }
+```
+
+**Line-by-line explanation:**
+- `Head` stops at the very first `/` found from the left. It captures `"users"`.
+- `Tail` captures everything following that first slash: `"123/profile"`.
+- If you run `SplitFirst` again on `Tail`, you extract `"123"` and `"profile"`. This predictable behavior makes recursive parsers possible.
+
+---
+
+### 4. How it works inside TypeScript
+1. **Left-to-Right Scan**: The parser scans the target string from index 0.
+2. **First Delimiter Match**: As soon as it encounters the first character matching the delimiter, it freezes `Head`.
+3. **Rest Collection**: The remaining characters are passed to the next pattern component (in this case, `Tail`).
+
+---
+
+### 5. Think first
+
+What is `Head` and `Tail` when matching `"one.two.three"` against `${infer Head}.${infer Tail}`? Decide first.
+
+```typescript
+type Test<S extends string> = S extends `${infer Head}.${infer Tail}`
   ? [Head, Tail]
   : never;
 
-type Result11 = ReplaceEmpty<"hello">;
+type R = Test<"one.two.three">;
 ```
-
-**Step-by-Step Evaluation Trace:**
-1. In TypeScript template matching, matching against the empty string `""` matches at the start of the string.
-2. `Head` captures `""` (first character position before `"h"`).
-3. `Tail` captures `"hello"`.
-4. **Output Type:** `["", "hello"]`.
 
 ---
 
-### Puzzle 12: `as const` Template Expression vs Widen String
+**Answer and Reason:**
+
+The resulting type is:
 
 ```typescript
-const host = "127.0.0.1";
-const port = 3000;
-
-const endpointA = `${host}:${port}`;
-const endpointB = `${host}:${port}` as const;
-
-type TypeA = typeof endpointA;
-type TypeB = typeof endpointB;
+["one", "two.three"]
 ```
 
-**Step-by-Step Evaluation Trace:**
-1. `endpointA` is declared with `const`, but without `as const` on the template literal expression itself, TypeScript widens dynamic template strings containing numbers to `string`.
-2. `endpointB` has explicit `as const`. TypeScript retains the exact literal string.
-3. **Output Types:**
-   - `TypeA` = `string`
-   - `TypeB` = `"127.0.0.1:3000"`
+**Reason**: `Head` stops at the first dot (`"one"`). `Tail` captures everything remaining (`"two.three"`).
 
 ---
 
-### Puzzle 13: Case Converter Round-Trip Equivalence
-
-```typescript
-type RoundTrip<S extends string> = CamelToSnake<SnakeToCamel<S>>;
-
-type R13 = RoundTrip<"user_first_name">;
-```
-
-**Step-by-Step Evaluation Trace:**
-1. `SnakeToCamel<"user_first_name">`:
-   - `"user"` + `"First"` + `"Name"` = `"userFirstName"`.
-2. `CamelToSnake<"userFirstName">`:
-   - `"user"` + `_f` -> `_first` + `_n` -> `_name` = `"user_first_name"`.
-3. The round-trip is strictly isomorphic!
-4. **Output Type:** `"user_first_name"`.
+### 6. Try it yourself
+Write a type `GetProtocolAndRest<Url extends string>` matching `${infer Proto}://${infer Rest}`. Test with `"https://site.com/path/page"`. Verify `Proto` is `"https"` and `Rest` is `"site.com/path/page"`.
 
 ---
 
-### Puzzle 14: SemVer with Pre-Release Match
+### 7. More examples
+
+#### Example A: What Happens If Delimiter Appears Multiple Times? (Medium)
 
 ```typescript
-type ParseSemVer<S extends string> =
-  S extends `${infer M extends number}.${infer N extends number}.${infer P extends number}-${infer Tag}`
-    ? { major: M; minor: N; patch: P; tag: Tag }
-    : S extends `${infer M extends number}.${infer N extends number}.${infer P extends number}`
-    ? { major: M; minor: N; patch: P; tag: null }
+type ParseCsvLine<S extends string> =
+  S extends `${infer First},${infer Remainder}`
+    ? [First, Remainder]
+    : [S];
+
+type TwoParts = ParseCsvLine<"Alex,25,Engineer">;
+// ["Alex", "25,Engineer"]
+```
+
+---
+
+### 8. Common mistakes
+
+#### Mistake 1: Assuming `Head` captures up to the LAST delimiter
+
+**Wrong assumption:**
+Expecting `Head` to be `"users/123"` and `Tail` to be `"profile"`.
+
+**Reality:**
+TypeScript matches left-to-right. `Head` captures up to the *first* delimiter. If you want the last segment, you must parse recursively.
+
+---
+
+### 9. Rules to remember
+1. `infer` before a delimiter is non-greedy (stops at the first occurrence).
+2. `infer` at the end of the pattern captures the remainder greedily.
+3. Matching proceeds strictly from left to right.
+
+---
+
+### 10. Exercises
+
+#### Question 1 (Predict the compile result)
+What is the resulting tuple type of `R`?
+```typescript
+type SplitColon<S extends string> = S extends `${infer A}:${infer B}` ? [A, B] : never;
+type R = SplitColon<"user:profile:settings">;
+```
+
+#### Question 2 (Find and fix the bug)
+The code below expects `Tail` to be `"css"`, but it captures `"module.css"`. Explain why:
+```typescript
+type Ext<S extends string> = S extends `${infer Head}.${infer Tail}` ? Tail : never;
+type FileExt = Ext<"styles.module.css">;
+```
+
+#### Question 3 (Write code from scratch)
+Write a type `PopFirstSegment<S extends string>` that returns the remaining string after the first slash `/`. If there is no slash, return `""`.
+
+#### Question 4 (Explain in your own words)
+Why is non-greedy matching on the first variable useful when writing recursive string parsers?
+
+---
+
+### Solutions
+
+#### Solution to Question 1
+**Hint 1**: Stop at the first colon.
+
+**Answer**:
+`R` is `["user", "profile:settings"]`.
+
+#### Solution to Question 2
+**Hint 1**: The first delimiter found is the dot after `styles`.
+
+**Answer**:
+Because `Head` stops at the first dot, `Tail` captures everything after the first dot: `"module.css"`. To get only the final extension, you must recursively call `Ext<Tail>`.
+
+#### Solution to Question 3
+**Hint 1**: `S extends `${string}/${infer Tail}` ? Tail : ""`.
+
+**Answer**:
+```typescript
+type PopFirstSegment<S extends string> =
+  S extends `${string}/${infer Tail}` ? Tail : "";
+```
+
+#### Solution to Question 4
+**Hint 1**: Think of a `while` loop taking one item at a time from a list.
+
+**Answer**:
+Non-greedy matching allows you to cleanly peel off one token at a time from the front of the string. You process that token, and then recursively pass the remaining string to the same parser until all tokens are processed.
+
+---
+
+### 11. Recall
+
+1. Does the first `infer` variable match greedily or non-greedily?
+2. In `"a/b/c"`, what does `${infer H}/${infer T}` bind `H` to?
+3. How do you reach the last segment of a delimited string?
+
+**If you remember only one thing:**
+The first `infer` before a delimiter captures the shortest match up to the first delimiter found.
+
+---
+
+# Checkpoint Challenge: Topics 1 to 5
+
+### Challenge Scenario
+Build a type-safe URL router parser:
+
+1. Create a union of allowed HTTP methods:
+   ```typescript
+   type Method = "get" | "post" | "delete";
+   ```
+2. Create an `EndpointName = `${Uppercase<Method>} /api/${string}``.
+3. Write a conditional type `ExtractMethod<E extends string>` that pattern matches `${infer M} ${string}` and extracts the method.
+4. Write a conditional type `ExtractPath<E extends string>` that pattern matches `${string} ${infer P}` and extracts the path.
+5. Test both extractors with `"GET /api/users"`.
+
+### Challenge Solution
+
+```typescript
+type Method = "get" | "post" | "delete";
+
+// 2. Formatted endpoint type:
+type EndpointName = `${Uppercase<Method>} /api/${string}`;
+
+// 3. Extract method:
+type ExtractMethod<E extends string> =
+  E extends `${infer M} ${string}` ? M : never;
+
+// 4. Extract path:
+type ExtractPath<E extends string> =
+  E extends `${string} ${infer P}` ? P : never;
+
+// 5. Tests:
+type Route = "GET /api/users";
+type M = ExtractMethod<Route>; // "GET"
+type P = ExtractPath<Route>;   // "/api/users"
+```
+
+---
+
+# Topic 6: Single-Character Splitting (`${infer First}${infer Rest}`)
+
+### 1. What is it?
+When two `infer` variables are placed side-by-side with **no delimiter**:
+```typescript
+S extends `${infer First}${infer Rest}`
+```
+TypeScript matches `First` as exactly **one single character**, while `Rest` captures the remainder of the string.
+
+### 2. Why does it exist?
+Sometimes you need to inspect or transform a string character by character (for example, counting string length, checking for illegal characters, converting snake_case to camelCase, or reversing a string).
+
+Because there is no character-index operator in TypeScript like `str[0]`, adjacent `infer` variables are the primary mechanism for character-by-character processing.
+
+### 3. Basic example
+
+```typescript
+type UnpackFirstChar<S extends string> =
+  S extends `${infer First}${infer Rest}`
+    ? { first: First; rest: Rest }
     : never;
 
-type S1 = ParseSemVer<"2.1.0-beta.1">;
-type S2 = ParseSemVer<"2.1.0">;
+type Step = UnpackFirstChar<"TypeScript">;
+// Inferred as:
+// {
+//   first: "T";
+//   rest: "ypeScript";
+// }
 ```
 
-**Step-by-Step Evaluation Trace:**
-1. `S1` matches the first branch:
-   - `M = 2`, `N = 1`, `P = 0`, `Tag = "beta.1"`.
-   - Output: `{ major: 2; minor: 1; patch: 0; tag: "beta.1" }`.
-2. `S2` fails first branch (no `-`), matches second branch:
-   - `M = 2`, `N = 1`, `P = 0`, `tag = null`.
-   - Output: `{ major: 2; minor: 1; patch: 0; tag: null }`.
+**Line-by-line explanation:**
+- `S extends `${infer First}${infer Rest}``: With no static delimiter in between, TypeScript assigns the first 16-bit code unit to `First`.
+- `first` becomes `"T"`.
+- `rest` becomes `"ypeScript"`.
 
 ---
 
-### Puzzle 15: Dot-Path Traversal Beyond Leaves
+### 4. How it works inside TypeScript
+1. **Adjacent Matching Rule**: In the absence of a delimiter, the first `infer` variable is constrained to a length of 1 character.
+2. **Empty String Termination**: When `S` is empty (`""`), the condition fails and falls back to the false branch (`never` or `[]`). This serves as the natural base case for recursive character processing.
+
+---
+
+### 5. Think first
+
+What does `Step` evaluate to when passed an empty string `""`? Decide first.
 
 ```typescript
-type SafeGet<T, P extends string> =
-  P extends `${infer Key}.${infer Rest}`
-    ? Key extends keyof T
-      ? SafeGet<T[Key], Rest>
-      : undefined
+type UnpackFirstChar<S extends string> =
+  S extends `${infer First}${infer Rest}` ? [First, Rest] : [];
+
+type Step = UnpackFirstChar<"">;
+```
+
+---
+
+**Answer and Reason:**
+
+The resulting type is:
+
+```typescript
+[]
+```
+
+**Reason**: An empty string has 0 characters. It cannot match `${infer First}${infer Rest}` (which requires at least 1 character for `First`). It falls into the false branch and returns `[]`.
+
+---
+
+### 6. Try it yourself
+Write a recursive type `StringLength<S extends string, Acc extends any[] = []>` that counts characters by peeling off one character at a time, adding an element to `Acc`, and returning `Acc["length"]` when `""` is reached. Test with `"code"`.
+
+---
+
+### 7. More examples
+
+#### Example A: String to Character Tuple (Medium)
+
+```typescript
+type StringToChars<S extends string> =
+  S extends `${infer First}${infer Rest}`
+    ? [First, ...StringToChars<Rest>]
+    : [];
+
+type Chars = StringToChars<"ABC">;
+// Inferred as: ["A", "B", "C"]
+```
+
+**Line-by-line explanation:**
+- Recursively peels off `"A"`, then `"B"`, then `"C"`, then hits `""` and returns `[]`.
+- Combines into tuple `["A", "B", "C"]`.
+
+---
+
+### 8. Common mistakes
+
+#### Mistake 1: Infinite recursion on empty strings
+
+**Wrong code:**
+```typescript
+type Loop<S extends string> = S extends `${infer F}${infer R}` ? Loop<S> : "";
+// Calling Loop<S> with S instead of R causes infinite recursion!
+```
+
+**Correct code:**
+Always recurse on `Rest` (`R`), which shrinks the string each step.
+
+---
+
+### 9. Rules to remember
+1. `${infer First}${infer Rest}` captures exactly one character into `First`.
+2. `Rest` captures the remaining substring.
+3. An empty string `""` does not match, triggering the base case.
+
+---
+
+### 10. Exercises
+
+#### Question 1 (Predict the compile result)
+What is the resulting type of `HeadChar`?
+```typescript
+type First<S extends string> = S extends `${infer C}${string}` ? C : "";
+type HeadChar = First<"Hello">;
+```
+
+#### Question 2 (Find and fix the bug)
+The recursive type below never terminates. Fix the recursive argument:
+```typescript
+type ToTuple<S extends string> = S extends `${infer F}${infer R}`
+  ? [F, ...ToTuple<S>]
+  : [];
+```
+
+#### Question 3 (Write code from scratch)
+Write a type `StartsWithVowel<S extends string>` that returns `true` if the first character is `"a" | "e" | "i" | "o" | "u"`, and `false` otherwise.
+
+#### Question 4 (Explain in your own words)
+Why does `${infer First}${infer Rest}` assign only one character to `First`?
+
+---
+
+### Solutions
+
+#### Solution to Question 1
+**Hint 1**: Extract the first character.
+
+**Answer**:
+The type is `"H"`.
+
+#### Solution to Question 2
+**Hint 1**: Recurse on `R`, not `S`.
+
+**Answer**:
+```typescript
+type ToTuple<S extends string> = S extends `${infer F}${infer R}`
+  ? [F, ...ToTuple<R>]
+  : [];
+```
+
+#### Solution to Question 3
+**Hint 1**: `S extends `${"a" | "e" | "i" | "o" | "u"}${string}` ? true : false`.
+
+**Answer**:
+```typescript
+type Vowel = "a" | "e" | "i" | "o" | "u";
+type StartsWithVowel<S extends string> =
+  S extends `${Vowel}${string}` ? true : false;
+```
+
+#### Solution to Question 4
+**Hint 1**: How would the compiler know how many characters to give `First` without a delimiter?
+
+**Answer**:
+Without a delimiter separating two adjacent infer variables, any division would be ambiguous. TypeScript specifies that the first variable matches the smallest possible non-empty unit (exactly 1 character), leaving the rest to the second variable.
+
+---
+
+### 11. Recall
+
+1. How many characters does `First` capture in `${infer First}${infer Rest}`?
+2. Does an empty string `""` match `${infer First}${infer Rest}`?
+3. What happens if you recurse on `S` instead of `Rest`?
+
+**If you remember only one thing:**
+Adjacent infer variables without delimiters peel off exactly one character at a time.
+
+---
+
+# Topic 7: Recursive String Replacement (`Replace` and `ReplaceAll`)
+
+### 1. What is it?
+You can build compile-time search-and-replace utilities using template literal pattern matching and recursive conditional types:
+- `Replace<S, From, To>`: Replaces the *first* occurrence of `From` with `To`.
+- `ReplaceAll<S, From, To>`: Replaces *all* occurrences of `From` with `To`.
+
+### 2. Why does it exist?
+Strings in code often need format conversions:
+- Converting hyphens to underscores: `"content-type"` $\to$ `"content_type"`.
+- Converting dot paths to slashes: `"user.name"` $\to$ `"user/name"`.
+
+In JavaScript runtime, you use `str.replaceAll()`. In TypeScript compile time, you use recursive template literal replacement.
+
+### 3. Basic example
+
+```typescript
+// 1. Replace first occurrence:
+type Replace<
+  S extends string,
+  From extends string,
+  To extends string
+> = From extends ""
+  ? S
+  : S extends `${infer Head}${From}${infer Tail}`
+  ? `${Head}${To}${Tail}`
+  : S;
+
+type R1 = Replace<"user-profile-card", "-", "_">;
+// "user_profile-card"
+
+// 2. Replace all occurrences (recursive):
+type ReplaceAll<
+  S extends string,
+  From extends string,
+  To extends string
+> = From extends ""
+  ? S
+  : S extends `${infer Head}${From}${infer Tail}`
+  ? `${Head}${To}${ReplaceAll<Tail, From, To>}`
+  : S;
+
+type R2 = ReplaceAll<"user-profile-card", "-", "_">;
+// "user_profile_card"
+```
+
+**Line-by-line explanation:**
+- `S extends `${infer Head}${From}${infer Tail}``: Finds the first instance of `From`.
+- In `Replace`: replaces `From` with `To` and returns `${Head}${To}${Tail}`.
+- In `ReplaceAll`: replaces `From` with `To` and recursively calls `ReplaceAll<Tail, From, To>` on the remaining substring.
+- When no more occurrences of `From` exist, it returns `S`.
+
+---
+
+### 4. How it works inside TypeScript
+1. **Leftmost Replacement**: The compiler finds the first instance of `From`.
+2. **Head Preservation**: The part before `From` (`Head`) has already been processed and is preserved.
+3. **Tail Recursion**: Recursion is performed *only* on `Tail`. This prevents infinite loops if `To` contains `From` (such as replacing `"a"` with `"aa"`).
+
+---
+
+### 5. Think first
+
+What happens if you run `ReplaceAll<"a", "a", "aa">`? Does it loop forever? Decide first.
+
+```typescript
+type ReplaceAll<S extends string, From extends string, To extends string> =
+  From extends "" ? S :
+  S extends `${infer Head}${From}${infer Tail}`
+    ? `${Head}${To}${ReplaceAll<Tail, From, To>}`
+    : S;
+
+type Test = ReplaceAll<"a", "a", "aa">;
+```
+
+---
+
+**Answer and Reason:**
+
+It evaluates to `"aa"` without looping forever!
+
+**Reason**: Because `ReplaceAll` only recurses on `Tail` (which is `""`), the replacement `"aa"` is placed in `${Head}${To}` and is not re-scanned.
+
+---
+
+### 6. Try it yourself
+Use `ReplaceAll` to convert a date string `"2026/10/02"` from slashes to dashes: `"2026-10-02"`.
+
+---
+
+### 7. More examples
+
+#### Example A: Stripping Characters (Medium)
+
+```typescript
+type RemoveSpaces<S extends string> = ReplaceAll<S, " ", "">;
+
+type Clean = RemoveSpaces<" H e l l o ">;
+// "Hello"
+```
+
+---
+
+### 8. Common mistakes
+
+#### Mistake 1: Recursing on the whole reconstructed string instead of `Tail`
+
+**Wrong code:**
+```typescript
+type InfiniteReplace<S extends string, From extends string, To extends string> =
+  S extends `${infer Head}${From}${infer Tail}`
+    ? InfiniteReplace<`${Head}${To}${Tail}`, From, To>
+    : S;
+// If To contains From (e.g. replace 'a' with 'ba'), this runs forever!
+```
+
+---
+
+### 9. Rules to remember
+1. `Replace` replaces the first occurrence; `ReplaceAll` recurses on `Tail`.
+2. Guard against `From extends ""` to avoid infinite loops on empty strings.
+3. Recurse only on `Tail` to prevent recursive re-matching of replaced characters.
+
+---
+
+### 10. Exercises
+
+#### Question 1 (Predict the compile result)
+What is the resulting type of `Output`?
+```typescript
+type Output = ReplaceAll<"1.0.0.0", ".", "-">;
+```
+
+#### Question 2 (Find and fix the bug)
+The replace utility below loops infinitely when `From` is `""`. Add the guard check:
+```typescript
+type UnsafeReplace<S extends string, From extends string, To extends string> =
+  S extends `${infer H}${From}${infer T}` ? `${H}${To}${T}` : S;
+```
+
+#### Question 3 (Write code from scratch)
+Write a type `ToSnakeCase<S extends string>` that replaces all hyphens `"-"` with underscores `"_"` using `ReplaceAll`.
+
+#### Question 4 (Explain in your own words)
+Why must `ReplaceAll` recurse on `Tail` rather than `${Head}${To}${Tail}`?
+
+---
+
+### Solutions
+
+#### Solution to Question 1
+**Hint 1**: Replace every dot with a dash.
+
+**Answer**:
+The type is `"1-0-0-0"`.
+
+#### Solution to Question 2
+**Hint 1**: Add `From extends "" ? S : ...`.
+
+**Answer**:
+```typescript
+type SafeReplace<S extends string, From extends string, To extends string> =
+  From extends "" ? S :
+  S extends `${infer H}${From}${infer T}` ? `${H}${To}${T}` : S;
+```
+
+#### Solution to Question 3
+**Hint 1**: Call `ReplaceAll<S, "-", "_">`.
+
+**Answer**:
+```typescript
+type ToSnakeCase<S extends string> = ReplaceAll<S, "-", "_">;
+type Result = ToSnakeCase<"kebab-case-string">; // "kebab_case_string"
+```
+
+#### Solution to Question 4
+**Hint 1**: What happens if you replace `"a"` with `"aa"`?
+
+**Answer**:
+If you recurse on `${Head}${To}${Tail}`, the newly inserted `To` string is placed back into the search area. If `To` contains `From` (such as replacing `"a"` with `"aa"`), the compiler will find `From` again and again in an infinite loop. Recursing only on `Tail` guarantees that replaced text is never re-processed.
+
+---
+
+### 11. Recall
+
+1. What is the difference between `Replace` and `ReplaceAll`?
+2. Why is an empty string guard (`From extends ""`) required?
+3. Which portion of the string does `ReplaceAll` recurse on?
+
+**If you remember only one thing:**
+Recurse strictly on `Tail` to replace all occurrences without triggering infinite recursion loops.
+
+---
+
+# Topic 8: Trimming Whitespace at Compile Time (`TrimStart`, `TrimEnd`, `Trim`)
+
+### 1. What is it?
+TypeScript can remove leading and trailing whitespace from string literal types at compile time:
+- `TrimStart<S>`: Strips whitespace from the beginning.
+- `TrimEnd<S>`: Strips whitespace from the end.
+- `Trim<S>`: Strips whitespace from both ends.
+
+Whitespace includes spaces (`" "`), tabs (`"\t"`), and newlines (`"\n"`).
+
+### 2. Why does it exist?
+When parsing strings (like SQL queries, CSV rows, or template strings), leading and trailing whitespace is often present.
+
+Trimming utilities clean string inputs before passing them to type-level parsers, preventing whitespace from breaking pattern matches.
+
+### 3. Basic example
+
+```typescript
+type Whitespace = " " | "\t" | "\n";
+
+// 1. Trim left:
+type TrimStart<S extends string> =
+  S extends `${Whitespace}${infer Rest}` ? TrimStart<Rest> : S;
+
+// 2. Trim right:
+type TrimEnd<S extends string> =
+  S extends `${infer Rest}${Whitespace}` ? TrimEnd<Rest> : S;
+
+// 3. Trim both ends:
+type Trim<S extends string> = TrimEnd<TrimStart<S>>;
+
+type Clean1 = TrimStart<"   hello">; // "hello"
+type Clean2 = TrimEnd<"world   ">;   // "world"
+type Clean3 = Trim<"   alex   ">;    // "alex"
+```
+
+**Line-by-line explanation:**
+- `type Whitespace = " " | "\t" | "\n";`: Defines all characters considered whitespace.
+- `TrimStart`: If the string begins with any `Whitespace` character, peel it off and recursively call `TrimStart<Rest>`. Once the first character is not whitespace, return `S`.
+- `TrimEnd`: If the string ends with `Whitespace`, peel it off and recurse.
+- `Trim`: Combines both operations.
+
+---
+
+### 4. How it works inside TypeScript
+1. **Union Matching**: The compiler checks if the first character matches any member of `Whitespace`.
+2. **Peeling**: It discards one whitespace character at a time.
+3. **Termination**: When the boundary character is not whitespace, recursion stops.
+
+---
+
+### 5. Think first
+
+What does `Trim<"\n\t  config  \t\n">` evaluate to? Decide first.
+
+```typescript
+type Clean = Trim<"\n\t  config  \t\n">;
+```
+
+---
+
+**Answer and Reason:**
+
+It evaluates to:
+
+```typescript
+"config"
+```
+
+**Reason**: `Whitespace` includes spaces, tabs (`\t`), and newlines (`\n`). All surrounding whitespace characters are recursively stripped from both sides.
+
+---
+
+### 6. Try it yourself
+Test `Trim` on `"   user_id   "`. Verify that the result is `"user_id"`.
+
+---
+
+### 7. More examples
+
+#### Example A: Cleaning Command Input (Medium)
+
+```typescript
+type Command = Trim<"   npm run build   ">;
+// Inferred as: "npm run build"
+```
+
+---
+
+### 8. Common mistakes
+
+#### Mistake 1: Trying to trim interior spaces with `Trim`
+
+**Wrong assumption:**
+Expecting `Trim<"a   b">` to become `"ab"`.
+
+**Reality:**
+`Trim` only removes leading and trailing whitespace. To remove interior spaces, use `ReplaceAll<S, " ", "">`.
+
+---
+
+### 9. Rules to remember
+1. `Whitespace` is `" " | "\t" | "\n"`.
+2. `TrimStart` peels from the left; `TrimEnd` peels from the right.
+3. `Trim` combines both: `TrimEnd<TrimStart<S>>`.
+
+---
+
+### 10. Exercises
+
+#### Question 1 (Predict the compile result)
+What is the resulting type of `T`?
+```typescript
+type T = TrimStart<"   42">;
+```
+
+#### Question 2 (Find and fix the bug)
+The type below fails to trim newlines. Fix `Whitespace`:
+```typescript
+type Whitespace = " ";
+```
+
+#### Question 3 (Write code from scratch)
+Write the complete `Trim<S>` utility from scratch including tab and newline support.
+
+#### Question 4 (Explain in your own words)
+Why does `TrimEnd<TrimStart<S>>` safely clean both ends without needing a separate two-sided recursive loop?
+
+---
+
+### Solutions
+
+#### Solution to Question 1
+**Hint 1**: Strip leading spaces.
+
+**Answer**:
+The type is `"42"`.
+
+#### Solution to Question 2
+**Hint 1**: Include `\t` and `\n`.
+
+**Answer**:
+```typescript
+type Whitespace = " " | "\t" | "\n";
+```
+
+#### Solution to Question 3
+**Hint 1**: Define `Whitespace`, `TrimStart`, `TrimEnd`, and combine them.
+
+**Answer**:
+```typescript
+type Whitespace = " " | "\t" | "\n";
+type TrimStart<S extends string> = S extends `${Whitespace}${infer R}` ? TrimStart<R> : S;
+type TrimEnd<S extends string> = S extends `${infer R}${Whitespace}` ? TrimEnd<R> : S;
+type Trim<S extends string> = TrimEnd<TrimStart<S>>;
+```
+
+#### Solution to Question 4
+**Hint 1**: Does trimming the left affect the right?
+
+**Answer**:
+Trimming the left removes all leading whitespace up to the first non-whitespace character, leaving the right side untouched. Then `TrimEnd` processes the resulting string and removes all trailing whitespace. Composing them sequentially guarantees both ends are completely clean.
+
+---
+
+### 11. Recall
+
+1. What characters are included in the standard `Whitespace` union?
+2. How do you implement `TrimStart`?
+3. Does `Trim` remove spaces in the middle of words?
+
+**If you remember only one thing:**
+Compose `TrimStart` and `TrimEnd` to clean surrounding whitespace from string types.
+
+---
+
+# Topic 9: Splitting Strings into Tuples at Compile Time (`Split<S, Delimiter>`)
+
+### 1. What is it?
+`Split<S, Delimiter>` is a recursive template literal type that splits a string literal into a tuple of substrings based on a delimiter, mirroring JavaScript's `str.split()` method:
+```typescript
+type Words = Split<"hello-world-again", "-">;
+// ["hello", "world", "again"]
+```
+
+### 2. Why does it exist?
+Structured strings often encode lists of tokens:
+- CSV lines: `"Alex,28,Admin"`
+- File paths: `"src/lib/utils/format.ts"`
+- Dot notation: `"user.address.city"`
+
+Splitting the string into a tuple of elements allows you to access individual segments by index (`Tuple[0]`), count segments, or iterate through them.
+
+### 3. Basic example
+
+```typescript
+type Split<
+  S extends string,
+  Delimiter extends string
+> = S extends `${infer Head}${Delimiter}${infer Tail}`
+  ? [Head, ...Split<Tail, Delimiter>]
+  : [S];
+
+type Segments = Split<"src/components/Button", "/">;
+// Inferred as: ["src", "components", "Button"]
+```
+
+**Line-by-line explanation:**
+- `S extends `${infer Head}${Delimiter}${infer Tail}``: Finds the first occurrence of `Delimiter`.
+- `[Head, ...Split<Tail, Delimiter>]`: Puts `Head` as the first tuple element, and spreads the result of splitting `Tail`.
+- When no more delimiters exist, it hits the false branch and returns `[S]` (the final segment).
+
+---
+
+### 4. How it works inside TypeScript
+1. **Peeled Token**: The non-greedy `Head` captures the first segment.
+2. **Tuple Spreading**: The spread operator `...` nests the recursive call inside the tuple constructor.
+3. **Base Case**: When the delimiter is no longer found, `[S]` terminates the tuple.
+
+---
+
+### 5. Think first
+
+What is the resulting type of `Result` when splitting `"apple"` with delimiter `","`? Decide first.
+
+```typescript
+type Result = Split<"apple", ",">;
+```
+
+---
+
+**Answer and Reason:**
+
+The resulting type is:
+
+```typescript
+["apple"]
+```
+
+**Reason**: There is no comma in `"apple"`. The condition evaluates to false, returning `[S]` which is `["apple"]`.
+
+---
+
+### 6. Try it yourself
+Use `Split` to split `"red;green;blue"` by `";"`. Verify the resulting tuple has length 3.
+
+---
+
+### 7. More examples
+
+#### Example A: Extracting the Last Segment (Medium)
+
+```typescript
+type LastSegment<S extends string, Delimiter extends string> =
+  Split<S, Delimiter> extends [...any[], infer Last] ? Last : never;
+
+type FileName = LastSegment<"src/utils/math.ts", "/">;
+// Inferred as: "math.ts"
+```
+
+**Line-by-line explanation:**
+- Splits into a tuple, then uses tuple pattern matching `[...any[], infer Last]` to get the final element.
+
+---
+
+### 8. Common mistakes
+
+#### Mistake 1: Splitting an empty string `""`
+
+**Wrong assumption:**
+Expecting `Split<"", "/">` to return `[]`.
+
+**Reality:**
+It returns `[""]` (a 1-element tuple containing an empty string), exactly like JavaScript's `"".split("/")`.
+
+---
+
+### 9. Rules to remember
+1. `Split<S, Delimiter>` turns delimited strings into tuples of string literals.
+2. Syntax: `[Head, ...Split<Tail, Delimiter>]`.
+3. Base case returns `[S]` when no delimiter remains.
+
+---
+
+### 10. Exercises
+
+#### Question 1 (Predict the compile result)
+What is the resulting type of `T`?
+```typescript
+type T = Split<"a.b", ".">;
+```
+
+#### Question 2 (Find and fix the bug)
+The split type below forgets to recurse on `Tail`. Fix it:
+```typescript
+type BadSplit<S extends string, D extends string> =
+  S extends `${infer H}${D}${infer T}` ? [H, T] : [S];
+```
+
+#### Question 3 (Write code from scratch)
+Write a type `SegmentCount<S extends string, D extends string>` that returns the number of segments in a delimited string (e.g. `SegmentCount<"a/b/c", "/">` returns `3`).
+
+#### Question 4 (Explain in your own words)
+How does tuple spreading `...Split<Tail, Delimiter>` allow TypeScript to construct a flat tuple of arbitrary length?
+
+---
+
+### Solutions
+
+#### Solution to Question 1
+**Hint 1**: Split by dot.
+
+**Answer**:
+`T` is `["a", "b"]`.
+
+#### Solution to Question 2
+**Hint 1**: Spread `...BadSplit<T, D>`.
+
+**Answer**:
+```typescript
+type GoodSplit<S extends string, D extends string> =
+  S extends `${infer H}${D}${infer T}` ? [H, ...GoodSplit<T, D>] : [S];
+```
+
+#### Solution to Question 3
+**Hint 1**: Access `Split<S, D>["length"]`.
+
+**Answer**:
+```typescript
+type SegmentCount<S extends string, D extends string> =
+  Split<S, D>["length"];
+```
+
+#### Solution to Question 4
+**Hint 1**: What does the array spread operator do in JavaScript?
+
+**Answer**:
+Just like spreading in JavaScript arrays (`[head, ...tail]`), tuple spreading in TypeScript unrolls the elements of the recursive tuple into the parent tuple, producing a single, flat tuple containing all segments in order.
+
+---
+
+### 11. Recall
+
+1. What does `Split<"a-b-c", "-">` return?
+2. How do you access the number of segments produced by `Split`?
+3. What is returned when the delimiter is not found in the string?
+
+**If you remember only one thing:**
+Use `[Head, ...Split<Tail, Delimiter>]` to parse delimited strings into typed tuples.
+
+---
+
+# Topic 10: Extracting Dynamic Route Parameters (`/users/:userId/posts/:postId`)
+
+### 1. What is it?
+You can use template literal pattern matching to extract dynamic URL parameters (like `:userId` and `:postId`) from path strings and turn them into a strongly typed object schema:
+```typescript
+type Route = "/users/:userId/posts/:postId";
+type Params = ExtractParams<Route>;
+// { userId: string; postId: string }
+```
+
+### 2. Why does it exist?
+In web frameworks (Next.js, Express, React Router), route paths contain dynamic placeholders like `:id` or `[id]`.
+
+If route parameters are untyped, accessing `req.params.userId` has no autocomplete and does not catch typos like `req.params.userid`. Extracting parameters directly from the route string makes routing APIs 100% type-safe.
+
+### 3. Basic example
+
+```typescript
+type ExtractRouteParams<Path extends string> =
+  Path extends `${string}:${infer Param}/${infer Rest}`
+    ? { [K in Param | keyof ExtractRouteParams<Rest>]: string }
+    : Path extends `${string}:${infer Param}`
+    ? { [K in Param]: string }
+    : {};
+
+type Route = "/users/:userId/posts/:postId";
+type Params = ExtractRouteParams<Route>;
+// Inferred as:
+// {
+//   userId: string;
+//   postId: string;
+// }
+```
+
+**Line-by-line explanation:**
+- `Path extends `${string}:${infer Param}/${infer Rest}``:
+  - Finds a parameter `:Param` that is followed by a slash `/`.
+  - Captures `Param` (e.g. `"userId"`).
+  - Recursively calls `ExtractRouteParams<Rest>` on the remainder.
+- `Path extends `${string}:${infer Param}``:
+  - Handles the trailing parameter at the very end of the URL (e.g. `":postId"`).
+- `Params`: Combines both into `{ userId: string; postId: string }`.
+
+---
+
+### 4. How it works inside TypeScript
+1. **Prefix Detection**: The pattern searches for `:` denoting a parameter.
+2. **Slash Boundary**: It captures up to the next `/` delimiter.
+3. **Union Accumulation**: Extracted parameter names are accumulated into a union and mapped into an object type with string values.
+
+---
+
+### 5. Think first
+
+What is `ExtractRouteParams<"/about">` when there are no dynamic parameters? Decide first.
+
+```typescript
+type StaticParams = ExtractRouteParams<"/about">;
+```
+
+---
+
+**Answer and Reason:**
+
+It evaluates to:
+
+```typescript
+{}
+```
+
+**Reason**: There are no colons `:` in `"/about"`. The condition falls through to the base case `{}` (an empty object with no required parameters).
+
+---
+
+### 6. Try it yourself
+Test `ExtractRouteParams` on `"/orgs/:orgId/members/:memberId/roles/:roleId"`. Verify that all three parameters are present in the resulting type.
+
+---
+
+### 7. More examples
+
+#### Example A: Type-Safe Route Handler Function (Medium)
+
+```typescript
+function get<Path extends string>(
+  path: Path,
+  handler: (params: ExtractRouteParams<Path>) => void
+) {
+  // Registers route handler
+}
+
+get("/users/:userId/edit", (params) => {
+  console.log(params.userId); // Completely type-safe!
+  // console.log(params.postId); // Compile Error: Property 'postId' does not exist!
+});
+```
+
+---
+
+### 8. Common mistakes
+
+#### Mistake 1: Forgetting to handle the parameter at the end of the URL
+
+**Wrong code:**
+```typescript
+type Bad<P extends string> = P extends `${string}:${infer Param}/${infer Rest}`
+  ? Param | Bad<Rest>
+  : never;
+// Fails on "/users/:userId" because there is no trailing slash!
+```
+
+**Correct code:**
+Always provide a second branch for trailing parameters without a slash.
+
+---
+
+### 9. Rules to remember
+1. Match `:${infer Param}/` for parameters in the middle of a path.
+2. Match `:${infer Param}` for parameters at the end of a path.
+3. Return `{}` if no dynamic parameters are found.
+
+---
+
+### 10. Exercises
+
+#### Question 1 (Predict the compile result)
+What properties are in `P`?
+```typescript
+type P = ExtractRouteParams<"/articles/:slug">;
+```
+
+#### Question 2 (Find and fix the bug)
+The route below uses Next.js bracket syntax `/[id]`. Write a pattern to match `[infer Param]`:
+```typescript
+type NextParam<P extends string> = P extends `${string}[${infer Param}]` ? Param : never;
+```
+
+#### Question 3 (Write code from scratch)
+Write a type-safe function `navigateTo<Path extends string>(path: Path, params: ExtractRouteParams<Path>): string`.
+
+#### Question 4 (Explain in your own words)
+How does extracting route parameters at compile time prevent runtime 404 or undefined parameter bugs?
+
+---
+
+### Solutions
+
+#### Solution to Question 1
+**Hint 1**: The parameter is `slug`.
+
+**Answer**:
+`P` has `{ slug: string }`.
+
+#### Solution to Question 2
+**Hint 1**: The pattern `[${infer Param}]` matches bracket syntax.
+
+**Answer**:
+```typescript
+type NextParam<P extends string> =
+  P extends `${string}[${infer Param}]${string}` ? Param : never;
+```
+
+#### Solution to Question 3
+**Hint 1**: Accept `path` and `params`.
+
+**Answer**:
+```typescript
+function navigateTo<Path extends string>(
+  path: Path,
+  params: ExtractRouteParams<Path>
+): string {
+  let url: string = path;
+  for (const [key, value] of Object.entries(params as Record<string, string>)) {
+    url = url.replace(`:${key}`, value);
+  }
+  return url;
+}
+```
+
+#### Solution to Question 4
+**Hint 1**: What happens if a developer types `params.userid` instead of `params.userId`?
+
+**Answer**:
+Without compile-time extraction, parameter names are unchecked strings. Typos like `params.userid` or missing parameters cause runtime bugs where undefined values are queried. Compile-time parameter extraction forces the caller to provide exact, correctly spelled parameters.
+
+---
+
+### 11. Recall
+
+1. What character indicates a dynamic parameter in standard route strings?
+2. What should be returned if a route contains no dynamic parameters?
+3. How do you handle parameters at the end of a path without a trailing slash?
+
+**If you remember only one thing:**
+Parse `${string}:${infer Param}` to derive type-safe parameter dictionaries directly from URL route strings.
+
+---
+
+# Checkpoint Challenge: Topics 6 to 10
+
+### Challenge Scenario
+Build a type-safe micro-router with path parameter replacement:
+
+1. Create a route string `const USER_ROUTE = "/teams/:teamId/users/:userId" as const;`.
+2. Extract the parameter type `RouteParams = ExtractRouteParams<typeof USER_ROUTE>`.
+3. Write a function `buildPath<Path extends string>(path: Path, params: ExtractRouteParams<Path>): string`:
+   - It iterates over the keys of `params` and replaces `:${key}` in `path` with its value.
+   - It returns the clean path string.
+4. Test calling `buildPath(USER_ROUTE, { teamId: "alpha", userId: "u123" })`.
+5. Verify that omitting `teamId` triggers a compile error.
+
+### Challenge Solution
+
+```typescript
+type ExtractRouteParams<Path extends string> =
+  Path extends `${string}:${infer Param}/${infer Rest}`
+    ? { [K in Param | keyof ExtractRouteParams<Rest>]: string }
+    : Path extends `${string}:${infer Param}`
+    ? { [K in Param]: string }
+    : {};
+
+const USER_ROUTE = "/teams/:teamId/users/:userId" as const;
+
+type RouteParams = ExtractRouteParams<typeof USER_ROUTE>;
+// { teamId: string; userId: string }
+
+function buildPath<Path extends string>(
+  path: Path,
+  params: ExtractRouteParams<Path>
+): string {
+  let result: string = path;
+  for (const [key, value] of Object.entries(params as Record<string, string>)) {
+    result = result.replace(`:${key}`, value);
+  }
+  return result;
+}
+
+// Valid call:
+const url = buildPath(USER_ROUTE, { teamId: "alpha", userId: "u123" });
+console.log("Built URL:", url); // "/teams/alpha/users/u123"
+
+// Invalid call (compile error):
+// buildPath(USER_ROUTE, { userId: "u123" });
+// Error: Property 'teamId' is missing!
+```
+
+---
+
+# Topic 11: Deep Object Path Accessors with Dot Notation (`Path<T>`)
+
+### 1. What is it?
+You can generate a union of all possible nested object paths separated by dots (`"user.profile.name"`, `"settings.theme"`):
+```typescript
+type User = {
+  profile: {
+    name: string;
+    age: number;
+  };
+};
+
+type UserPaths = Path<User>;
+// "profile" | "profile.name" | "profile.age"
+```
+
+### 2. Why does it exist?
+Form libraries (like React Hook Form or Formik), database query builders (Prisma, TypeORM), and utility libraries (lodash `get`) use dot-separated paths to access deeply nested data.
+
+Without template literal types, path strings must be typed as plain `string`, which allows typos like `"profile.nmae"` to go unnoticed. Generating path unions guarantees that only valid paths can be queried.
+
+### 3. Basic example
+
+```typescript
+type Path<T> = T extends object
+  ? {
+      [K in keyof T]: K extends string
+        ? T[K] extends object
+          ? `${K}` | `${K}.${Path<T[K]>}`
+          : `${K}`
+        : never;
+    }[keyof T]
+  : never;
+
+type Config = {
+  db: {
+    host: string;
+    port: number;
+  };
+  active: boolean;
+};
+
+type ConfigPaths = Path<Config>;
+// "active" | "db" | "db.host" | "db.port"
+```
+
+**Line-by-line explanation:**
+- Loops over `[K in keyof T]`.
+- If `T[K]` is a nested object, it produces both the property itself (`"${K}"`) and dot-joined children (`"${K}.${Path<T[K]>}"`).
+- If `T[K]` is a primitive, it produces just `"${K}"`.
+- `[keyof T]` indexes into the mapped object to extract the union of all paths.
+
+---
+
+### 4. How it works inside TypeScript
+1. **Recursive Traversal**: The type recurses down object trees.
+2. **String Interpolation**: It concatenates the current key with child paths using `` `${K}.${Path<T[K]>}` ``.
+3. **Union Indexing**: Indexing with `[keyof T]` flattens the mapped object into a single union of path strings.
+
+---
+
+### 5. Think first
+
+What paths are generated for `{ a: { b: string } }`? Decide first.
+
+```typescript
+type Paths = Path<{ a: { b: string } }>;
+```
+
+---
+
+**Answer and Reason:**
+
+The paths are:
+
+```typescript
+"a" | "a.b"
+```
+
+**Reason**: `"a"` is the top-level key. Since `a` is an object, it also generates `"a.b"`.
+
+---
+
+### 6. Try it yourself
+Create an interface `State = { user: { id: string; email: string }; version: number }`. Apply `Path<State>` and test assigning `"user.email"` and `"user.password"`.
+
+---
+
+### 7. More examples
+
+#### Example A: Excluding Arrays from Deep Path Expansion (Medium)
+
+```typescript
+// Guard against arrays to prevent mapping over array methods:
+type SafePath<T> = T extends readonly any[]
+  ? never
+  : T extends object
+  ? {
+      [K in keyof T]: K extends string
+        ? T[K] extends object
+          ? `${K}` | `${K}.${SafePath<T[K]>}`
+          : `${K}`
+        : never;
+    }[keyof T]
+  : never;
+```
+
+---
+
+### 8. Common mistakes
+
+#### Mistake 1: Forgetting `[keyof T]` at the end of the mapped type
+
+**Wrong code:**
+```typescript
+type BadPath<T> = {
+  [K in keyof T]: `${string & K}`;
+};
+// Returns an object { a: "a", b: "b" }, NOT a union "a" | "b"!
+```
+
+**Why it happens:**
+You must index with `[keyof T]` to extract the values of the mapped object into a union.
+
+---
+
+### 9. Rules to remember
+1. Dot paths are constructed with `` `${K}.${Path<T[K]>}` ``.
+2. Index with `[keyof T]` to produce a union of strings.
+3. Guard against `Function` and arrays to prevent mapping over prototype methods.
+
+---
+
+### 10. Exercises
+
+#### Question 1 (Predict the compile result)
+Is `"x.y.z"` in `Path<{ x: { y: { z: number } } }>`?
+
+#### Question 2 (Find and fix the bug)
+The type below returns an object instead of a union of path strings. Fix it:
+```typescript
+type GetKeys<T> = { [K in keyof T]: K };
+```
+
+#### Question 3 (Write code from scratch)
+Write a function signature `watchField<T, P extends Path<T>>(obj: T, path: P): void`.
+
+#### Question 4 (Explain in your own words)
+Why is `Path<T>` useful for form libraries?
+
+---
+
+### Solutions
+
+#### Solution to Question 1
+**Hint 1**: Follow the nesting from `x` to `y` to `z`.
+
+**Answer**:
+Yes, `"x.y.z"` is a valid path in the generated union.
+
+#### Solution to Question 2
+**Hint 1**: Add `[keyof T]` at the end.
+
+**Answer**:
+```typescript
+type GetKeys<T> = { [K in keyof T]: K }[keyof T];
+```
+
+#### Solution to Question 3
+**Hint 1**: Use `P extends Path<T>`.
+
+**Answer**:
+```typescript
+function watchField<T, P extends Path<T>>(obj: T, path: P): void {}
+```
+
+#### Solution to Question 4
+**Hint 1**: Think about registering input fields in forms.
+
+**Answer**:
+Form libraries register inputs using string paths (like `"address.street"`). Without `Path<T>`, any misspelled string is allowed. `Path<T>` provides autocomplete for every nested field and flags invalid paths at compile time.
+
+---
+
+### 11. Recall
+
+1. What syntax joins parent keys with child paths?
+2. How do you convert a mapped object type into a union of its values?
+3. Should arrays and functions be excluded from deep object path expansion?
+
+**If you remember only one thing:**
+Use `` `${K}.${Path<T[K]>}` `` and index with `[keyof T]` to generate all valid nested dot paths.
+
+---
+
+# Topic 12: Resolving Values from Deep Path Strings (`Get<T, Path>`)
+
+### 1. What is it?
+Once you have dot-separated path strings (like `"user.profile.name"`), you can write a utility type `Get<T, P>` that traverses into object `T` along path `P` and extracts the **exact value type** stored at that path:
+```typescript
+type Name = Get<User, "profile.name">; // string
+```
+
+### 2. Why does it exist?
+Functions like Lodash's `get(obj, "a.b.c")` return the nested value.
+
+Without a path-resolver type, `get()` has to return `any` or `unknown`. The `Get<T, P>` type inspects the path string, navigates through the properties at compile time, and gives you the exact type of the nested property.
+
+### 3. Basic example
+
+```typescript
+type Get<T, P extends string> =
+  P extends `${infer Head}.${infer Tail}`
+    ? Head extends keyof T
+      ? Get<T[Head], Tail>
+      : never
     : P extends keyof T
     ? T[P]
-    : undefined;
-
-type Data = { a: { b: number } };
-
-type Test15A = SafeGet<Data, "a.b">;
-type Test15B = SafeGet<Data, "a.b.c">;
-```
-
-**Step-by-Step Evaluation Trace:**
-1. `Test15A`:
-   - `Key = "a"`, `Rest = "b"`. `a` is in `Data`. Next: `SafeGet<Data["a"], "b">`.
-   - `"b"` has no `.`, matches `keyof Data["a"]` -> returns `number`.
-2. `Test15B`:
-   - `Key = "a"`, `Rest = "b.c"`. `a` matches. Next: `SafeGet<Data["a"], "b.c">`.
-   - `Key = "b"`, `Rest = "c"`. `b` is `number`. Next: `SafeGet<number, "c">`.
-   - `"c"` is not a key of `number` -> returns `undefined`.
-3. **Output Types:** `Test15A = number`, `Test15B = undefined`.
-
-
----
-
-## 5. Four Complete Runnable Production Projects with Test Assertions
-
-Every project below is a fully functional, self-contained TypeScript engine demonstrating production template literal metaprogramming. All class properties are explicitly declared for strict Node.js compatibility (`--experimental-strip-types`).
-
----
-
-### Project 1: Type-Safe Full-Stack Route Dispatcher & URL Parameter Parser
-
-#### Architectural Overview
-```
-+-------------------------------------------------------------------------+
-|                  Type-Safe Full-Stack Route Dispatcher                  |
-+-------------------------------------------------------------------------+
-|  Route Pattern: "/api/v1/teams/:teamId/projects/:projectId"             |
-|         │                                                               |
-|  [ExtractRouteParams<Route>] ──► { teamId: string; projectId: string }  |
-|         │                                                               |
-|  [TypedRouteDispatcher]                                                 |
-|    ├── register<P extends string>(method, path, handler)                |
-|    └── dispatch(method, url): DispatchResult                            |
-|         │                                                               |
-|    (Regex compilation from route pattern with named capture groups)     |
-+-------------------------------------------------------------------------+
-```
-
-#### Complete Implementation & Verification Suite
-```typescript
-import assert from "node:assert";
-
-export type HttpMethod = "GET" | "POST" | "PUT" | "DELETE" | "PATCH";
-
-export type ExtractRouteParams<Path extends string> =
-  Path extends `${infer _Start}/:${infer Param}/${infer Rest}`
-    ? { [K in Param | keyof ExtractRouteParams<`/${Rest}`>]: string }
-    : Path extends `${infer _Start}/:${infer Param}`
-    ? { [K in Param]: string }
-    : Record<string, never>;
-
-export interface RequestContext<Params> {
-  method: HttpMethod;
-  path: string;
-  params: Params;
-  query: Record<string, string>;
-}
-
-export type RouteHandler<Params> = (ctx: RequestContext<Params>) => any;
-
-interface CompiledRoute {
-  method: HttpMethod;
-  pattern: string;
-  regex: RegExp;
-  paramNames: string[];
-  handler: RouteHandler<any>;
-}
-
-export class TypedRouteDispatcher {
-  private routes: CompiledRoute[];
-
-  constructor() {
-    this.routes = [];
-  }
-
-  public register<Path extends string>(
-    method: HttpMethod,
-    path: Path,
-    handler: RouteHandler<ExtractRouteParams<Path>>
-  ): void {
-    const paramNames: string[] = [];
-    const regexPattern = path.replace(/:([a-zA-Z0-9_]+)/g, (_, name) => {
-      paramNames.push(name);
-      return "([^/]+)";
-    });
-
-    this.routes.push({
-      method,
-      pattern: path,
-      regex: new RegExp(`^${regexPattern}$`),
-      paramNames,
-      handler,
-    });
-  }
-
-  public dispatch(method: HttpMethod, url: string): any {
-    const [pathname, queryString] = url.split("?");
-    const query: Record<string, string> = {};
-
-    if (queryString) {
-      for (const pair of queryString.split("&")) {
-        const [k, v] = pair.split("=");
-        if (k) query[decodeURIComponent(k)] = decodeURIComponent(v ?? "");
-      }
-    }
-
-    for (const route of this.routes) {
-      if (route.method !== method) continue;
-      const match = pathname.match(route.regex);
-      if (match) {
-        const params: Record<string, string> = {};
-        for (let i = 0; i < route.paramNames.length; i++) {
-          params[route.paramNames[i]] = match[i + 1];
-        }
-
-        return route.handler({
-          method,
-          path: pathname,
-          params,
-          query,
-        });
-      }
-    }
-
-    throw new Error(`Route not found: ${method} ${pathname}`);
-  }
-}
-
-// Verification Assertions
-const router = new TypedRouteDispatcher();
-
-router.register(
-  "GET",
-  "/api/v1/tenants/:tenantId/users/:userId",
-  (ctx) => {
-    // Compile-time verified: ctx.params has tenantId and userId
-    return {
-      message: `User ${ctx.params.userId} retrieved for tenant ${ctx.params.tenantId}`,
-      filter: ctx.query.filter ?? "none",
-    };
-  }
-);
-
-router.register("GET", "/health", () => {
-  return { status: "healthy" };
-});
-
-// Test parametric dispatch
-const res1 = router.dispatch("GET", "/api/v1/tenants/t_corp/users/u_42?filter=active");
-assert.strictEqual(
-  res1.message,
-  "User u_42 retrieved for tenant t_corp"
-);
-assert.strictEqual(res1.filter, "active");
-
-// Test static dispatch
-const res2 = router.dispatch("GET", "/health");
-assert.strictEqual(res2.status, "healthy");
-
-// Test 404 error
-assert.throws(() => {
-  router.dispatch("POST", "/api/v1/tenants/t_corp/users/u_42");
-}, /Route not found: POST/);
-
-console.log("Project 1 (Typed Route Dispatcher) passed all assertions.");
-```
-
----
-
-### Project 2: Type-Safe Internationalization (i18n) Engine with Interpolation Grammar
-
-#### Architectural Overview
-```
-+-------------------------------------------------------------------------+
-|                  Type-Safe Internationalization (i18n)                  |
-+-------------------------------------------------------------------------+
-|  Locale Catalog: { "welcome": "Welcome back {name}, balance: {amount}" }|
-|         │                                                               |
-|  [ExtractInterpolationKeys<S>] ──► "name" | "amount"                    |
-|         │                                                               |
-|  [I18nEngine<Schema>]                                                   |
-|    ├── setLocale(locale)                                                |
-|    └── t<Key>(key, params) ──► Strict compile-time required arguments  |
-|         │                                                               |
-|    (Handles pluralization tokens & locale fallbacks)                    |
-+-------------------------------------------------------------------------+
-```
-
-#### Complete Implementation & Verification Suite
-```typescript
-import assert from "node:assert";
-
-export type ExtractPlaceholders<S extends string> =
-  S extends `${infer _Before}{${infer Param}}${infer Rest}`
-    ? Param | ExtractPlaceholders<Rest>
     : never;
 
-export type TranslationArgs<S extends string> =
-  [ExtractPlaceholders<S>] extends [never]
-    ? []
-    : [params: { [K in ExtractPlaceholders<S>]: string | number }];
-
-export class I18nEngine<
-  Locales extends string,
-  Schema extends Record<string, string>
-> {
-  private currentLocale: Locales;
-  private catalogs: Map<Locales, Schema>;
-  private fallbackLocale: Locales;
-
-  constructor(defaultLocale: Locales, fallbackLocale: Locales) {
-    this.currentLocale = defaultLocale;
-    this.fallbackLocale = fallbackLocale;
-    this.catalogs = new Map();
-  }
-
-  public registerCatalog(locale: Locales, catalog: Schema): void {
-    this.catalogs.set(locale, catalog);
-  }
-
-  public setLocale(locale: Locales): void {
-    if (!this.catalogs.has(locale)) {
-      throw new Error(`Locale '${locale}' is not registered`);
-    }
-    this.currentLocale = locale;
-  }
-
-  public t<Key extends keyof Schema & string>(
-    key: Key,
-    ...args: TranslationArgs<Schema[Key]>
-  ): string {
-    const catalog = this.catalogs.get(this.currentLocale) ?? this.catalogs.get(this.fallbackLocale);
-    if (!catalog) {
-      throw new Error(`No catalog available for locale: ${this.currentLocale}`);
-    }
-
-    const template = catalog[key];
-    if (template === undefined) {
-      throw new Error(`Missing translation key: ${key}`);
-    }
-
-    if (args.length === 0 || !args[0]) {
-      return template;
-    }
-
-    let result = template;
-    const params = args[0] as Record<string, string | number>;
-    for (const [paramKey, paramVal] of Object.entries(params)) {
-      result = result.replace(new RegExp(`{${paramKey}}`, "g"), String(paramVal));
-    }
-
-    return result;
-  }
-}
-
-// Verification Assertions
-const enDictionary = {
-  greeting: "Hello {name}, welcome to Antigravity!",
-  unreadMessages: "You have {count} unread notifications.",
-  appStatus: "System is online.",
+type Data = {
+  user: {
+    name: string;
+    scores: {
+      math: number;
+    };
+  };
 };
 
-const esDictionary = {
-  greeting: "¡Hola {name}, bienvenido a Antigravity!",
-  unreadMessages: "Tienes {count} notificaciones sin leer.",
-  appStatus: "El sistema está en línea.",
-};
+type T1 = Get<Data, "user.name">;               // string
+type T2 = Get<Data, "user.scores.math">;        // number
+type T3 = Get<Data, "user.unknown">;            // never
+```
 
-const i18n = new I18nEngine<"en" | "es", typeof enDictionary>("en", "en");
-i18n.registerCatalog("en", enDictionary);
-i18n.registerCatalog("es", esDictionary);
+**Line-by-line explanation:**
+- `P extends `${infer Head}.${infer Tail}``: Checks if the path contains a dot.
+  - If yes: extracts the first segment `Head` (e.g. `"user"`).
+  - Checks if `Head extends keyof T`.
+  - Recurses with `Get<T[Head], Tail>`.
+- `P extends keyof T`: Base case (no dots left in path). Looks up `T[P]`.
+- If any segment is invalid, it returns `never`.
 
-// English translations
-const greetingEn = i18n.t("greeting", { name: "Alice" });
-assert.strictEqual(greetingEn, "Hello Alice, welcome to Antigravity!");
+---
 
-const statusEn = i18n.t("appStatus");
-assert.strictEqual(statusEn, "System is online.");
+### 4. How it works inside TypeScript
+1. **Peel First Key**: The non-greedy `Head` extracts the first property name.
+2. **Step Inward**: The compiler indexes into `T[Head]` and passes the nested object to the next step.
+3. **Tail Termination**: When no dots remain, it performs the final property lookup and returns the value type.
 
-// Spanish translations
-i18n.setLocale("es");
-const greetingEs = i18n.t("greeting", { name: "Carlos" });
-assert.strictEqual(greetingEs, "¡Hola Carlos, bienvenido a Antigravity!");
+---
 
-const messagesEs = i18n.t("unreadMessages", { count: 5 });
-assert.strictEqual(messagesEs, "Tienes 5 notificaciones sin leer.");
+### 5. Think first
 
-console.log("Project 2 (Type-Safe i18n Engine) passed all assertions.");
+What is the type of `Score` in the code below? Decide first.
+
+```typescript
+type State = { volume: number };
+type Score = Get<State, "volume">;
 ```
 
 ---
 
-### Project 3: Type-Safe In-Memory SQL Query Engine & Syntax Parser
+**Answer and Reason:**
 
-#### Architectural Overview
-```
-+-------------------------------------------------------------------------+
-|                  Type-Safe In-Memory SQL Query Engine                   |
-+-------------------------------------------------------------------------+
-|  SQL String: "SELECT id, name FROM users WHERE age > 18"                |
-|         │                                                               |
-|  [SQL Syntax Lexer & AST Parser]                                        |
-|         │                                                               |
-|  [Compile-Time Projection Validation]                                   |
-|    └── ParseSelectQuery<Query, DatabaseSchema> ──► Typed Result Shape   |
-|         │                                                               |
-|  [QueryExecutor]                                                        |
-|    └── execute(query, db): Pick<Row, Columns>[]                         |
-+-------------------------------------------------------------------------+
-```
+The type is:
 
-#### Complete Implementation & Verification Suite
 ```typescript
-import assert from "node:assert";
+number
+```
 
-export interface DatabaseTables {
-  users: { id: number; name: string; age: number; role: string };
-  orders: { orderId: string; userId: number; amount: number; isPaid: boolean };
+**Reason**: There are no dots in `"volume"`. It hits the base case `P extends keyof T ? T[P] : never` and returns `number`.
+
+---
+
+### 6. Try it yourself
+Write a generic function signature `getDeep<T, P extends string>(obj: T, path: P): Get<T, P>`. Test calling it on a nested configuration object.
+
+---
+
+### 7. More examples
+
+#### Example A: Type-Safe Lodash `get` (Medium)
+
+```typescript
+function getProperty<T, P extends Path<T>>(obj: T, path: P): Get<T, P> {
+  const parts = path.split(".");
+  let current: any = obj;
+  for (const part of parts) {
+    current = current[part];
+  }
+  return current;
+}
+```
+
+---
+
+### 8. Common mistakes
+
+#### Mistake 1: Forgetting to verify `Head extends keyof T`
+
+**Wrong code:**
+```typescript
+type BadGet<T, P extends string> =
+  P extends `${infer Head}.${infer Tail}` ? BadGet<T[Head], Tail> : T[P];
+  // Error: Type 'Head' cannot be used to index type 'T'!
+```
+
+---
+
+### 9. Rules to remember
+1. `Get<T, P>` resolves the value type at dot-separated path `P`.
+2. Slices paths recursively using `${infer Head}.${infer Tail}`.
+3. Returns `never` if any path segment does not exist.
+
+---
+
+### 10. Exercises
+
+#### Question 1 (Predict the compile result)
+What is the resulting type of `Result`?
+```typescript
+type Schema = { a: { b: boolean } };
+type Result = Get<Schema, "a.b">;
+```
+
+#### Question 2 (Find and fix the bug)
+The type below fails when `Head` is not a key of `T`. Add the key check:
+```typescript
+type Lookup<T, P extends string> =
+  P extends `${infer H}.${infer Tl}` ? Lookup<T[H], Tl> : never;
+```
+
+#### Question 3 (Write code from scratch)
+Test `Get` on `{ api: { v1: { endpoint: string } } }` with path `"api.v1.endpoint"`.
+
+#### Question 4 (Explain in your own words)
+How does `Get<T, P>` combine string pattern matching with recursive type indexing?
+
+---
+
+### Solutions
+
+#### Solution to Question 1
+**Hint 1**: Follow `a` then `b`.
+
+**Answer**:
+The type is `boolean`.
+
+#### Solution to Question 2
+**Hint 1**: Check `H extends keyof T ? Lookup<T[H], Tl> : never`.
+
+**Answer**:
+```typescript
+type Lookup<T, P extends string> =
+  P extends `${infer H}.${infer Tl}`
+    ? H extends keyof T
+      ? Lookup<T[H], Tl>
+      : never
+    : never;
+```
+
+#### Solution to Question 3
+**Hint 1**: Apply `Get<..., "api.v1.endpoint">`.
+
+**Answer**:
+```typescript
+type App = { api: { v1: { endpoint: string } } };
+type Ep = Get<App, "api.v1.endpoint">; // string
+```
+
+#### Solution to Question 4
+**Hint 1**: How does it move from one level of the object to the next?
+
+**Answer**:
+`Get` uses template literal pattern matching to slice off the first segment of the string path (`Head`). It then uses standard indexed access (`T[Head]`) to move down into the nested object, and repeats this process recursively until the path is fully resolved.
+
+---
+
+### 11. Recall
+
+1. What does `Get<T, P>` return?
+2. What delimiter does `Get` use to navigate object hierarchies?
+3. What type is returned if a segment in the path does not exist?
+
+**If you remember only one thing:**
+`Get<T, P>` recursively navigates down an object tree using dot-separated keys to resolve the exact property value type.
+
+---
+
+# Topic 13: Type-Safe Event Emitter Names with Colons (`event:action`)
+
+### 1. What is it?
+In many event systems (Node.js EventEmitter, WebSocket protocols, DOM events), events follow compound naming patterns with colons:
+- `"user:login"`, `"user:logout"`
+- `"order:created"`, `"order:cancelled"`
+
+You can model these compound names with template literal types and pair each event name with its exact payload type.
+
+### 2. Why does it exist?
+Without template literal types, event emitter names are typed as `string`, and payloads are typed as `any`.
+
+If you write `emitter.emit("user:login", payload)`, a typo like `"user:loginn"` or sending the wrong payload object fails silently at runtime. Template literal event maps enforce complete end-to-end type safety for events and their payloads.
+
+### 3. Basic example
+
+```typescript
+type Entity = "user" | "order";
+type Action = "created" | "deleted";
+
+type EventName = `${Entity}:${Action}`;
+// "user:created" | "user:deleted" | "order:created" | "order:deleted"
+
+interface EventPayloads {
+  "user:created": { userId: string; name: string };
+  "user:deleted": { userId: string };
+  "order:created": { orderId: string; amount: number };
+  "order:deleted": { orderId: string };
 }
 
-type SplitCols<S extends string> =
-  S extends `${infer Col}, ${infer Rest}`
-    ? Col | SplitCols<Rest>
-    : S extends `${infer Single}`
-    ? Single
+class TypedEmitter {
+  emit<E extends keyof EventPayloads>(event: E, payload: EventPayloads[E]): void {
+    console.log("Emitting", event, payload);
+  }
+}
+
+const emitter = new TypedEmitter();
+emitter.emit("user:created", { userId: "u1", name: "Alex" }); // Valid!
+// emitter.emit("user:created", { userId: "u1" }); // Error: Property 'name' is missing!
+// emitter.emit("user:unknown", {}); // Error: Unknown event!
+```
+
+**Line-by-line explanation:**
+- `EventName`: Uses template literals to define the structured naming convention `${Entity}:${Action}`.
+- `EventPayloads`: Maps each valid event name to its required payload.
+- `emit<E extends keyof EventPayloads>(event: E, payload: EventPayloads[E])`: Guarantees that passing `"user:created"` strictly requires the exact payload for that event.
+
+---
+
+### 4. How it works inside TypeScript
+1. **Event Union**: The compound event names are validated against `keyof EventPayloads`.
+2. **Dependent Argument**: The `payload` argument type is indexed directly from `EventPayloads[E]`.
+3. **Catching Typos**: A typo in either the event name or the payload properties triggers an immediate compile error.
+
+---
+
+### 5. Think first
+
+What happens if you pass the payload for `"user:deleted"` into `"user:created"`? Decide first.
+
+```typescript
+emitter.emit("user:created", { userId: "u1" });
+```
+
+---
+
+**Answer and Reason:**
+
+This code fails to compile:
+
+```
+Property 'name' is missing in type '{ userId: string; }' but required in type '{ userId: string; name: string; }'.
+```
+
+**Reason**: `EventPayloads["user:created"]` requires both `userId` and `name`. TypeScript prevents mismatched payloads.
+
+---
+
+### 6. Try it yourself
+Add an event `"order:shipped"` with payload `{ orderId: string; trackingCode: string }` to `EventPayloads`. Test emitting it.
+
+---
+
+### 7. More examples
+
+#### Example A: Wildcard Event Names (Medium)
+
+```typescript
+type AnyUserEvent = `user:${string}`;
+
+function onUserEvent(event: AnyUserEvent) {
+  console.log("Listening to user event:", event);
+}
+
+onUserEvent("user:login"); // Allowed
+onUserEvent("user:custom_event"); // Allowed
+// onUserEvent("order:created"); // Error! Does not start with "user:"
+```
+
+---
+
+### 8. Common mistakes
+
+#### Mistake 1: Decoupling the event name from the payload type
+
+**Wrong code:**
+```typescript
+function emit(event: string, payload: any) {}
+// Zero type checking!
+```
+
+---
+
+### 9. Rules to remember
+1. Combine template literal types to build structured event names `${Entity}:${Action}`.
+2. Use an event payload map interface to associate each event with its payload.
+3. Type the listener/emitter using generic parameter `<E extends keyof EventMap>`.
+
+---
+
+### 10. Exercises
+
+#### Question 1 (Predict the compile result)
+Will the following code compile?
+```typescript
+type Scope = "auth" | "db";
+type EventType = `${Scope}:error`;
+const e: EventType = "auth:error";
+```
+
+#### Question 2 (Find and fix the bug)
+Fix the payload parameter type:
+```typescript
+interface Events { "log:info": string }
+function send<E extends keyof Events>(event: E, payload: any) {}
+```
+
+#### Question 3 (Write code from scratch)
+Write an `on<E extends keyof EventPayloads>(event: E, listener: (payload: EventPayloads[E]) => void): void` method signature.
+
+#### Question 4 (Explain in your own words)
+Why is an event emitter with a generic map `EventPayloads[E]` safer than overloading `on` for each event?
+
+---
+
+### Solutions
+
+#### Solution to Question 1
+**Hint 1**: Does `"auth:error"` match `${Scope}:error`?
+
+**Answer**:
+Yes, it compiles without error.
+
+#### Solution to Question 2
+**Hint 1**: Replace `any` with `Events[E]`.
+
+**Answer**:
+```typescript
+interface Events { "log:info": string }
+function send<E extends keyof Events>(event: E, payload: Events[E]) {}
+```
+
+#### Solution to Question 3
+**Hint 1**: Type `listener` as `(payload: EventPayloads[E]) => void`.
+
+**Answer**:
+```typescript
+function on<E extends keyof EventPayloads>(
+  event: E,
+  listener: (payload: EventPayloads[E]) => void
+): void {}
+```
+
+#### Solution to Question 4
+**Hint 1**: What happens when you add 20 new events to your system?
+
+**Answer**:
+With function overloads, you have to write duplicate function signatures for every single event. With a generic event map (`EventPayloads[E]`), you define the signature once, and adding a new event only requires adding a single entry to the interface.
+
+---
+
+### 11. Recall
+
+1. What pattern syntax represents scoped events like `user:login`?
+2. How do you link an event argument to its corresponding payload?
+3. What is the benefit of a generic event map over manual overloads?
+
+**If you remember only one thing:**
+Use generic event maps indexed by template literal event names to build 100% type-safe event emitters.
+
+---
+
+# Topic 14: Union Explosion Limits and Compiler Safety (TS2590 Prevention)
+
+### 1. What is it?
+When template literal types multiply large unions together, the total number of combinations can grow exponentially.
+
+If the number of generated union members exceeds the compiler's safety threshold (approximately **100,000 members**), TypeScript stops evaluation and triggers:
+```
+TS2590: Expression produces a union type that is too complex to represent.
+```
+
+### 2. Why does it exist?
+Every union member in TypeScript consumes memory and compiler processing time.
+
+If TypeScript allowed a template literal to generate 100 million types, your IDE would freeze, memory would be exhausted, and the compiler process would crash. The TS2590 limit protects your machine and ensures fast compilation.
+
+### 3. Basic example
+
+```typescript
+type Digit = "0" | "1" | "2" | "3" | "4" | "5" | "6" | "7" | "8" | "9";
+
+// 1. Safe: 10 * 10 = 100 members
+type TwoDigits = `${Digit}${Digit}`;
+
+// 2. Safe: 100 * 100 = 10,000 members
+type FourDigits = `${TwoDigits}${TwoDigits}`;
+
+// 3. EXPLOSION: 10,000 * 10,000 = 100,000,000 members!
+// type EightDigits = `${FourDigits}${FourDigits}`;
+// Compile Error TS2590: Expression produces a union type that is too complex to represent.
+```
+
+**Line-by-line explanation:**
+- `TwoDigits`: $10 \times 10 = 100$ combinations (fast, safe).
+- `FourDigits`: $100 \times 100 = 10,000$ combinations (acceptable).
+- `EightDigits`: $10,000 \times 10,000 = 100,000,000$ combinations. The compiler detects that this exceeds 100,000 and stops compilation immediately with TS2590.
+
+---
+
+### 4. How it works inside TypeScript
+1. **Cardinality Check**: Before generating all string permutations, the compiler calculates the product of the sizes of each interpolated union.
+2. **Threshold Enforcement**: If the total cardinality exceeds the internal threshold, union construction is aborted.
+3. **Alternative Strategy**: Use broad `string` with branded types or pattern validation functions instead of generating millions of literal strings.
+
+---
+
+### 5. Think first
+
+What is the best way to type a valid 8-digit postal code without causing a union explosion? Decide first.
+
+```typescript
+// Approach A:
+type EightDigits = `${Digit}${Digit}${Digit}${Digit}${Digit}${Digit}${Digit}${Digit}`;
+
+// Approach B:
+type PostalCode = string & { readonly __brand: "PostalCode" };
+```
+
+---
+
+**Answer and Reason:**
+
+**Approach B** is the correct, professional solution.
+
+**Reason**: Approach A causes an exponential union explosion that crashes the compiler. Approach B uses a branded string with runtime validation, providing 100% type safety with zero compiler performance cost.
+
+---
+
+### 6. Try it yourself
+Calculate the cardinality of `${"a"|"b"|"c"}${"1"|"2"|"3"}${"x"|"y"}`. Verify that $3 \times 3 \times 2 = 18$ combinations.
+
+---
+
+### 7. More examples
+
+#### Example A: Defending Against Complex Permutations (Medium)
+
+```typescript
+// Instead of generating all IP addresses:
+// type Octet = 0 | 1 | ... | 255;
+// type IP = `${Octet}.${Octet}.${Octet}.${Octet}`; // Over 4 billion combinations!
+
+// Use branded strings with smart constructors:
+type IpAddress = string & { readonly __brand: "IpAddress" };
+
+function toIpAddress(raw: string): IpAddress {
+  const parts = raw.split(".");
+  if (parts.length !== 4) throw new Error("Invalid IP");
+  return raw as IpAddress;
+}
+```
+
+---
+
+### 8. Common mistakes
+
+#### Mistake 1: Trying to generate exhaustive combinations of long strings
+
+**Wrong assumption:**
+Trying to generate all valid UUIDs or phone numbers with template literal unions.
+
+**Why it happens:**
+Template literals are meant for structured prefixes, suffixes, and small categorical combinations, not high-cardinality data like phone numbers or IDs.
+
+---
+
+### 9. Rules to remember
+1. Multiplying unions multiplies their sizes ($M \times N$).
+2. Exceeding ~100,000 combinations triggers error TS2590.
+3. For large or infinite string sets, use branded strings with validation functions.
+
+---
+
+### 10. Exercises
+
+#### Question 1 (Predict the compile result)
+Will the following code cause error TS2590?
+```typescript
+type A = "1" | "2";
+type B = "a" | "b";
+type Combo = `${A}_${B}`;
+```
+
+#### Question 2 (Find and fix the bug)
+The code below attempts to type all 4-digit PIN numbers by generating all permutations. Replace it with a branded string:
+```typescript
+type D = 0|1|2|3|4|5|6|7|8|9;
+type Pin = `${D}${D}${D}${D}`; // 10,000 members
+```
+
+#### Question 3 (Write code from scratch)
+Write a formula to calculate the number of union members in `${U1}${U2}${U3}`.
+
+#### Question 4 (Explain in your own words)
+Why does TypeScript enforce a limit on the number of union members a template literal can produce?
+
+---
+
+### Solutions
+
+#### Solution to Question 1
+**Hint 1**: How many combinations are generated?
+
+**Answer**:
+No, it generates only 4 combinations ($2 \times 2 = 4$). It compiles instantly.
+
+#### Solution to Question 2
+**Hint 1**: Use a branded string `string & { readonly __brand: "Pin" }`.
+
+**Answer**:
+```typescript
+type Pin = string & { readonly __brand: "Pin" };
+
+function toPin(raw: string): Pin {
+  if (!/^\d{4}$/.test(raw)) throw new Error("Invalid PIN");
+  return raw as Pin;
+}
+```
+
+#### Solution to Question 3
+**Hint 1**: Multiply the size of each union.
+
+**Answer**:
+$$\text{Total Combinations} = |U_1| \times |U_2| \times |U_3|$$
+
+#### Solution to Question 4
+**Hint 1**: Think about memory usage and IDE responsiveness.
+
+**Answer**:
+Each union member requires internal memory and processing time during type checking. Generating hundreds of thousands or millions of union members would cause the compiler process to run out of memory, crash, or freeze the user's IDE. The TS2590 limit ensures compiler stability and fast response times.
+
+---
+
+### 11. Recall
+
+1. What error code indicates that a union is too complex to represent?
+2. What is the approximate limit on generated union members?
+3. What pattern should you use for high-cardinality string formats like UUIDs or phone numbers?
+
+**If you remember only one thing:**
+Keep template literal unions small to avoid union explosion errors (TS2590), and use branded strings for large formats.
+
+---
+
+# Final Checkpoint Challenge: Topics 11 to 14
+
+### Challenge Scenario
+Build a complete compile-time type-safe state store with dot-path reading and event notifications:
+
+1. Define a nested application state:
+   ```typescript
+   interface AppState {
+     auth: {
+       user: {
+         id: string;
+         name: string;
+       };
+       token: string;
+     };
+     theme: "dark" | "light";
+   }
+   ```
+2. Using `Path<AppState>`, generate all valid dot paths.
+3. Using `Get<AppState, P>`, resolve the value type of `"auth.user.name"`.
+4. Create an event system where changing any path emits `"change:${Path}"` with payload `{ path: Path; value: Get<AppState, Path> }`.
+5. Write a method `notifyChange<P extends Path<AppState>>(path: P, value: Get<AppState, P>): void`.
+
+### Challenge Solution
+
+```typescript
+interface AppState {
+  auth: {
+    user: {
+      id: string;
+      name: string;
+    };
+    token: string;
+  };
+  theme: "dark" | "light";
+}
+
+// 2. Generate valid dot paths:
+type Path<T> = T extends object
+  ? {
+      [K in keyof T]: K extends string
+        ? T[K] extends object
+          ? `${K}` | `${K}.${Path<T[K]>}`
+          : `${K}`
+        : never;
+    }[keyof T]
+  : never;
+
+// 3. Resolve value type at path:
+type Get<T, P extends string> =
+  P extends `${infer Head}.${infer Tail}`
+    ? Head extends keyof T
+      ? Get<T[Head], Tail>
+      : never
+    : P extends keyof T
+    ? T[P]
     : never;
 
-export type ParseSQL<
-  Q extends string,
-  Schema extends Record<string, Record<string, any>>
-> =
-  Q extends `SELECT ${infer Cols} FROM ${infer Table} WHERE ${infer _Where}`
-    ? Table extends keyof Schema
-      ? Cols extends "*"
-        ? Schema[Table]
-        : { [K in SplitCols<Cols> as K extends keyof Schema[Table] ? K : never]: Schema[Table][K & keyof Schema[Table]] }
-      : never
-    : Q extends `SELECT ${infer Cols} FROM ${infer Table}`
-    ? Table extends keyof Schema
-      ? Cols extends "*"
-        ? Schema[Table]
-        : { [K in SplitCols<Cols> as K extends keyof Schema[Table] ? K : never]: Schema[Table][K & keyof Schema[Table]] }
-      : never
-    : never;
+type UserName = Get<AppState, "auth.user.name">; // string
 
-export class InMemorySQLEngine<Schema extends Record<string, Record<string, any>>> {
-  private tables: { [K in keyof Schema]?: Schema[K][] };
-
-  constructor() {
-    this.tables = {};
-  }
-
-  public insert<Table extends keyof Schema>(table: Table, row: Schema[Table]): void {
-    if (!this.tables[table]) {
-      this.tables[table] = [];
-    }
-    this.tables[table]!.push(row);
-  }
-
-  public query<Q extends string>(queryString: Q): ParseSQL<Q, Schema>[] {
-    const trimmed = queryString.trim();
-    const selectMatch = trimmed.match(/^SELECT\s+(.+?)\s+FROM\s+([a-zA-Z0-9_]+)(?:\s+WHERE\s+(.+))?$/i);
-
-    if (!selectMatch) {
-      throw new Error(`Invalid SQL syntax: "${queryString}"`);
-    }
-
-    const [, rawCols, rawTable, rawWhere] = selectMatch;
-    const tableKey = rawTable as keyof Schema;
-    const tableData = this.tables[tableKey] ?? [];
-
-    let filteredRows = [...tableData];
-
-    // Simple WHERE clause parsing: "field = value" or "field > value"
-    if (rawWhere) {
-      const whereMatch = rawWhere.trim().match(/^([a-zA-Z0-9_]+)\s*(=|>|<)\s*(.+)$/);
-      if (whereMatch) {
-        const [, field, op, rawVal] = whereMatch;
-        let compVal: any = rawVal.replace(/^['"]|['"]$/g, "");
-        if (!isNaN(Number(compVal))) compVal = Number(compVal);
-
-        filteredRows = filteredRows.filter((row) => {
-          const val = row[field];
-          if (op === "=") return val === compVal;
-          if (op === ">") return val > compVal;
-          if (op === "<") return val < compVal;
-          return true;
-        });
-      }
-    }
-
-    // Column projection
-    if (rawCols.trim() === "*") {
-      return filteredRows as ParseSQL<Q, Schema>[];
-    }
-
-    const projectedColumns = rawCols.split(",").map((c) => c.trim());
-    return filteredRows.map((row) => {
-      const projected: any = {};
-      for (const col of projectedColumns) {
-        projected[col] = row[col];
-      }
-      return projected;
-    }) as ParseSQL<Q, Schema>[];
-  }
+// 4 & 5. Type-safe change notifier:
+function notifyChange<P extends Path<AppState>>(
+  path: P,
+  value: Get<AppState, P>
+): void {
+  console.log(`Event [change:${path}] emitted with value:`, value);
 }
 
-// Verification Assertions
-const db = new InMemorySQLEngine<DatabaseTables>();
+// Valid call:
+notifyChange("auth.user.name", "Alex");
+notifyChange("theme", "dark");
 
-db.insert("users", { id: 1, name: "Alice", age: 30, role: "admin" });
-db.insert("users", { id: 2, name: "Bob", age: 17, role: "guest" });
-db.insert("users", { id: 3, name: "Charlie", age: 25, role: "admin" });
-
-// Query with WHERE clause
-const adultAdmins = db.query("SELECT name, age FROM users WHERE age > 18");
-
-assert.strictEqual(adultAdmins.length, 2);
-assert.deepStrictEqual(adultAdmins[0], { name: "Alice", age: 30 });
-assert.deepStrictEqual(adultAdmins[1], { name: "Charlie", age: 25 });
-
-// Non-selected fields are omitted
-assert.strictEqual((adultAdmins[0] as any).id, undefined);
-assert.strictEqual((adultAdmins[0] as any).role, undefined);
-
-// Wildcard query
-const allUsers = db.query("SELECT * FROM users");
-assert.strictEqual(allUsers.length, 3);
-assert.strictEqual(allUsers[0].role, "admin");
-
-console.log("Project 3 (In-Memory SQL Engine) passed all assertions.");
+// Invalid calls (caught at compile time):
+// notifyChange("auth.user.name", 123); // Error: 123 is not a string!
+// notifyChange("auth.user.unknown", "test"); // Error: Invalid path!
 ```
-
----
-
-### Project 4: Type-Safe CSS-in-JS Utility Compiler & Design Token DSL
-
-#### Architectural Overview
-```
-+-------------------------------------------------------------------------+
-|                  Type-Safe CSS Utility Compiler & Token DSL             |
-+-------------------------------------------------------------------------+
-|  Utility Token DSL: `${Modifier}${Property}-${Scale}`                   |
-|         │                                                               |
-|  [TailwindClass Validator] ──► Validates valid utilities at compile time|
-|         │                                                               |
-|  [CssUtilityCompiler]                                                   |
-|    ├── addClasses(...tokens)                                            |
-|    ├── generateStyleSheet(): string                                     |
-|    └── deduplicate()                                                    |
-+-------------------------------------------------------------------------+
-```
-
-#### Complete Implementation & Verification Suite
-```typescript
-import assert from "node:assert";
-
-export type UtilityPrefix = "p" | "m" | "text" | "bg" | "rounded";
-export type Scale = "sm" | "md" | "lg" | "xl" | "none";
-export type VariantModifier = "" | "hover:" | "focus:";
-
-export type UtilityClass = `${VariantModifier}${UtilityPrefix}-${Scale}`;
-
-interface CssRule {
-  selector: string;
-  css: string;
-}
-
-export class CssUtilityCompiler {
-  private activeClasses: Set<UtilityClass>;
-  private tokenMap: Record<UtilityPrefix, Record<Scale, string>>;
-
-  constructor() {
-    this.activeClasses = new Set();
-    this.tokenMap = {
-      p: {
-        none: "padding: 0;",
-        sm: "padding: 0.25rem;",
-        md: "padding: 0.5rem;",
-        lg: "padding: 1rem;",
-        xl: "padding: 2rem;",
-      },
-      m: {
-        none: "margin: 0;",
-        sm: "margin: 0.25rem;",
-        md: "margin: 0.5rem;",
-        lg: "margin: 1rem;",
-        xl: "margin: 2rem;",
-      },
-      text: {
-        none: "font-size: 0;",
-        sm: "font-size: 0.875rem;",
-        md: "font-size: 1rem;",
-        lg: "font-size: 1.125rem;",
-        xl: "font-size: 1.25rem;",
-      },
-      bg: {
-        none: "background-color: transparent;",
-        sm: "background-color: #f1f5f9;",
-        md: "background-color: #cbd5e1;",
-        lg: "background-color: #64748b;",
-        xl: "background-color: #0f172a;",
-      },
-      rounded: {
-        none: "border-radius: 0;",
-        sm: "border-radius: 0.125rem;",
-        md: "border-radius: 0.25rem;",
-        lg: "border-radius: 0.5rem;",
-        xl: "border-radius: 1rem;",
-      },
-    };
-  }
-
-  public addClass(...classes: UtilityClass[]): this {
-    for (const cls of classes) {
-      this.activeClasses.add(cls);
-    }
-    return this;
-  }
-
-  public compileRule(className: UtilityClass): CssRule {
-    let modifier = "";
-    let rawClass = className as string;
-
-    if (rawClass.startsWith("hover:")) {
-      modifier = ":hover";
-      rawClass = rawClass.slice(6);
-    } else if (rawClass.startsWith("focus:")) {
-      modifier = ":focus";
-      rawClass = rawClass.slice(6);
-    }
-
-    const [prefix, scale] = rawClass.split("-") as [UtilityPrefix, Scale];
-    const propertyCss = this.tokenMap[prefix]?.[scale] ?? "/* unknown */";
-    const escapedSelector = `.${className.replace(":", "\\:")}${modifier}`;
-
-    return {
-      selector: escapedSelector,
-      css: `${escapedSelector} { ${propertyCss} }`,
-    };
-  }
-
-  public generateStyleSheet(): string {
-    const rules: string[] = [];
-    for (const cls of this.activeClasses) {
-      rules.push(this.compileRule(cls).css);
-    }
-    return rules.join("\n");
-  }
-
-  public getClassNames(): string {
-    return Array.from(this.activeClasses).join(" ");
-  }
-}
-
-// Verification Assertions
-const compiler = new CssUtilityCompiler();
-
-compiler.addClass("p-md", "m-lg", "hover:bg-xl", "rounded-md");
-
-const styleSheet = compiler.generateStyleSheet();
-
-assert.ok(styleSheet.includes(".p-md { padding: 0.5rem; }"));
-assert.ok(styleSheet.includes(".m-lg { margin: 1rem; }"));
-assert.ok(styleSheet.includes(".hover\\:bg-xl:hover { background-color: #0f172a; }"));
-assert.ok(styleSheet.includes(".rounded-md { border-radius: 0.25rem; }"));
-
-// Class name deduplication check
-compiler.addClass("p-md");
-assert.strictEqual(compiler.getClassNames().split(" ").length, 4);
-
-console.log("Project 4 (CSS Utility Compiler) passed all assertions.");
-```
-
-
----
-
-## 6. Enterprise Best Practices: 20 DOs and DON'Ts
-
-| # | Rule | Bad Practice (DON'T) | Best Practice (DO) | Architectural Impact |
-|---|------|----------------------|--------------------|----------------------|
-| 1 | **Union Cardinality Control** | Multiplying large unions `${U1}_${U2}_${U3}` without cardinality checks | Bound union sizes or factor expressions into structured objects | Exceeding 100,000 combinations crashes compilation with `TS2590`. |
-| 2 | **String Intrinsics Usage** | Handcrafting lowercase/uppercase character lookup tables | Use native `Uppercase`, `Lowercase`, `Capitalize`, `Uncapitalize` | Native compiler intrinsics execute in V8 C++ with zero type recursion overhead. |
-| 3 | **Delimited Inference** | `${infer A}${infer B}` expecting equal splitting | `${infer Head}/${infer Tail}` or `${infer Single}${infer Rest}` | Adjacent `infer` parameters assign 1 character to the left and everything to the right. |
-| 4 | **Numeric Inference** | Hand-parsing numeric strings into union digits | Use `infer N extends number` (TS 4.8+) | Provides instant compile-time conversion of decimals, floats, and scientific notation. |
-| 5 | **Tail-Call Optimization** | Writing recursive string transformers without accumulators | Accumulate output in a tail-positioned type parameter `Acc` | Increases recursion ceiling from ~50 to 1,000 iterations. |
-| 6 | **Recursive Depth Guards** | Recursively traversing dot-paths without a counter on circular objects | Track recursion depth with `Depth['length'] extends 5 ? never : ...` | Prevents infinite compilation loops (`TS2589`). |
-| 7 | **Route Parameter Isolation** | Matching `${string}:${infer Param}` | Matching `${infer _Start}/:${infer Param}/${infer Rest}` | Prevents catching URL protocol colons (`http://`) as route variables. |
-| 8 | **Avoid `as const` Omission** | Inlining template strings into functions without `as const` | Add `as const` to template literal values passed to type-level parsers | Prevents TypeScript from widening literal types to general `string`. |
-| 9 | **Index Signatures in Paths** | Generating dot paths on objects with `[x: string]: any` | Filter keys with `string extends K ? never : K` | Broad index signatures cause path generators to explode into infinite strings. |
-| 10 | **Explicit Class Properties** | Using `constructor(private pattern: string)` in TS modules | Declare properties explicitly on class bodies | Guarantees compatibility with Node.js `--experimental-strip-types` and modern tooling. |
-| 11 | **Handling Whitespace** | Matching only spaces `" "` in trim utilities | Include all whitespace characters: `" " \| "\t" \| "\n" \| "\r"` | Ensures robust parsing across multi-line template strings. |
-| 12 | **Replace Edge Cases** | Omitting the empty string check `From extends ""` | Guard `From extends "" ? S : ...` | Matching empty strings can cause infinite recursion or premature termination. |
-| 13 | **Boolean Parsing** | Matching `S extends "true" \| "false"` manually | Use `infer B extends boolean` (TS 4.8+) | Natively evaluates booleans into strict boolean literals. |
-| 14 | **SemVer Build Metadata** | Ignoring build metadata `+build` in SemVer regexes | Parse both `-prerelease` and `+build` suffixes | Ensures spec compliance with Semantic Versioning 2.0.0. |
-| 15 | **Case Conversion Idempotence** | Assuming `CamelToSnake<SnakeToCamel<S>> === S` without normalization | Ensure identifiers follow standard casing before round-trip transforms | Irregular uppercase sequences (`HTMLParser`) require explicit acronym boundary handling. |
-| 16 | **Avoid Redundant Interpolation** | Writing `${string}` when `string` is already expected | Use `string` directly unless constrained by prefixes or suffixes | Keeps compiler type representation clean and fast. |
-| 17 | **Format Specifiers Validation** | Accepting arbitrary format strings in `printf` wrappers | Validate format codes against a strict union (`%s` \| `%d` \| `%j`) | Prevents unhandled runtime formatting placeholders. |
-| 18 | **Avoid Intermediate Massive Tuples** | Creating 10,000-element tuples just to measure character counts | Decompose strings hierarchically or cap length checks | Excessive tuple instantiations exhaust compiler memory. |
-| 19 | **Distributive Template Conditionals** | Invoking template types over naked unions without distribution awareness | Distribute explicitly with `T extends any ? MyTemplate<T> : never` | Guarantees consistent union evaluation across all branches. |
-| 20 | **Named Export of DSL Types** | Keeping complex template parsers buried inside function signatures | Export top-level type aliases for client SDK consumption | Improves IDE hover tooltips, autocomplete responsiveness, and `.d.ts` generation. |
-
----
-
-## 7. Real-World Case Study: Enterprise REST & GraphQL SDK with Zero-Runtime Route Synthesis
-
-### Problem Context
-In enterprise microservice architectures, API client SDKs are notoriously vulnerable to drift. Developers hardcode URL paths, mistype URL path parameters, and guess query parameters. When backend routes change from `/api/v1/organizations/:orgId/billing` to `/api/v2/orgs/:orgId/billing-accounts`, runtime requests fail in production.
-
-### Architectural Solution
-Using TypeScript Template Literal Types, we synthesize a **Zero-Runtime-Cost API SDK**:
-1. **Contract Registry**: Routes and HTTP methods are defined as literal templates.
-2. **Compile-Time Param Extraction**: The SDK automatically demands the exact path parameters declared in the route string.
-3. **Query Param Validation**: Query strings are validated against defined DTO interfaces.
-4. **Zero Overhead**: The type system enforces complete correctness at build time; the runtime client compiles down to a lightweight 1 KB fetch wrapper.
-
-```typescript
-// 1. API Route Contract Definition
-export interface ApiContracts {
-  "GET /api/v1/tenants/:tenantId/users": {
-    query: { page?: number; limit?: number; search?: string };
-    response: { users: { id: string; name: string }[]; total: number };
-  };
-  "GET /api/v1/tenants/:tenantId/users/:userId": {
-    query: Record<string, never>;
-    response: { id: string; name: string; email: string };
-  };
-  "POST /api/v1/tenants/:tenantId/users": {
-    query: Record<string, never>;
-    body: { name: string; email: string; role: "admin" | "member" };
-    response: { id: string; status: "created" };
-  };
-}
-
-// 2. Type-Level Route Deconstruction
-type ExtractPathFromContract<C extends string> =
-  C extends `${string} ${infer Path}` ? Path : never;
-
-type ExtractMethodFromContract<C extends string> =
-  C extends `${infer Method} ${string}` ? Method : never;
-
-// 3. Strongly Typed Client Engine
-export class EnterpriseApiClient {
-  private baseUrl: string;
-
-  constructor(baseUrl: string) {
-    this.baseUrl = baseUrl.replace(/\/$/, "");
-  }
-
-  public async request<Route extends keyof ApiContracts & string>(
-    route: Route,
-    options: {
-      params: ExtractRouteParams<ExtractPathFromContract<Route>>;
-      query?: ApiContracts[Route] extends { query: infer Q } ? Q : never;
-      body?: ApiContracts[Route] extends { body: infer B } ? B : never;
-    }
-  ): Promise<ApiContracts[Route]["response"]> {
-    const [method, pathTemplate] = route.split(" ");
-    let finalPath = pathTemplate;
-
-    // Substitute URL parameters
-    for (const [key, val] of Object.entries(options.params)) {
-      finalPath = finalPath.replace(`:${key}`, encodeURIComponent(String(val)));
-    }
-
-    const url = new URL(`${this.baseUrl}${finalPath}`);
-
-    // Attach Query Params
-    if (options.query) {
-      for (const [qKey, qVal] of Object.entries(options.query as Record<string, any>)) {
-        if (qVal !== undefined) {
-          url.searchParams.append(qKey, String(qVal));
-        }
-      }
-    }
-
-    // In production, execute native fetch:
-    // return (await fetch(url.toString(), { method, body: JSON.stringify(options.body) })).json();
-    return { mockResponse: true } as any;
-  }
-}
-```
-
----
-
-## 8. Practice Drills (75 Drills across 5 Progression Tiers)
-
-### Tier 1: Syntax & Built-in Intrinsics (Drills 1–15)
-1. Write a template literal type that combines `"admin"` and `"user"` with `"_read"` and `"_write"`.
-2. Use `Uppercase<S>` to convert `"pending_review"` to `"PENDING_REVIEW"`.
-3. Use `Lowercase<S>` to convert `"SERVER_ERROR"` to `"server_error"`.
-4. Use `Capitalize<S>` to convert `"userService"` to `"UserService"`.
-5. Use `Uncapitalize<S>` to convert `"OrderModel"` to `"orderModel"`.
-6. Demonstrate that string intrinsics distribute over unions of 5 strings.
-7. Construct a `ColorHex` type matching `#${string}`.
-8. Construct an `AbsoluteUrl` type requiring `"http://"` or `"https://"`.
-9. Write a template type that validates ports between standard web services (`${Protocol}:${Port}`).
-10. Verify the behavior of `Capitalize<"">` on an empty string.
-11. Test `Capitalize<"123abc">` (starting with digits).
-12. Construct a `Greeting<Name>` type that yields `"Hello, ${Name}!"`.
-13. Create an `EventName<Domain, Action>` type combining two string generic parameters.
-14. Inspect what happens when passing `any` to a template literal type.
-15. Inspect what happens when passing `never` to a template literal type.
-
-### Tier 2: Pattern Matching & Parsing with `infer` (Drills 16–30)
-16. Implement `StartsWith<S, Prefix>` returning `true` or `false`.
-17. Implement `EndsWith<S, Suffix>` returning `true` or `false`.
-18. Implement `Includes<S, Substring>` returning `true` or `false`.
-19. Implement `FirstChar<S>` extracting only the first character.
-20. Implement `LastChar<S>` extracting only the final character using recursion.
-21. Implement `DropFirstChar<S>` returning all characters except the first.
-22. Implement `DropLastChar<S>` returning all characters except the last.
-23. Implement `Split<S, Delimiter>` returning a tuple of string chunks.
-24. Implement `Join<Tuple, Delimiter>` joining a tuple of strings.
-25. Implement `TrimStart<S>` removing leading whitespace.
-26. Implement `TrimEnd<S>` removing trailing whitespace.
-27. Implement `Trim<S>` removing both leading and trailing whitespace.
-28. Implement `Replace<S, From, To>` for single replacements.
-29. Implement `ReplaceAll<S, From, To>` for recursive global replacements.
-30. Implement `Repeat<S, N>` repeating string `S` $N$ times using a tuple accumulator.
-
-### Tier 3: Case Conversion & String Transformers (Drills 31–45)
-31. Implement `SnakeToCamel<S>` (`"user_profile_id"` -> `"userProfileId"`).
-32. Implement `CamelToSnake<S>` (`"userProfileId"` -> `"user_profile_id"`).
-33. Implement `KebabToCamel<S>` (`"background-color"` -> `"backgroundColor"`).
-34. Implement `CamelToKebab<S>` (`"backgroundColor"` -> `"background-color"`).
-35. Implement `PascalToCamel<S>` (`"OrderService"` -> `"orderService"`).
-36. Implement `CamelToPascal<S>` (`"orderService"` -> `"OrderService"`).
-37. Implement `ScreamingSnakeToCamel<S>` (`"ORDER_STATUS_PENDING"` -> `"orderStatusPending"`).
-38. Implement `CamelToScreamingSnake<S>` (`"orderStatusPending"` -> `"ORDER_STATUS_PENDING"`).
-39. Write a mapped type `CamelCaseKeys<T>` converting all object keys to camelCase.
-40. Write a mapped type `SnakeCaseKeys<T>` converting all object keys to snake_case.
-41. Write a mapped type `UppercaseKeys<T>` converting all object keys to uppercase.
-42. Implement a type-safe string reversal utility `Reverse<S>`.
-43. Implement `IsPalindrome<S>` checking if a string is symmetric.
-44. Write a utility that extracts all capital letters from a camelCase identifier.
-45. Implement `PadStart<S, Length, Char>` at the type level.
-
-### Tier 4: Compile-Time Grammars & Domain DSLs (Drills 46–60)
-46. Implement `ExtractRouteParams<Path>` extracting `:param` tokens from URL paths.
-47. Implement `ExtractBraceParams<Path>` extracting `{param}` tokens from OpenAPI paths.
-48. Implement `ParseQueryString<Q>` parsing `?key=val&key2=val2` into an object type.
-49. Implement a compile-time SemVer validator (`${Major}.${Minor}.${Patch}`).
-50. Extend the SemVer validator to support pre-release tags (`-alpha.1`).
-51. Implement a compile-time IPv4 validator (`${Octet}.${Octet}.${Octet}.${Octet}`).
-52. Implement a compile-time MAC Address validator.
-53. Implement a compile-time 6-digit Hex Color validator (`#RRGGBB`).
-54. Implement a compile-time CSS unit validator (`${number}${"px"|"rem"|"em"|"%"}`).
-55. Implement a compile-time CSS `calc()` expression validator.
-56. Implement `ParseMarkdownLink<S>` extracting text and URL from `[text](url)`.
-57. Implement `ParseCliFlags<S>` extracting `--key=value` pairs into an object.
-58. Implement `ParseEnvVar<S>` extracting variable names from `"${VAR_NAME}"`.
-59. Implement `ExtractFormatArgs<S>` for `printf`-style strings (`%s`, `%d`, `%j`).
-60. Implement `SafeObjectPaths<T>` generating a union of valid dot-paths with recursion limits.
-
-### Tier 5: Enterprise Framework Architecture & Synthesis (Drills 61–75)
-61. Build an Express/Fastify-style router that rejects handler registrations if URL params do not match.
-62. Synthesize an API Client SDK from a union of HTTP endpoint definitions.
-63. Build an i18n translation engine that enforces all required placeholder arguments.
-64. Construct a type-safe in-memory SQL query engine parsing column projections.
-65. Build a Tailwind-style CSS utility compiler and deduplicator.
-66. Construct a type-safe event-bus with wildcard and namespaced channels (`"auth:*"`).
-67. Build a Redis hierarchical key generator with compile-time tenant scoping.
-68. Design a Kafka topic router validating region, environment, and domain names.
-69. Create a JSON Pointer resolver (RFC 6901) navigating nested structures via `/a/b/c`.
-70. Build a type-safe URL query builder ensuring no missing required search parameters.
-71. Construct a microservice RPC client validating methods and parameters from contract strings.
-72. Implement tail-call optimized string length measurement handling 500+ character strings.
-73. Construct a type-safe GraphQL query selection set parser.
-74. Build a state-machine transition validator ensuring events match `${FromState}_TO_${ToState}`.
-75. Design a complete Zero-Overhead HTTP SDK client verifying query, params, and body at build time.
-
-
----
-
