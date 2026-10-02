@@ -1,2286 +1,2697 @@
-# Module TS-03: Conditional Types, Inference (`infer`) & Recursion
+# Module TS-03: Conditional Types, Inference & Recursion
 
-> **Guiding Invariant**: Complete mastery requires zero gaps. In this module, we dissect TypeScript's type-level computing engine: Distributive Conditional Types, distribution suppression, pattern matching with `infer`, Covariant vs Contravariant inference positions (`UnionToIntersection`), Recursive Conditional Types, and Tail-Call Recursion Optimization (TCO) in the TypeScript compiler.
+Welcome to TypeScript Conditional Types, Inference, and Recursion. This module teaches how to write type-level logic that makes decisions, extracts hidden types, and computes complex type transformations at compile time.
 
 ---
 
-## 🏛️ Section 01: The Genesis of Conditional Types: Turing-Completeness in Type Space
+# Topic 1: What Are Conditional Types? (`T extends U ? X : Y`)
 
-Before TypeScript 2.8, types could be composed using unions (`|`), intersections (`&`), and mapped types, but they lacked **branching logic**. Developers could not ask questions like:
-- "If type $T$ is a Promise, extract its resolved value; otherwise, leave it unchanged."
-- "If type $T$ is an array, what is its element type?"
-- "Filter out all `null` and `undefined` types from a union."
+### 1. What is it?
+A conditional type is a type-level if-else statement. It chooses one of two possible types based on a condition expressed as a subtyping check.
 
-Anders Hejlsberg introduced **Conditional Types** in TypeScript 2.8, modeled after the JavaScript ternary operator:
+Its syntax looks like JavaScript's ternary operator:
 ```typescript
-type Conditional<T, U, X, Y> = T extends U ? X : Y;
+T extends U ? X : Y
 ```
-This single language feature elevated TypeScript's type system from a static constraint checker into a **Turing-complete, functional programming language** executed entirely at compile time.
+If `T` is assignable to `U`, the type evaluates to `X`. Otherwise, it evaluates to `Y`.
 
+### 2. Why does it exist?
+In JavaScript, functions often return different shapes of data depending on the types of their inputs.
+
+For example, a function might return a `string` if passed a string, or a `number` if passed a number. Without conditional types, you would either have to write complex function overloads or fall back to unions that force the caller to perform manual type checks. Conditional types allow the return type to dynamically match the input type.
+
+### 3. Basic example
+
+```typescript
+type IsString<T> = T extends string ? true : false;
+
+type A = IsString<"hello">; // true
+type B = IsString<42>;       // false
+type C = IsString<boolean>;  // false
 ```
-                  [ Type Expression: T extends U ? X : Y ]
-                                     |
-                       Is Set(T) ⊆ Set(U)?
-                                    / \
-                              YES  /   \  NO
-                                  /     \
-                         [ Resolve X ]   [ Resolve Y ]
+
+**Line-by-line explanation:**
+- `type IsString<T> = T extends string ? true : false;`: Declares a generic conditional type. It checks if the type parameter `T` is a subtype of `string`. If yes, it resolves to literal type `true`. If no, it resolves to literal type `false`.
+- `type A = IsString<"hello">;`: `"hello"` is a string literal, so `"hello" extends string` is true. `A` becomes `true`.
+- `type B = IsString<42>;`: `42` is a number, not a string. `B` becomes `false`.
+- `type C = IsString<boolean>;`: `boolean` is not a string. `C` becomes `false`.
+
+---
+
+### 4. How it works inside TypeScript
+When TypeScript encounters `T extends U ? X : Y`:
+
+1. **Subtyping Check**: The compiler checks if `Set(T) ⊆ Set(U)`. That is, can every possible value in `T` be assigned to `U`?
+2. **Branch Selection**:
+   - If `T` satisfies `U`, the compiler discards branch `Y` and resolves branch `X`.
+   - If `T` does not satisfy `U`, the compiler discards branch `X` and resolves branch `Y`.
+3. **Type Simplification**: The resulting type replaces the conditional expression across the entire program.
+
+---
+
+### 5. Think first
+
+What is the resulting type of `Result` in the code below? Decide first.
+
+```typescript
+type CheckNumber<T> = T extends number ? "is-number" : "not-number";
+
+type Result = CheckNumber<100 | 200>;
 ```
 
 ---
 
-## 📐 Section 02: Formal Semantics of `T extends U ? X : Y`
+**Answer and Reason:**
 
-1. **Non-Deferred Evaluation**: If $T$ and $U$ are concrete types (e.g. `string extends string`), the compiler evaluates the conditional immediately:
-   ```typescript
-   type A = string extends string ? true : false; // true
-   type B = number extends string ? true : false; // false
-   ```
-2. **Deferred Evaluation**: If $T$ or $U$ contains an uninstantiated generic type parameter, the compiler defers evaluation until the generic parameter is bound at a call-site.
+The resulting type is:
+
+```typescript
+"is-number"
+```
+
+**Reason**: `100 | 200` is a union of number literals. Every member of this union is a number. Therefore, `100 | 200 extends number` evaluates to true, resolving to `"is-number"`.
 
 ---
 
-## ⚡ Section 03: Distributive Conditional Types & Naked Type Parameters
+### 6. Try it yourself
+Create a conditional type `IsArray<T>` that checks if `T extends unknown[]`. If yes, resolve to `"array"`. If no, resolve to `"other"`. Test it with `string[]` and `number`.
 
-### 3.1 What is a "Naked" Type Parameter?
-A type parameter $T$ is considered **naked** if it appears alone on the left side of the `extends` keyword without being wrapped in another type constructor (such as a tuple `[T]`, array `T[]`, or promise `Promise<T>`).
+---
 
-### 3.2 The Distribution Law over Unions
-When a naked type parameter is instantiated with a union type $A \mid B \mid C$, the conditional type automatically **distributes** over each member of the union:
-$$(A \mid B \mid C) \text{ extends } U \; ? \; X \; : \; Y \iff (A \text{ extends } U ? X : Y) \mid (B \text{ extends } U ? X : Y) \mid (C \text{ extends } U ? X : Y)$$
+### 7. More examples
+
+#### Example A: Conditional Return Types in Functions (Easy)
+
+```typescript
+function processId<T extends string | number>(
+  id: T
+): T extends string ? string : number {
+  return (typeof id === "string" ? id.toUpperCase() : id * 2) as any;
+}
+
+const str = processId("usr_100"); // Inferred type: string
+const num = processId(50);        // Inferred type: number
+```
+
+**Line-by-line explanation:**
+- Calling `processId("usr_100")` infers `T` as `"usr_100"`. Since `"usr_100" extends string` is true, the return type is automatically `string`.
+- Calling `processId(50)` infers `T` as `number`. The return type is automatically `number`.
+
+#### Example B: Checking for Functions (Medium)
+
+```typescript
+type IsFunction<T> = T extends (...args: any[]) => any ? true : false;
+
+type Test1 = IsFunction<() => void>; // true
+type Test2 = IsFunction<{ name: string }>; // false
+```
+
+**Line-by-line explanation:**
+- `(...args: any[]) => any` represents any callable function signature.
+
+---
+
+### 8. Common mistakes
+
+#### Mistake 1: Expecting conditional types to run at runtime
+
+**Wrong code:**
+```typescript
+function check(val: unknown) {
+  // if (val extends string) { ... } // Syntax Error!
+}
+```
+
+**Why it happens:**
+`extends` in a conditional type exists purely in type space. In runtime JavaScript code, you must use standard operators like `typeof val === "string"`.
+
+---
+
+### 9. Rules to remember
+1. Syntax: `T extends U ? X : Y`.
+2. Evaluates to `X` if `T` is assignable to `U`; otherwise evaluates to `Y`.
+3. Conditional types operate entirely during compilation and are erased from emitted JavaScript.
+
+---
+
+### 10. Exercises
+
+#### Question 1 (Predict the compile result)
+What is the resulting type of `Output`?
+```typescript
+type Check<T> = T extends boolean ? "bool" : "other";
+type Output = Check<true>;
+```
+
+#### Question 2 (Find and fix the bug)
+The conditional type below is missing its false branch. Fix the syntax:
+```typescript
+type IsObject<T> = T extends object ? true;
+```
+
+#### Question 3 (Write code from scratch)
+Write a conditional type `TypeName<T>` that checks:
+- If `T extends string`, return `"string"`
+- Else if `T extends number`, return `"number"`
+- Else if `T extends boolean`, return `"boolean"`
+- Else return `"object"`
+
+#### Question 4 (Explain in your own words)
+How do conditional types help create functions that return different types depending on their arguments?
+
+---
+
+### Solutions
+
+#### Solution to Question 1
+**Hint 1**: Does literal `true` extend `boolean`?
+
+**Answer**:
+The resulting type is `"bool"`.
+
+#### Solution to Question 2
+**Hint 1**: Add `: false` to complete the ternary syntax.
+
+**Answer**:
+```typescript
+type IsObject<T> = T extends object ? true : false;
+```
+
+#### Solution to Question 3
+**Hint 1**: Chain ternary checks: `T extends string ? "string" : T extends number ? ...`.
+
+**Answer**:
+```typescript
+type TypeName<T> =
+  T extends string ? "string" :
+  T extends number ? "number" :
+  T extends boolean ? "boolean" :
+  "object";
+```
+
+#### Solution to Question 4
+**Hint 1**: Think about how the return type annotation can inspect parameter `T`.
+
+**Answer**:
+By using the parameter type `T` in a conditional return type (`T extends string ? string : number`), the compiler dynamically resolves the exact return type based on what the caller passed into the function, without needing manual type assertions at call sites.
+
+---
+
+### 11. Recall
+
+1. What operator is conditional type syntax modeled after?
+2. When does branch `X` in `T extends U ? X : Y` get chosen?
+3. Do conditional types exist at runtime?
+
+**If you remember only one thing:**
+`T extends U ? X : Y` lets you make compile-time decisions based on whether type `T` fits into type `U`.
+
+---
+
+# Topic 2: Immediate vs Deferred Evaluation
+
+### 1. What is it?
+When TypeScript processes a conditional type, it evaluates it in one of two ways:
+- **Immediate Evaluation**: If the types are concrete (like `string` or `number`), TypeScript solves the conditional immediately.
+- **Deferred Evaluation**: If the type depends on an unresolved generic parameter `T`, TypeScript delays (defers) solving the condition until the generic function or type is actually called with a concrete type.
+
+### 2. Why does it exist?
+Inside a generic function body, the compiler does not yet know what concrete type the caller will provide.
+
+If TypeScript tried to guess immediately, it would make assumptions that could be wrong. By deferring evaluation, TypeScript ensures that type decisions are only finalized when the exact concrete type is known.
+
+### 3. Basic example
+
+```typescript
+// 1. Immediate Evaluation:
+type ConcreteResult = string extends number ? true : false;
+// Evaluated immediately by compiler as: false
+
+// 2. Deferred Evaluation:
+function processValue<T>(val: T): T extends string ? string[] : number[] {
+  // Inside this function, 'T' is unresolved.
+  // The return type is deferred!
+  return null as any;
+}
+
+// Solved as soon as a concrete type is passed:
+const res1 = processValue("hello"); // Evaluates to string[]!
+const res2 = processValue(42);      // Evaluates to number[]!
+```
+
+**Line-by-line explanation:**
+- `type ConcreteResult`: The types `string` and `number` are known immediately. The compiler evaluates the ternary to `false` during compilation.
+- `function processValue<T>`: Inside the function body, `T` is unknown. The compiler leaves the conditional type in an unresolved (deferred) state.
+- `const res1 = processValue("hello")`: When called with `"hello"`, `T` becomes `"hello"`. The compiler immediately resolves `"hello" extends string ? string[] : number[]` to `string[]`.
+
+---
+
+### 4. How it works inside TypeScript
+1. **Concrete Types**: When all operands in `T extends U ? X : Y` are known literals or primitives, the compiler resolves the type to `X` or `Y` right away.
+2. **Generic Type Variables**: If `T` is a generic placeholder, the compiler creates a deferred conditional type node in its abstract syntax tree.
+3. **Call-Site Specialization**: When the generic is instantiated with a real type, the deferred node is replaced with the final resolved type.
+
+---
+
+### 5. Think first
+
+What is the type of `result` below? Decide first.
+
+```typescript
+type Check<T> = T extends string ? true : false;
+type Immediate = Check<"test">;
+```
+
+---
+
+**Answer and Reason:**
+
+The type of `Immediate` is:
+
+```typescript
+true
+```
+
+**Reason**: `"test"` is a concrete literal string. Because no unresolved generic variables remain, TypeScript immediately resolves `"test" extends string` to `true`.
+
+---
+
+### 6. Try it yourself
+Write a generic type `Unpack<T> = T extends Array<infer Item> ? Item : T`. Test it with a concrete type `number[]`. Notice that the result immediately resolves to `number`.
+
+---
+
+### 7. More examples
+
+#### Example A: Deferred Return Type Inside Function Bodies (Medium)
+
+```typescript
+function choose<T extends boolean>(flag: T): T extends true ? string : number {
+  if (flag) {
+    // TypeScript cannot prove that "active" matches the deferred conditional!
+    // return "active"; // Error without assertion
+    return "active" as any;
+  }
+  return 0 as any;
+}
+```
+
+**Line-by-line explanation:**
+- Inside `choose`, `T` is deferred. Because `T` is not yet bound to `true` or `false`, the compiler cannot verify that `"active"` matches the deferred return type. A type assertion is commonly required inside the implementation.
+
+---
+
+### 8. Common mistakes
+
+#### Mistake 1: Expecting the compiler to solve deferred types inside generic function bodies
+
+**Wrong code:**
+```typescript
+function test<T extends string | number>(x: T): T extends string ? string : number {
+  if (typeof x === "string") {
+    // return x; // Error: Type 'string' is not assignable to type 'T extends string ? string : number'.
+  }
+  return 0 as any;
+}
+```
+
+**Why it happens:**
+Narrowing `x` with `typeof` narrows the variable `x`, but it does NOT narrow the type parameter `T` itself. `T` remains deferred, so returning `x` directly fails without an assertion.
+
+---
+
+### 9. Rules to remember
+1. Concrete conditionals are evaluated immediately by the compiler.
+2. Conditionals containing generic placeholders are deferred until called.
+3. Deferred conditionals inside function bodies usually require a type assertion on the return value.
+
+---
+
+### 10. Exercises
+
+#### Question 1 (Predict the compile result)
+Is `type R = number extends string ? true : false` evaluated immediately or deferred?
+
+#### Question 2 (Find and fix the bug)
+Explain why `return x;` fails in the function below:
+```typescript
+function echo<T extends string>(x: T): T extends string ? T : never {
+  return x;
+}
+```
+
+#### Question 3 (Write code from scratch)
+Write a conditional type `IsBoolean<T> = T extends boolean ? "yes" : "no"`. Create two concrete type aliases that evaluate immediately: one for `true` and one for `"true"`.
+
+#### Question 4 (Explain in your own words)
+Why does TypeScript defer conditional types that contain generic type parameters?
+
+---
+
+### Solutions
+
+#### Solution to Question 1
+**Hint 1**: Are `number` and `string` concrete types?
+
+**Answer**:
+It is evaluated immediately to `false`.
+
+#### Solution to Question 2
+**Hint 1**: Is `T extends string ? T : never` deferred inside the body?
+
+**Answer**:
+Inside the generic function body, the return type is deferred. The compiler cannot verify that `x: T` matches the deferred conditional type without an explicit assertion like `return x as any;`.
+
+#### Solution to Question 3
+**Hint 1**: Pass `true` and `"true"`.
+
+**Answer**:
+```typescript
+type IsBoolean<T> = T extends boolean ? "yes" : "no";
+
+type R1 = IsBoolean<true>;   // "yes"
+type R2 = IsBoolean<"true">; // "no"
+```
+
+#### Solution to Question 4
+**Hint 1**: What happens if the function hasn't been called yet?
+
+**Answer**:
+Because the concrete type is not known until the caller invokes the function, the compiler cannot evaluate the condition ahead of time. Deferring evaluation ensures that the decision is calculated accurately for each specific call site.
+
+---
+
+### 11. Recall
+
+1. What is immediate evaluation?
+2. What causes a conditional type to be deferred?
+3. How do you return values from a function whose return type is a deferred conditional?
+
+**If you remember only one thing:**
+Conditionals are evaluated immediately when types are concrete, but deferred when generic parameters are unresolved.
+
+---
+
+# Topic 3: Distributive Conditional Types and Naked Type Parameters
+
+### 1. What is it?
+When a conditional type checks a **naked type parameter** (a bare type parameter `T` without brackets or wrapper types), and you pass a union type into it (`A | B | C`), TypeScript automatically **distributes** the check across each member of the union individually:
+```typescript
+(A | B) extends U ? X : Y
+// becomes:
+(A extends U ? X : Y) | (B extends U ? X : Y)
+```
+
+### 2. Why does it exist?
+In JavaScript, functions frequently operate on unions. For example, if you want a type that turns types into arrays, you want `ToArray<string | number>` to produce `string[] | number[]`, so each variant is cleanly wrapped.
+
+Distributive conditional types allow you to transform, filter, and inspect union members one by one automatically.
+
+### 3. Basic example
 
 ```typescript
 type ToArray<T> = T extends unknown ? T[] : never;
 
-// Instantiating with string | number:
-type Distributed = ToArray<string | number>;
-// Step 1: (string extends unknown ? string[] : never) | (number extends unknown ? number[] : never)
-// Step 2: string[] | number[] (NOT (string | number)[]!)
+// When passed a union:
+type Result = ToArray<string | number>;
+// Resolves to: string[] | number[]
 ```
 
-### 3.3 Algebraic Union Filtering: `Exclude`, `Extract`, and `NonNullable`
-The standard TypeScript library implements core utility types using distributive conditional types:
+**Line-by-line explanation:**
+- `type ToArray<T> = T extends unknown ? T[] : never;`: `T` is a naked type parameter (it stands alone before `extends`).
+- `ToArray<string | number>`: Because `string | number` is a union, TypeScript splits it:
+  1. `string extends unknown ? string[] : never` $\to$ `string[]`
+  2. `number extends unknown ? number[] : never` $\to$ `number[]`
+- Union of results: `string[] | number[]` (NOT `(string | number)[]`!).
+
+---
+
+### 4. How it works inside TypeScript
+1. **Naked Parameter Detection**: The compiler checks if `T` on the left of `extends` is a bare type parameter.
+2. **Union Expansion**: If the incoming type argument is a union $A \mid B \mid C$, the compiler expands the expression into:
+   $$(A \text{ extends } U ? X : Y) \mid (B \text{ extends } U ? X : Y) \mid (C \text{ extends } U ? X : Y)$$
+3. **Result Recombination**: The results from each branch are combined back into a single final union.
+
+---
+
+### 5. Think first
+
+What is the resulting type of `Result` in the code below? Decide first.
 
 ```typescript
-// 1. Exclude: If T is in U, eliminate it by returning never (empty set)
+type FilterString<T> = T extends string ? T : never;
+
+type Result = FilterString<string | number | boolean>;
+```
+
+---
+
+**Answer and Reason:**
+
+The resulting type is:
+
+```typescript
+string
+```
+
+**Reason**: The union distributes:
+1. `string extends string ? string : never` $\to$ `string`
+2. `number extends string ? number : never` $\to$ `never`
+3. `boolean extends string ? boolean : never` $\to$ `never`
+Recombining: `string | never | never`. Since `never` represents the empty set, it vanishes from unions, leaving only `string`.
+
+---
+
+### 6. Try it yourself
+Create a distributive conditional type `KeepNumbers<T> = T extends number ? T : never`. Test it with `"a" | 1 | "b" | 2 | true`. Verify that the result is `1 | 2`.
+
+---
+
+### 7. More examples
+
+#### Example A: Mapping a Union of Primitives (Easy)
+
+```typescript
+type WrapInObject<T> = T extends any ? { value: T } : never;
+
+type Wrapped = WrapInObject<"open" | "closed">;
+// Resolves to: { value: "open" } | { value: "closed" }
+```
+
+**Line-by-line explanation:**
+- Distributes over `"open"` and `"closed"`, producing a union of two distinct object types.
+
+---
+
+### 8. Common mistakes
+
+#### Mistake 1: Expecting distribution when `T` is wrapped in an array
+
+**Wrong assumption:**
+```typescript
+type Check<T> = T[] extends string[] ? true : false;
+type R = Check<string | number>;
+// Does NOT distribute because T is wrapped in T[], so it is not naked!
+// Evaluates to: false
+```
+
+**Why it happens:**
+Distribution only happens when `T` is a bare (naked) type parameter directly preceding `extends`.
+
+---
+
+### 9. Rules to remember
+1. Conditional types distribute over unions only when `T` is a naked type parameter.
+2. `(A | B) extends U ? X : Y` expands to `(A extends U ? ...) | (B extends U ? ...)`.
+3. Returning `never` in a branch removes that member from the resulting union.
+
+---
+
+### 10. Exercises
+
+#### Question 1 (Predict the compile result)
+What is the resulting type of `Result`?
+```typescript
+type IsPositive<T> = T extends "yes" ? true : false;
+type Result = IsPositive<"yes" | "no">;
+```
+
+#### Question 2 (Find and fix the bug)
+The type below is intended to distribute, but fails to distribute because `T` is wrapped. Fix it:
+```typescript
+type BoxEach<T> = [T] extends [unknown] ? { data: T } : never;
+```
+
+#### Question 3 (Write code from scratch)
+Write a distributive conditional type `FilterOutNull<T>` that filters out `null` from any union.
+
+#### Question 4 (Explain in your own words)
+Why does `never` vanish when returned from a distributive branch?
+
+---
+
+### Solutions
+
+#### Solution to Question 1
+**Hint 1**: Distribute over `"yes"` and `"no"`.
+
+**Answer**:
+`Result` is `true | false` (which simplifies to `boolean`).
+
+#### Solution to Question 2
+**Hint 1**: Remove the square brackets around `[T]` and `[unknown]`.
+
+**Answer**:
+```typescript
+type BoxEach<T> = T extends unknown ? { data: T } : never;
+```
+
+#### Solution to Question 3
+**Hint 1**: `T extends null ? never : T`.
+
+**Answer**:
+```typescript
+type FilterOutNull<T> = T extends null ? never : T;
+```
+
+#### Solution to Question 4
+**Hint 1**: What does `T | never` equal in set theory?
+
+**Answer**:
+`never` represents the empty set (zero values). In union types, adding nothing to a set leaves the set unchanged (`T | never = T`). Therefore, `never` automatically drops out of union types.
+
+---
+
+### 11. Recall
+
+1. What is a naked type parameter?
+2. What happens when a union type is passed to a naked conditional type?
+3. What happens to `never` members in a union?
+
+**If you remember only one thing:**
+Naked conditional types automatically distribute across union members, allowing you to filter and transform unions.
+
+---
+
+# Topic 4: Filtering Unions with Built-in Conditionals (`Exclude` and `Extract`)
+
+### 1. What is it?
+TypeScript includes two standard utility types for filtering unions:
+- `Exclude<T, U>`: Removes all union members from `T` that are assignable to `U`.
+- `Extract<T, U>`: Keeps only union members from `T` that are assignable to `U`.
+
+Both utilities are implemented in the standard library using distributive conditional types.
+
+### 2. Why does it exist?
+In real applications, you often have a broad union (such as all user roles or all possible event names) and need to derive a more specific subset.
+
+For example, if you have `type Role = "admin" | "editor" | "viewer"`, you might need a type for public roles (excluding `"admin"`). Instead of manually retyping the union, `Exclude` and `Extract` let you derive exact subsets cleanly.
+
+### 3. Basic example
+
+```typescript
+type Role = "admin" | "editor" | "viewer";
+
+// 1. Exclude: Remove "admin"
+type PublicRole = Exclude<Role, "admin">;
+// Inferred as: "editor" | "viewer"
+
+// 2. Extract: Keep only "admin" and "editor"
+type StaffRole = Extract<Role, "admin" | "editor">;
+// Inferred as: "admin" | "editor"
+```
+
+**Line-by-line explanation:**
+- `type PublicRole = Exclude<Role, "admin">;`: Distributes over `"admin"`, `"editor"`, and `"viewer"`. It removes `"admin"` and keeps the rest.
+- `type StaffRole = Extract<Role, "admin" | "editor">;`: Only keeps members that belong to `"admin" | "editor"`.
+
+---
+
+### 4. How it works inside TypeScript
+Here is the exact source code of `Exclude` and `Extract` from TypeScript's `lib.d.ts`:
+
+```typescript
+// Official TypeScript definitions:
+type Exclude<T, U> = T extends U ? never : T;
+type Extract<T, U> = T extends U ? T : never;
+```
+
+**Step-by-step trace of `Exclude<"a" | "b", "a">`:**
+1. `"a" extends "a" ? never : "a"` $\to$ `never`
+2. `"b" extends "a" ? never : "b"` $\to$ `"b"`
+3. Combine: `never | "b"` $\to$ `"b"`.
+
+---
+
+### 5. Think first
+
+What is the resulting type of `Result` below? Decide first.
+
+```typescript
+type Mixed = string | number | boolean;
+type Result = Exclude<Mixed, number | boolean>;
+```
+
+---
+
+**Answer and Reason:**
+
+The resulting type is:
+
+```typescript
+string
+```
+
+**Reason**: `Exclude` removes every member that is assignable to `number | boolean`. Both `number` and `boolean` are eliminated, leaving only `string`.
+
+---
+
+### 6. Try it yourself
+Define a union type `Status = "pending" | "approved" | "rejected" | "cancelled"`. Use `Exclude` to create `ActiveStatus` that excludes `"rejected"` and `"cancelled"`.
+
+---
+
+### 7. More examples
+
+#### Example A: Extracting Action Types (Medium)
+
+```typescript
+type Action =
+  | { type: "CLICK"; x: number; y: number }
+  | { type: "HOVER"; element: string }
+  | { type: "SCROLL"; offset: number };
+
+// Extract only the CLICK action:
+type ClickAction = Extract<Action, { type: "CLICK" }>;
+// Resolves to: { type: "CLICK"; x: number; y: number }
+```
+
+**Line-by-line explanation:**
+- `Extract` checks each object in the union. Only the object with `type: "CLICK"` matches `{ type: "CLICK" }`.
+
+---
+
+### 8. Common mistakes
+
+#### Mistake 1: Confusing `Exclude` and `Omit`
+
+**Wrong assumption:**
+Trying to use `Exclude` to remove a property from an object.
+```typescript
+type User = { id: string; name: string };
+// type NoName = Exclude<User, "name">; // Bug: Does not remove the property!
+```
+
+**Why it happens:**
+- `Exclude` filters **unions** (`"a" | "b"`).
+- `Omit` removes properties from **objects** (`{ a: 1, b: 2 }`).
+
+**Correct code:**
+```typescript
+type NoName = Omit<User, "name">; // { id: string }
+```
+
+---
+
+### 9. Rules to remember
+1. `Exclude<T, U>` removes matching members from a union: `T extends U ? never : T`.
+2. `Extract<T, U>` keeps matching members from a union: `T extends U ? T : never`.
+3. Use `Exclude` on unions; use `Omit` on object properties.
+
+---
+
+### 10. Exercises
+
+#### Question 1 (Predict the compile result)
+What is the resulting type of `Clean`?
+```typescript
+type Clean = Exclude<string | null | undefined, null | undefined>;
+```
+
+#### Question 2 (Find and fix the bug)
+The code below attempts to keep only string types from `Data`, but uses the wrong utility. Fix it:
+```typescript
+type Data = string | number | boolean;
+type StringsOnly = Exclude<Data, string>;
+```
+
+#### Question 3 (Write code from scratch)
+Write your own generic type `MyExclude<T, U>` from scratch without using TypeScript's built-in `Exclude`. Test it on `"red" | "green" | "blue"`.
+
+#### Question 4 (Explain in your own words)
+How does `Exclude` use `never` to remove unwanted types from a union?
+
+---
+
+### Solutions
+
+#### Solution to Question 1
+**Hint 1**: Remove `null` and `undefined`.
+
+**Answer**:
+The resulting type is `string`.
+
+#### Solution to Question 2
+**Hint 1**: Use `Extract` to keep matching types.
+
+**Answer**:
+```typescript
+type Data = string | number | boolean;
+type StringsOnly = Extract<Data, string>;
+```
+
+#### Solution to Question 3
+**Hint 1**: `T extends U ? never : T`.
+
+**Answer**:
+```typescript
 type MyExclude<T, U> = T extends U ? never : T;
+type Colors = MyExclude<"red" | "green" | "blue", "blue">; // "red" | "green"
+```
 
-// Distribution trace:
-type CleanRoles = MyExclude<"admin" | "editor" | "guest", "guest">;
-// ("admin" extends "guest" ? never : "admin") |
-// ("editor" extends "guest" ? never : "editor") |
-// ("guest" extends "guest" ? never : "guest")
-// => "admin" | "editor" | never
-// => "admin" | "editor" (never vanishes from unions!)
+#### Solution to Question 4
+**Hint 1**: What happens to `never` when combined in a union?
 
-// 2. Extract: Keep only members present in U
-type MyExtract<T, U> = T extends U ? T : never;
+**Answer**:
+When `Exclude` evaluates a matching member, it returns `never`. Because `never` represents an empty set containing no values, it automatically disappears when combined with the other union members.
 
-// 3. NonNullable: Filter out null and undefined
+---
+
+### 11. Recall
+
+1. What built-in utility type removes matching union members?
+2. What built-in utility type keeps matching union members?
+3. What is the difference between `Exclude` and `Omit`?
+
+**If you remember only one thing:**
+`Exclude` removes members from a union, while `Extract` keeps members in a union.
+
+---
+
+# Topic 5: Filtering Nullability with `NonNullable<T>`
+
+### 1. What is it?
+`NonNullable<T>` is a built-in utility type that constructs a type by removing `null` and `undefined` from `T`.
+
+### 2. Why does it exist?
+Variables, API payloads, and database fields frequently have types like `string | null | undefined`.
+
+When you validate that data exists (or write a function that only processes existing values), you need a type that represents the guaranteed non-nullish value. `NonNullable<T>` removes `null` and `undefined` in one step.
+
+### 3. Basic example
+
+```typescript
+type RawInput = string | number | null | undefined;
+
+type CleanInput = NonNullable<RawInput>;
+// Inferred as: string | number
+```
+
+**Line-by-line explanation:**
+- `type RawInput`: Holds a union of four types including `null` and `undefined`.
+- `type CleanInput = NonNullable<RawInput>;`: Filters out both `null` and `undefined`, leaving only `string | number`.
+
+---
+
+### 4. How it works inside TypeScript
+Here is the official definition of `NonNullable<T>` from `lib.d.ts`:
+
+```typescript
+type NonNullable<T> = T extends null | undefined ? never : T;
+```
+
+**Step-by-step trace:**
+1. Each member of the union is checked against `null | undefined`.
+2. If the member is `null` or `undefined`, it evaluates to `never`.
+3. If the member is anything else (such as `string`), it evaluates to `T`.
+4. The `never` members vanish, leaving only valid non-nullish types.
+
+---
+
+### 5. Think first
+
+What is the resulting type of `Result` below? Decide first.
+
+```typescript
+type MaybeUser = { id: string } | null;
+type Result = NonNullable<MaybeUser>;
+```
+
+---
+
+**Answer and Reason:**
+
+The resulting type is:
+
+```typescript
+{ id: string }
+```
+
+**Reason**: `null` matches `null | undefined` and is replaced by `never`. The object `{ id: string }` does not match `null | undefined` and is kept.
+
+---
+
+### 6. Try it yourself
+Create a type `UserProfile = { name: string | null; age: number | undefined }`. Use `NonNullable<UserProfile["name"]>` to extract the clean type of `name`.
+
+---
+
+### 7. More examples
+
+#### Example A: Clean Function Parameter (Easy)
+
+```typescript
+function saveName(name: NonNullable<string | null>) {
+  console.log(name.trim()); // Completely safe! Cannot be null.
+}
+
+saveName("Alex"); // Valid
+// saveName(null); // Compile Error!
+```
+
+---
+
+### 8. Common mistakes
+
+#### Mistake 1: Expecting `NonNullable` to deeply clean nested object properties
+
+**Wrong assumption:**
+```typescript
+type User = {
+  name: string | null;
+};
+type CleanUser = NonNullable<User>;
+// CleanUser.name is STILL string | null!
+```
+
+**Why it happens:**
+`NonNullable` only operates on the top-level type `User` itself (which is not null). It does not recurse into nested properties.
+
+---
+
+### 9. Rules to remember
+1. `NonNullable<T>` strips `null` and `undefined` from a union.
+2. Official definition: `T extends null | undefined ? never : T`.
+3. It only operates on the top-level union, not nested object properties.
+
+---
+
+### 10. Exercises
+
+#### Question 1 (Predict the compile result)
+What is the resulting type of `T1`?
+```typescript
+type T1 = NonNullable<number | undefined>;
+```
+
+#### Question 2 (Find and fix the bug)
+Write the definition of `MyNonNullable<T>` from scratch:
+```typescript
+type MyNonNullable<T> = T extends null ? never : T; // Missing undefined!
+```
+
+#### Question 3 (Write code from scratch)
+Given a type `Config = { timeout?: number }`. Extract the type of `timeout` and use `NonNullable` to get guaranteed `number`.
+
+#### Question 4 (Explain in your own words)
+Why does `NonNullable<{ name: string | null }>` not remove `null` from `name`?
+
+---
+
+### Solutions
+
+#### Solution to Question 1
+**Hint 1**: Remove `undefined`.
+
+**Answer**:
+The resulting type is `number`.
+
+#### Solution to Question 2
+**Hint 1**: Include `null | undefined` in the condition.
+
+**Answer**:
+```typescript
 type MyNonNullable<T> = T extends null | undefined ? never : T;
 ```
 
-### 3.4 Distribution Suppression with Square Brackets `[T]`
-To test whether an entire union as a whole satisfies a condition without splitting it into individual variants, wrap both sides in square brackets:
+#### Solution to Question 3
+**Hint 1**: Use `NonNullable<Config["timeout"]>`.
+
+**Answer**:
+```typescript
+type Config = { timeout?: number };
+type CleanTimeout = NonNullable<Config["timeout"]>; // number
+```
+
+#### Solution to Question 4
+**Hint 1**: What type is the object itself? Is the object null?
+
+**Answer**:
+The object itself is not `null` or `undefined` (it is an object). `NonNullable` only checks the top-level type passed to it; it does not inspect or transform the properties inside an object.
+
+---
+
+### 11. Recall
+
+1. What two types does `NonNullable` remove?
+2. What does `NonNullable<null>` evaluate to?
+3. Does `NonNullable` clean nested properties automatically?
+
+**If you remember only one thing:**
+`NonNullable<T>` removes `null` and `undefined` from top-level union types.
+
+---
+
+# Checkpoint Challenge: Topics 1 to 5
+
+### Challenge Scenario
+Build a type-safe event dispatcher and event payload extractor:
+
+1. Define a union of event objects:
+   ```typescript
+   type AppEvent =
+     | { type: "USER_LOGIN"; payload: { userId: string } }
+     | { type: "USER_LOGOUT"; payload: null }
+     | { type: "PAGE_VIEW"; payload: { url: string } };
+   ```
+2. Using `Extract`, create a type `LoginEvent` that extracts the `USER_LOGIN` event.
+3. Using `Exclude`, create a type `EventWithPayload` that excludes `USER_LOGOUT`.
+4. Write a generic conditional type `GetPayload<E extends AppEvent>` that extracts the `payload` property, and if `payload` is `null`, returns `never`.
+5. Test `GetPayload` with `AppEvent`.
+
+### Challenge Solution
 
 ```typescript
-// Distributed: tests each member individually
-type IsStringDist<T> = T extends string ? true : false;
-type R1 = IsStringDist<string | number>; // true | false => boolean
+type AppEvent =
+  | { type: "USER_LOGIN"; payload: { userId: string } }
+  | { type: "USER_LOGOUT"; payload: null }
+  | { type: "PAGE_VIEW"; payload: { url: string } };
 
-// Non-Distributed: tests the entire union as a single set
-type IsStringStrict<T> = [T] extends [string] ? true : false;
-type R2 = IsStringStrict<string | number>; // false! (The union is not a subset of string)
+// 2. Extract LoginEvent:
+type LoginEvent = Extract<AppEvent, { type: "USER_LOGIN" }>;
+
+// 3. Exclude USER_LOGOUT:
+type EventWithPayload = Exclude<AppEvent, { type: "USER_LOGOUT" }>;
+
+// 4. GetPayload conditional type:
+type GetPayload<E extends AppEvent> =
+  E["payload"] extends null ? never : E["payload"];
+
+// 5. Test GetPayload with AppEvent:
+type ExtractedPayloads = GetPayload<AppEvent>;
+// Resolves to: { userId: string } | { url: string }
 ```
 
 ---
 
-## 🕳️ Section 04: The `never` Distribution Trap
+# Topic 6: Preventing Distribution with Tuple Wrapping (`[T]`)
 
-A notorious edge case in TypeScript is testing whether a type is `never`:
+### 1. What is it?
+Sometimes you do NOT want a conditional type to distribute across a union. You want to check whether the union **as a whole** satisfies a condition.
 
+To prevent distribution, wrap both sides of the `extends` keyword in a 1-element tuple:
 ```typescript
-type IsNeverBuggy<T> = T extends never ? true : false;
-
-// What does this evaluate to?
-type Test = IsNeverBuggy<never>; // Evaluates to: never! (NOT true!)
+[T] extends [U] ? X : Y
 ```
 
-### Why does this happen?
-Because `never` represents the **empty set** $\emptyset$. When a distributive conditional type encounters a union, it distributes across all members of the union.
-Since `never` has **0 members**, the conditional distributes zero times! The entire expression evaluates to `never`.
+### 2. Why does it exist?
+Consider checking whether a type is strictly assignable to `string`.
 
-### The Solution: Distribution Suppression
-Wrapping $T$ in a 1-tuple `[T]` turns $T$ into a single-element set, suppressing distribution:
+If you test `string | number` with a naked parameter `T extends string ? true : false`:
+- `string` branch evaluates to `true`
+- `number` branch evaluates to `false`
+- The union of results is `true | false` (`boolean`)!
+That is wrong if you wanted to ask: "Is the whole type assignable to string?" (The answer should be `false`).
+Wrapping in tuples `[T] extends [string]` prevents distribution and tests the whole union at once.
 
+### 3. Basic example
+
+```typescript
+// 1. Distributive (naked T):
+type IsStringDist<T> = T extends string ? true : false;
+type R1 = IsStringDist<string | number>; // Evaluates to: boolean (true | false)
+
+// 2. Non-Distributive (tuple wrapped [T]):
+type IsStringStrict<T> = [T] extends [string] ? true : false;
+type R2 = IsStringStrict<string | number>; // Evaluates to: false!
+```
+
+**Line-by-line explanation:**
+- `[T] extends [string]`: Because `T` is wrapped inside `[T]`, it is no longer a naked type parameter.
+- The compiler compares the entire set `[string | number]` against `[string]`.
+- Since `string | number` is not a subset of `string`, the condition evaluates directly to `false`.
+
+---
+
+### 4. How it works inside TypeScript
+1. **Naked vs Wrapped**: Distribution only triggers when `T` stands completely alone before `extends`.
+2. **Tuple Protection**: Wrapping `[T]` turns the check into a standard structural comparison of a 1-element tuple.
+3. **Whole-Set Evaluation**: The entire union is evaluated as a single type without being split into separate branches.
+
+---
+
+### 5. Think first
+
+What is the resulting type of `Test` below? Decide first.
+
+```typescript
+type Check<T> = [T] extends [unknown] ? "yes" : "no";
+type Test = Check<string | number>;
+```
+
+---
+
+**Answer and Reason:**
+
+The resulting type is:
+
+```typescript
+"yes"
+```
+
+**Reason**: `[string | number]` is checked as a whole against `[unknown]`. Since any type fits into `unknown`, the entire check passes as a single result `"yes"`.
+
+---
+
+### 6. Try it yourself
+Create a type `IsExactUnion<T>` that uses `[T]` to verify if a type is assignable to `string | number`. Test it with `string | number` (should return true) and `string | boolean` (should return false).
+
+---
+
+### 7. More examples
+
+#### Example A: Detecting Tuples vs Arrays (Medium)
+
+```typescript
+type IsFixedTuple<T> = [T] extends [readonly [any, ...any[]]] ? true : false;
+```
+
+---
+
+### 8. Common mistakes
+
+#### Mistake 1: Forgetting to wrap both sides in brackets
+
+**Wrong code:**
+```typescript
+type Check<T> = [T] extends string ? true : false; // Always false!
+```
+
+**Why it happens:**
+`[T]` is a tuple. A tuple can never extend a primitive `string`. Both sides must be wrapped: `[T] extends [string]`.
+
+---
+
+### 9. Rules to remember
+1. `T extends U` distributes over unions.
+2. `[T] extends [U]` suppresses distribution and tests the union as a whole.
+3. Both sides must be wrapped in square brackets.
+
+---
+
+### 10. Exercises
+
+#### Question 1 (Predict the compile result)
+What is the resulting type of `R`?
+```typescript
+type Test<T> = [T] extends [number] ? true : false;
+type R = Test<number | string>;
+```
+
+#### Question 2 (Find and fix the bug)
+The type below is supposed to test if `T` as a whole is assignable to `object`, but it distributes. Fix it:
+```typescript
+type IsWholeObject<T> = T extends object ? true : false;
+```
+
+#### Question 3 (Write code from scratch)
+Write a non-distributive conditional type `IsAllStrings<T>` that returns `true` only if every member of `T` is a string, and `false` otherwise.
+
+#### Question 4 (Explain in your own words)
+Why does `[T] extends [U]` prevent distribution?
+
+---
+
+### Solutions
+
+#### Solution to Question 1
+**Hint 1**: Does the union `number | string` fit inside `number`?
+
+**Answer**:
+The resulting type is `false`.
+
+#### Solution to Question 2
+**Hint 1**: Wrap both sides in square brackets: `[T] extends [object]`.
+
+**Answer**:
+```typescript
+type IsWholeObject<T> = [T] extends [object] ? true : false;
+```
+
+#### Solution to Question 3
+**Hint 1**: Use `[T] extends [string] ? true : false`.
+
+**Answer**:
+```typescript
+type IsAllStrings<T> = [T] extends [string] ? true : false;
+```
+
+#### Solution to Question 4
+**Hint 1**: What is the definition of a naked type parameter?
+
+**Answer**:
+TypeScript only distributes conditional types when the type parameter `T` is naked (unwrapped). Wrapping `T` in a tuple `[T]` creates a compound type, so TypeScript treats it as a single unit and disables the distribution law.
+
+---
+
+### 11. Recall
+
+1. What syntax disables distributive conditional types?
+2. Why does `T extends string` return `boolean` when passed `string | number`?
+3. Must both sides of `extends` be wrapped in brackets?
+
+**If you remember only one thing:**
+Wrap both sides in square brackets `[T] extends [U]` to test a union as a whole without splitting it.
+
+---
+
+# Topic 7: The `never` Distribution Trap and How to Check for `never`
+
+### 1. What is it?
+When you pass `never` to a distributive conditional type, it does NOT evaluate either branch. It immediately returns `never`!
+
+To check if a type is `never`, you **must** use tuple wrapping:
 ```typescript
 type IsNever<T> = [T] extends [never] ? true : false;
+```
 
-type SafeTest1 = IsNever<never>;  // true!
-type SafeTest2 = IsNever<string>; // false!
+### 2. Why does it exist?
+Because `never` represents the empty set ($\emptyset$), distributing over `never` means distributing over zero elements.
+
+When you loop over a list with zero elements, the loop runs zero times. In the same way, distributing over `never` runs zero times and produces an empty union (`never`). If you want to check if a type is `never`, you must disable distribution using `[T]`.
+
+### 3. Basic example
+
+```typescript
+// 1. The Trap: Distributive check fails on never!
+type IsNeverBroken<T> = T extends never ? true : false;
+type R1 = IsNeverBroken<never>; // Evaluates to: never! (NOT true!)
+
+// 2. The Solution: Non-distributive tuple check
+type IsNever<T> = [T] extends [never] ? true : false;
+type R2 = IsNever<never>;  // Evaluates to: true!
+type R3 = IsNever<string>; // Evaluates to: false!
+```
+
+**Line-by-line explanation:**
+- `type IsNeverBroken<never>`: `never` is an empty union. Distributing over an empty union runs 0 times, returning `never`. The branch `true` is never reached.
+- `type IsNever<T> = [T] extends [never]`: Wrapping in `[T]` disables distribution.
+- `[never] extends [never]`: Compares the 1-element tuple `[never]` to `[never]`. The condition is true, returning `true`.
+
+---
+
+### 4. How it works inside TypeScript
+1. **Empty Set Principle**: `never` is the identity element of unions ($T \mid \text{never} = T$).
+2. **Zero Invocations**: Passing `never` to a naked conditional produces zero evaluations.
+3. **Tuple Escape**: A tuple containing `never` (`[never]`) is NOT empty; it is a 1-element tuple. This allows the comparison to run normally.
+
+---
+
+### 5. Think first
+
+What is the resulting type of `Output` below? Decide first.
+
+```typescript
+type Check<T> = T extends number ? "num" : "other";
+type Output = Check<never>;
 ```
 
 ---
 
-## 🔍 Section 05: The `infer` Keyword Formalism
+**Answer and Reason:**
 
-The `infer` keyword allows developers to introduce a new type variable inside the `extends` clause of a conditional type to **extract** or **pattern match** a sub-type.
+The resulting type is:
 
-### 5.1 Extracting Return Types and Arguments
 ```typescript
-// Extract return type:
-type ReturnTypeOf<T> = T extends (...args: any[]) => infer R ? R : never;
-
-function calculateScore(): number { return 100; }
-type Score = ReturnTypeOf<typeof calculateScore>; // number
-
-// Extract first parameter:
-type FirstParam<T> = T extends (first: infer P, ...rest: any[]) => any ? P : never;
-
-function login(email: string, pass: string): boolean { return true; }
-type UserEmail = FirstParam<typeof login>; // string
+never
 ```
 
-### 5.2 Extracting Nested Types from Promises and Arrays
-```typescript
-// Unwrapping Promise:
-type UnwrapPromise<T> = T extends Promise<infer U> ? U : T;
-type P = UnwrapPromise<Promise<{ data: string }>>; // { data: string }
-
-// Unwrapping Array element:
-type ArrayElement<T> = T extends (infer E)[] ? E : T;
-type E = ArrayElement<string[]>; // string
-```
-
+**Reason**: `Check` has a naked type parameter `T`. Passing `never` distributes over an empty set, resulting in `never` immediately.
 
 ---
 
-## 🌪️ Section 06: `infer` in Covariant vs Contravariant Positions & The `UnionToIntersection` Proof
-
-When the same type variable `infer R` appears in multiple candidates:
-1. **Multiple Covariant Positions**: TypeScript infers a **Union** of candidate types:
-   ```typescript
-   type CovariantUnion<T> = T extends { a: infer R; b: infer R } ? R : never;
-   type ResUnion = CovariantUnion<{ a: string; b: number }>; // string | number
-   ```
-2. **Multiple Contravariant Positions**: TypeScript infers an **Intersection** of candidate types:
-   ```typescript
-   type ContravariantIntersect<T> = T extends {
-     a: (x: infer R) => void;
-     b: (x: infer R) => void;
-   } ? R : never;
-   type ResIntersect = ContravariantIntersect<{
-     a: (x: { name: string }) => void;
-     b: (x: { age: number }) => void;
-   }>; // { name: string } & { age: number }
-   ```
-
-### 6.1 The Famous `UnionToIntersection<U>` Theorem
-How do you transform a union of types (`A | B`) into an intersection (`A & B`) at compile time?
-
-```typescript
-export type UnionToIntersection<U> = 
-  (U extends unknown ? (k: U) => void : never) extends 
-  (k: infer I) => void 
-    ? I 
-    : never;
-
-type InputUnion = { id: string } | { count: number };
-type OutputIntersection = UnionToIntersection<InputUnion>;
-// Inferred Type: { id: string } & { count: number }
-```
-
-#### Step-by-Step Proof of Mechanics:
-1. `(U extends unknown ? (k: U) => void : never)`:
-   Because $U$ is naked, it **distributes** over the union:
-   $$\{ id: string \} \mid \{ count: number \}$$
-   Becomes a union of functions accepting each variant:
-   $$((k: \{ id: string \}) \to \text{void}) \mid ((k: \{ count: number \}) \to \text{void})$$
-2. `... extends (k: infer I) => void ? I : never`:
-   The compiler attempts to match the union of functions against a single function `(k: infer I) => void`.
-3. Because parameter positions are **contravariant**, to accept *both* functions in the union, parameter $I$ must be assignable to both candidates simultaneously.
-4. The greatest lower bound that satisfies both is the **Set Intersection**:
-   $$I = \{ id: string \} \cap \{ count: number \}$$
+### 6. Try it yourself
+Write the `IsNever<T>` type utility using `[T] extends [never] ? true : false`. Test it with `never`, `void`, and `undefined`.
 
 ---
 
-## 🗂️ Section 07: Tuple & Array Manipulation with `infer`
+### 7. More examples
 
-Using rest elements (`...infer Rest`) in tuple pattern matching unlocks complete functional list manipulation at compile time:
+#### Example A: Safe Fallback for `never` (Medium)
 
 ```typescript
-// 1. Head: Extract first element
-type Head<T extends readonly unknown[]> = 
-  T extends readonly [infer First, ...unknown[]] ? First : never;
+type ValueOrDefault<T, Default> = [T] extends [never] ? Default : T;
 
-// 2. Tail: Extract all elements except the first
-type Tail<T extends readonly unknown[]> = 
-  T extends readonly [unknown, ...infer Rest] ? Rest : [];
+type A = ValueOrDefault<string, "fallback">; // string
+type B = ValueOrDefault<never, "fallback">;  // "fallback"
+```
 
-// 3. Last: Extract final element
-type Last<T extends readonly unknown[]> = 
-  T extends readonly [...unknown[], infer Final] ? Final : never;
+**Line-by-line explanation:**
+- Safely detects `never` and substitutes a fallback type.
 
-// 4. Prepend & Append:
-type Prepend<T extends readonly unknown[], E> = [E, ...T];
-type Append<T extends readonly unknown[], E> = [...T, E];
+---
 
-// Demonstrations:
-type H = Head<["apple", "banana", "cherry"]>; // "apple"
-type T = Tail<["apple", "banana", "cherry"]>; // ["banana", "cherry"]
-type L = Last<["apple", "banana", "cherry"]>; // "cherry"
+### 8. Common mistakes
+
+#### Mistake 1: Trying to check `T extends never` without brackets
+
+**Wrong code:**
+```typescript
+type Test<T> = T extends never ? 1 : 2;
+type Res = Test<never>; // Evaluates to never, not 1!
 ```
 
 ---
 
-## 🔄 Section 08: Recursive Conditional Types & Tail-Call Recursion Optimization (TCO)
-
-### 8.1 The Recursion Depth Problem
-Prior to TypeScript 4.5, recursive conditional types were evaluated on a naive stack. Any recursion deeper than ~50 iterations resulted in a fatal compiler error:
-`Type instantiation is excessively deep and possibly infinite`.
-
-### 8.2 TypeScript 4.5+ Tail-Call Recursion Optimization
-In TypeScript 4.5, the compiler introduced **Tail-Call Elimination** for conditional types:
-- If a conditional type returns an immediate recursive call in its true or false branch without wrapping the recursive call in another type constructor, the compiler evaluates it iteratively.
-- TCO increases the allowable recursion depth from **50 to 1,000 steps**!
-
-### 8.3 The Accumulator Pattern in Type Space
-To make recursive types tail-call optimizable, pass an intermediate accumulator tuple `Acc`:
-
-```typescript
-// Non-TCO (Stack-depth limited to ~50):
-// type ReverseBad<T extends any[]> = T extends [infer Head, ...infer Tail] ? [...ReverseBad<Tail>, Head] : [];
-
-// TCO Optimizable (Accumulator Pattern, up to 1,000 depth!):
-type Reverse<T extends readonly unknown[], Acc extends readonly unknown[] = []> =
-  T extends readonly [infer Head, ...infer Tail]
-    ? Reverse<Tail, [Head, ...Acc]>
-    : Acc;
-
-type Reversed = Reverse<[1, 2, 3, 4, 5]>; // [5, 4, 3, 2, 1]
-```
+### 9. Rules to remember
+1. Naked conditional types return `never` when passed `never`.
+2. To check if `T` is `never`, always write: `[T] extends [never] ? true : false`.
 
 ---
 
-## 🔤 Section 09: Type-Level Recursive String Parsers
+### 10. Exercises
 
-By combining template literal pattern matching with `infer`, conditional types can parse strings at compile time:
-
+#### Question 1 (Predict the compile result)
+What is the resulting type of `R`?
 ```typescript
-// Split a string by a delimiter into a tuple of substrings:
-type Split<S extends string, Delimiter extends string> =
-  S extends `${infer Head}${Delimiter}${infer Tail}`
-    ? [Head, ...Split<Tail, Delimiter>]
-    : [S];
-
-type PathParts = Split<"users/profile/settings", "/">;
-// Inferred as: ["users", "profile", "settings"]
-
-// Trim whitespace from string:
-type Whitespace = " " | "\t" | "\n" | "\r";
-type TrimLeft<S extends string> = S extends `${Whitespace}${infer Rest}` ? TrimLeft<Rest> : S;
-type TrimRight<S extends string> = S extends `${infer Rest}${Whitespace}` ? TrimRight<Rest> : S;
-type Trim<S extends string> = TrimRight<TrimLeft<S>>;
-
-type Cleaned = Trim<"   hello world \n">; // "hello world"
+type Broken<T> = T extends any ? "yes" : "no";
+type R = Broken<never>;
 ```
+
+#### Question 2 (Find and fix the bug)
+Fix `CheckNever` so that it returns `true` for `never`:
+```typescript
+type CheckNever<T> = T extends never ? true : false;
+```
+
+#### Question 3 (Write code from scratch)
+Write a conditional type `EnsureNonEmpty<T, Fallback>` that returns `Fallback` if `T` is `never`, otherwise returns `T`.
+
+#### Question 4 (Explain in your own words)
+Why does distributing over `never` return `never` instead of evaluating the ternary branches?
 
 ---
 
-## 🧩 Section 10: Syntax Deconstruction Boxes
+### Solutions
 
-### Syntax Box 1: `infer` Constraint Suffix (`infer T extends U`)
-TypeScript 4.7 added the ability to constrain inferred types directly:
-```typescript
-type ParseIntString<S extends string> = 
-  S extends `${infer N extends number}` ? N : never;
+#### Solution to Question 1
+**Hint 1**: Does a naked conditional execute when given an empty set?
 
-type Parsed = ParseIntString<"42">; // Inferred as literal number 42, NOT string "42"!
-```
+**Answer**:
+The resulting type is `never`.
 
-### Syntax Box 2: `[T] extends [never]`
-Always use bracket notation when checking for `never`:
+#### Solution to Question 2
+**Hint 1**: Wrap both sides in square brackets: `[T] extends [never]`.
+
+**Answer**:
 ```typescript
 type CheckNever<T> = [T] extends [never] ? true : false;
 ```
-`;
-};
 
+#### Solution to Question 3
+**Hint 1**: Use `[T] extends [never] ? Fallback : T`.
+
+**Answer**:
+```typescript
+type EnsureNonEmpty<T, Fallback> = [T] extends [never] ? Fallback : T;
+```
+
+#### Solution to Question 4
+**Hint 1**: Think of a `for` loop over an empty list.
+
+**Answer**:
+In distributive conditional types, TypeScript treats the input as a union and runs the check for each member. Because `never` represents the empty set (a union with 0 members), the operation runs 0 times and produces an empty result (`never`).
 
 ---
 
-## 💼 Section 11: Comprehensive Senior Engineering Interview Q&As (Part A: Questions 1–45)
+### 11. Recall
 
-### Q1: What makes a type parameter "naked" in a conditional type, and why does nakedness trigger union distribution?
-**Answer:**
-A type parameter $T$ is **naked** when it appears directly by itself on the left side of the `extends` keyword without being wrapped in another type constructor (such as a tuple `[T]`, array `T[]`, or generic `Box<T>`).
-Naked type parameters distribute because the ECMAScript type design committee intended conditional types to act as a map operation over unions ($F(A \mid B) = F(A) \mid F(B)$), making utilities like `Exclude` and `Extract` naturally expressive.
+1. What happens when `never` is passed to a naked conditional type?
+2. How do you properly check if a type is `never`?
+3. Is `[never]` considered an empty union?
+
+**If you remember only one thing:**
+Always use `[T] extends [never]` to check for `never`.
+
+---
+
+# Topic 8: Type Inference in Conditional Types with `infer`
+
+### 1. What is it?
+The `infer` keyword allows you to declare a type variable inside the condition of a conditional type, and extract (infer) a component type from a larger structure.
+
+Think of `infer` as pattern matching for types:
+```typescript
+T extends Array<infer Item> ? Item : never
+```
+
+### 2. Why does it exist?
+Often you have a complex type (like a Promise, a function, an array, or an object) and you need to unwrap or extract an internal type.
+
+Before `infer`, extracting the return type of a function or the element type of an array was impossible without complex workarounds. The `infer` keyword lets you reach into any type structure and pull out what you need.
+
+### 3. Basic example
 
 ```typescript
-type Naked<T> = T extends string ? "str" : "other";
-type Wrapped<T> = [T] extends [string] ? "str" : "other";
+type Flatten<T> = T extends Array<infer Item> ? Item : T;
 
-type R1 = Naked<string | number>;   // "str" | "other" (Distributed)
-type R2 = Wrapped<string | number>; // "other" (Non-distributed: the union is not a subset of string)
+type NumberArray = number[];
+type ElementType = Flatten<NumberArray>; // Inferred as: number
+
+type NonArray = string;
+type SameType = Flatten<NonArray>; // Inferred as: string
+```
+
+**Line-by-line explanation:**
+- `type Flatten<T> = T extends Array<infer Item> ? Item : T;`:
+  - `T extends Array<infer Item>`: Checks if `T` is an array. If it is, the compiler introduces a temporary type variable `Item` and binds it to the element type of that array.
+  - `? Item`: In the true branch, we return the extracted `Item`.
+  - `: T`: If `T` is not an array, return `T` unchanged.
+- `Flatten<number[]>`: Matches `Array<infer Item>`. `Item` is bound to `number`. The type resolves to `number`.
+
+---
+
+### 4. How it works inside TypeScript
+1. **Pattern Matching**: The compiler compares `T` against the shape containing `infer VarName`.
+2. **Variable Binding**: If `T` matches the pattern, the compiler solves for `VarName` and binds it.
+3. **Branch Scope**: The inferred type variable `VarName` is only available in the **true** branch of that conditional type. It cannot be used in the false branch.
+
+---
+
+### 5. Think first
+
+What is the resulting type of `Extracted` in the code below? Decide first.
+
+```typescript
+type UnwrapPromise<T> = T extends Promise<infer Value> ? Value : T;
+
+type Extracted = UnwrapPromise<Promise<{ id: string }>>;
 ```
 
 ---
 
-### Q2: Why does `never extends never ? true : false` evaluate to `never` when passed through a generic type parameter?
-**Answer:**
-Because `never` is the empty union (a union with zero members).
-When passed to a generic type `type Check<T> = T extends never ? true : false;`, the compiler distributes over the union's members. Since there are zero members, zero evaluations occur, returning `never`.
-To fix this, wrap both sides in square brackets:
-`type IsNever<T> = [T] extends [never] ? true : false;`
+**Answer and Reason:**
+
+The resulting type is:
+
+```typescript
+{ id: string }
+```
+
+**Reason**: `Promise<{ id: string }>` matches `Promise<infer Value>`. TypeScript binds `Value` to `{ id: string }` and returns it.
 
 ---
 
-### Q3: How does the `infer` keyword work in TypeScript conditional types?
-**Answer:**
-The `infer` keyword introduces a temporary type variable within the `extends` clause of a conditional type. During type checking, the compiler matches the actual type against the expected pattern and binds the matching sub-type to the inferred variable, making it available in the true branch.
+### 6. Try it yourself
+Write a generic type `FirstElement<T>` that uses `infer` on a tuple `T extends [infer First, ...any[]]` to return the first element of a tuple, or `never` if the tuple is empty. Test it with `[string, number]`.
+
+---
+
+### 7. More examples
+
+#### Example A: Unwrapping a Box Object (Easy)
 
 ```typescript
-type UnpackPromise<T> = T extends Promise<infer Value> ? Value : T;
+type Box<T> = { value: T };
 
-type Data = UnpackPromise<Promise<string>>; // string
-type NonPromise = UnpackPromise<number>;    // number
+type Unbox<B> = B extends Box<infer Content> ? Content : never;
+
+type Content = Unbox<Box<boolean>>; // boolean
+```
+
+**Line-by-line explanation:**
+- Matches `{ value: infer Content }` and extracts `boolean`.
+
+---
+
+### 8. Common mistakes
+
+#### Mistake 1: Trying to use `infer` in the false branch
+
+**Wrong code:**
+```typescript
+type Bad<T> = T extends Array<infer Item> ? Item : Item; // Error!
+```
+
+**Why it happens:**
+If `T` does not match the array pattern, `Item` was never found. It cannot exist in the false branch.
+
+---
+
+### 9. Rules to remember
+1. `infer` declares a type variable to pattern-match inside `extends`.
+2. `infer` can only be used in the condition of a conditional type.
+3. The inferred variable is only in scope in the **true** branch.
+
+---
+
+### 10. Exercises
+
+#### Question 1 (Predict the compile result)
+What is the resulting type of `Result`?
+```typescript
+type GetType<T> = T extends { data: infer D } ? D : never;
+type Result = GetType<{ data: number[] }>;
+```
+
+#### Question 2 (Find and fix the bug)
+Fix the syntax error in the type alias below:
+```typescript
+type ExtractItem<T> = T extends infer Item[] ? Item : never;
+```
+
+#### Question 3 (Write code from scratch)
+Write a conditional type `GetSecond<T>` that extracts the second element from a 2-element tuple `[A, B]` using `infer`.
+
+#### Question 4 (Explain in your own words)
+Why can an inferred type variable only be used in the true branch of a conditional type?
+
+---
+
+### Solutions
+
+#### Solution to Question 1
+**Hint 1**: What is the type of the `data` property?
+
+**Answer**:
+The resulting type is `number[]`.
+
+#### Solution to Question 2
+**Hint 1**: Write `(infer Item)[]` or `Array<infer Item>`.
+
+**Answer**:
+```typescript
+type ExtractItem<T> = T extends (infer Item)[] ? Item : never;
+```
+
+#### Solution to Question 3
+**Hint 1**: Pattern match on `[any, infer Second]`.
+
+**Answer**:
+```typescript
+type GetSecond<T> = T extends [any, infer Second] ? Second : never;
+```
+
+#### Solution to Question 4
+**Hint 1**: What if the condition is false?
+
+**Answer**:
+If the condition evaluates to false, it means the input type did not match the expected pattern. In that case, the compiler could not find or extract the type, so the inferred variable has no value in the false branch.
+
+---
+
+### 11. Recall
+
+1. What keyword enables type pattern matching in conditional types?
+2. In which branch is the inferred type variable accessible?
+3. Can `infer` be used outside of a conditional type?
+
+**If you remember only one thing:**
+`infer` extracts nested types by pattern matching inside the `extends` clause of a conditional type.
+
+---
+
+# Topic 9: Extracting Return Types with `ReturnType<T>`
+
+### 1. What is it?
+`ReturnType<T>` is a built-in TypeScript utility type that extracts the return type of a function type `T`.
+
+### 2. Why does it exist?
+Often, a function's return type is complex and inferred by TypeScript rather than written manually (such as a database query or an action creator).
+
+If you need that return type elsewhere in your code (for example, to annotate a state variable or a component prop), you can extract it automatically using `ReturnType<typeof functionName>` without having to manually duplicate the interface.
+
+### 3. Basic example
+
+```typescript
+function createUser() {
+  return {
+    id: "usr_100",
+    name: "Morgan",
+    roles: ["admin", "editor"],
+    createdAt: Date.now(),
+  };
+}
+
+// Extract the return type:
+type User = ReturnType<typeof createUser>;
+// User is inferred as:
+// { id: string; name: string; roles: string[]; createdAt: number; }
+```
+
+**Line-by-line explanation:**
+- `function createUser()`: Returns an object literal. TypeScript infers its return type.
+- `typeof createUser`: Gets the function's type signature: `() => { id: string; ... }`.
+- `ReturnType<typeof createUser>`: Extracts the return type from the function signature and assigns it to `User`.
+
+---
+
+### 4. How it works inside TypeScript
+Here is the official definition of `ReturnType<T>` from `lib.d.ts`:
+
+```typescript
+type ReturnType<T extends (...args: any[]) => any> =
+  T extends (...args: any[]) => infer R ? R : any;
+```
+
+**Step-by-step breakdown:**
+1. `T extends (...args: any[]) => any`: Constrains `T` so you can only pass function types.
+2. `T extends (...args: any[]) => infer R`: Uses `infer R` on the function's return position.
+3. `? R`: Returns the inferred return type `R`.
+
+---
+
+### 5. Think first
+
+What happens if you pass a function value directly to `ReturnType` instead of `typeof function`? Decide first.
+
+```typescript
+function getCount() { return 42; }
+type CountType = ReturnType<getCount>;
 ```
 
 ---
 
-### Q4: Why can `infer` only be used inside the `extends` clause of a conditional type?
-**Answer:**
-Because `infer` performs pattern matching against an instantiated type. It requires a condition to evaluate against; outside of an `extends` pattern-matching context, there is no type pattern from which to deduce or extract the variable.
+**Answer and Reason:**
 
----
+This code fails to compile:
 
-### Q5: What happens when the same `infer` variable appears in multiple covariant positions?
-**Answer:**
-When `infer R` appears in multiple covariant (output/return) positions within a pattern, TypeScript computes the **union** of all candidates:
-
-```typescript
-type CovariantPair<T> = T extends { first: infer R; second: infer R } ? R : never;
-
-type Res = CovariantPair<{ first: string; second: number }>; // string | number
+```
+'getCount' refers to a value, but is being used as a type here. Did you mean 'typeof getCount'?
 ```
 
+**Reason**: `ReturnType` expects a **type**, not a runtime function value. You must write `ReturnType<typeof getCount>`.
+
 ---
 
-### Q6: What happens when the same `infer` variable appears in multiple contravariant positions?
-**Answer:**
-When `infer R` appears in multiple contravariant (input/parameter) positions, TypeScript computes the **intersection** of all candidates:
+### 6. Try it yourself
+Write a function `makeConfig()` that returns `{ theme: "dark", port: 3000 }`. Use `ReturnType<typeof makeConfig>` to create a type `Config`, and declare a variable using that type.
+
+---
+
+### 7. More examples
+
+#### Example A: Async Functions Return Promises (Medium)
 
 ```typescript
-type ContravariantPair<T> = T extends {
-  a: (arg: infer R) => void;
-  b: (arg: infer R) => void;
-} ? R : never;
+async function fetchUser() {
+  return { id: "1", name: "Alex" };
+}
 
-type Res = ContravariantPair<{
-  a: (arg: { id: string }) => void;
-  b: (arg: { age: number }) => void;
-}>; // { id: string } & { age: number }
+type FetchReturn = ReturnType<typeof fetchUser>;
+// Inferred as: Promise<{ id: string; name: string }>
 ```
 
----
-
-### Q7: Explain the theoretical proof and mechanics of the `UnionToIntersection<U>` type.
-**Answer:**
-```typescript
-type UnionToIntersection<U> = 
-  (U extends unknown ? (k: U) => void : never) extends 
-  (k: infer I) => void ? I : never;
-```
-1. `U extends unknown ? (k: U) => void : never`:
-   Because $U$ is naked, it distributes over the union, turning `A | B` into a union of functions: `((k: A) => void) | ((k: B) => void)`.
-2. `... extends (k: infer I) => void ? I : never`:
-   Matching this union of functions against a single function with parameter `infer I` forces inference in a **contravariant** position.
-3. In contravariant position, to safely satisfy both functions in the union, $I$ must satisfy both parameter requirements simultaneously, resulting in the intersection `A & B`.
+**Line-by-line explanation:**
+- `async` functions always wrap their return value in a `Promise`. `ReturnType` returns the `Promise` wrapper (we will learn how to unwrap promises in Topic 11 with `Awaited`).
 
 ---
 
-### Q8: How is the standard `Exclude<T, U>` utility implemented?
-**Answer:**
+### 8. Common mistakes
+
+#### Mistake 1: Passing non-function types to `ReturnType`
+
+**Wrong code:**
 ```typescript
-type CustomExclude<T, U> = T extends U ? never : T;
-
-type Remaining = CustomExclude<"a" | "b" | "c", "a">; // "b" | "c"
-```
-It distributes across union $T$. If a member is a subtype of $U$, it returns `never`, which vanishes from the resulting union.
-
----
-
-### Q9: How is the standard `Extract<T, U>` utility implemented?
-**Answer:**
-```typescript
-type CustomExtract<T, U> = T extends U ? T : never;
-
-type Common = CustomExtract<string | number | boolean, number | boolean>; // number | boolean
+type Res = ReturnType<string>; // Error!
 ```
 
+**Why it happens:**
+`ReturnType` requires a function type.
+
 ---
 
-### Q10: How is the standard `NonNullable<T>` utility implemented?
-**Answer:**
-```typescript
-type CustomNonNullable<T> = T extends null | undefined ? never : T;
+### 9. Rules to remember
+1. `ReturnType<T>` extracts the return type of a function type `T`.
+2. Always write `ReturnType<typeof fn>` when referencing runtime functions.
+3. For async functions, `ReturnType` returns `Promise<Result>`.
 
-type Clean = CustomNonNullable<string | null | undefined>; // string
+---
+
+### 10. Exercises
+
+#### Question 1 (Predict the compile result)
+What is the type of `Num`?
+```typescript
+const add = (a: number, b: number) => a + b;
+type Num = ReturnType<typeof add>;
 ```
 
----
-
-### Q11: What is Tail-Call Recursion Optimization in TypeScript 4.5+ and why was it introduced?
-**Answer:**
-Before TS 4.5, recursive conditional types tracked stack frames for each recursive invocation, blowing the call stack and hitting the 50-depth recursion limit on common operations like string splitting or array manipulation.
-TypeScript 4.5 introduced tail-call elimination in the compiler: when a conditional type's true or false branch directly returns the recursive invocation without wrapping it in an external type constructor, the compiler evaluates it iteratively up to **1,000 steps**.
-
----
-
-### Q12: How do you rewrite a recursive type to leverage Tail-Call Optimization using the Accumulator pattern?
-**Answer:**
-Pass an intermediate tuple or accumulator `Acc` that gathers intermediate results:
-
+#### Question 2 (Find and fix the bug)
+Fix the error in this type declaration:
 ```typescript
-// Non-TCO (Stack depth limit ~50):
-type RepeatBad<T, N extends number> = ...;
-
-// TCO Optimizable (Accumulator Pattern, up to 1,000 steps):
-type Repeat<T, N extends number, Acc extends T[] = []> =
-  Acc["length"] extends N
-    ? Acc
-    : Repeat<T, N, [...Acc, T]>;
-
-type FiveStrings = Repeat<string, 5>; // [string, string, string, string, string]
+function build() { return { ok: true }; }
+type Built = ReturnType<build>;
 ```
 
+#### Question 3 (Write code from scratch)
+Write your own `MyReturnType<T>` utility using conditional types and `infer`.
+
+#### Question 4 (Explain in your own words)
+Why is `ReturnType<typeof fn>` preferred over manually creating and maintaining a separate interface for a function's output?
+
 ---
 
-### Q13: How does TypeScript 4.7's `infer T extends U` syntax work?
-**Answer:**
-It allows constraining an inferred type variable directly inside the pattern match, preventing the need for nested conditional types:
+### Solutions
 
+#### Solution to Question 1
+**Hint 1**: What does `a + b` return when both are numbers?
+
+**Answer**:
+The type is `number`.
+
+#### Solution to Question 2
+**Hint 1**: Add `typeof` before `build`.
+
+**Answer**:
 ```typescript
-// TS 4.7+ constrained infer:
-type StringNumber<T> = T extends `${infer N extends number}` ? N : never;
-
-type Num = StringNumber<"100">; // Inferred as literal number 100!
+type Built = ReturnType<typeof build>;
 ```
 
----
+#### Solution to Question 3
+**Hint 1**: `T extends (...args: any[]) => infer R ? R : never`.
 
-### Q14: How do you build an accurate Type-Level Equality checker (`Equals<A, B>`)?
-**Answer:**
-Mutual assignability (`A extends B ? B extends A ? true : false : false`) fails because it incorrectly treats `any` as equal to `string`.
-The gold standard implementation uses deferred conditional functions:
-
+**Answer**:
 ```typescript
-type Equals<X, Y> = 
-  (<T>() => T extends X ? 1 : 2) extends 
-  (<T>() => T extends Y ? 1 : 2) ? true : false;
-
-type T1 = Equals<string, string>; // true
-type T2 = Equals<any, string>;    // false!
-type T3 = Equals<never, never>;   // true
+type MyReturnType<T extends (...args: any[]) => any> =
+  T extends (...args: any[]) => infer R ? R : never;
 ```
 
----
+#### Solution to Question 4
+**Hint 1**: What happens when someone changes the function implementation later?
 
-### Q15: Why does `boolean` distribute into `true | false` in distributive conditional types?
-**Answer:**
-In TypeScript, `boolean` is an alias for the union type `true | false`.
-Therefore, when `boolean` is passed to a distributive conditional type `T extends true ? "A" : "B"`, it distributes over `true` and `false` individually:
-`("A") | ("B")` => `"A" | "B"`.
+**Answer**:
+If you maintain a separate interface manually, you have to update both the function and the interface whenever the return structure changes. `ReturnType<typeof fn>` stays automatically in sync with the function implementation, eliminating duplicate code and synchronization bugs.
 
 ---
 
-### Q16: How do you implement `Head<T>` to extract the first element of a tuple?
-**Answer:**
+### 11. Recall
+
+1. What built-in utility extracts a function's return type?
+2. What operator must you precede a runtime function name with when using `ReturnType`?
+3. What is the return type of an `async` function?
+
+**If you remember only one thing:**
+Use `ReturnType<typeof functionName>` to extract a function's return type automatically.
+
+---
+
+# Topic 10: Extracting Parameter Types with `Parameters<T>`
+
+### 1. What is it?
+`Parameters<T>` is a built-in utility type that extracts the parameter types of a function type `T` as a tuple.
+
+### 2. Why does it exist?
+When working with third-party libraries or legacy code, functions often take complex arguments without exporting the argument types.
+
+`Parameters<typeof functionName>` lets you extract the exact tuple of parameters. You can then index into the tuple (`Parameters<typeof fn>[0]`) to get the type of the first argument.
+
+### 3. Basic example
+
 ```typescript
-type Head<T extends readonly unknown[]> = 
-  T extends readonly [infer First, ...unknown[]] ? First : never;
+function saveUser(id: string, age: number, isActive: boolean) {
+  // Saves user to database
+}
 
-type FirstItem = Head<[10, 20, 30]>; // 10
+// 1. Extract all parameters as a tuple:
+type SaveUserArgs = Parameters<typeof saveUser>;
+// Inferred as: [id: string, age: number, isActive: boolean]
+
+// 2. Extract the first parameter type:
+type FirstArg = Parameters<typeof saveUser>[0];
+// Inferred as: string
 ```
 
----
-
-### Q17: How do you implement `Tail<T>` to extract all elements except the first?
-**Answer:**
-```typescript
-type Tail<T extends readonly unknown[]> = 
-  T extends readonly [unknown, ...infer Rest] ? Rest : [];
-
-type RestItems = Tail<[10, 20, 30]>; // [20, 30]
-```
+**Line-by-line explanation:**
+- `typeof saveUser`: The signature `(id: string, age: number, isActive: boolean) => void`.
+- `Parameters<typeof saveUser>`: Extracts the arguments into a tuple `[string, number, boolean]`.
+- `Parameters<typeof saveUser>[0]`: Indexes into the first element of the tuple, producing `string`.
 
 ---
 
-### Q18: How do you implement `Last<T>` to extract the final element of a tuple?
-**Answer:**
+### 4. How it works inside TypeScript
+Here is the official definition of `Parameters<T>` from `lib.d.ts`:
+
 ```typescript
-type Last<T extends readonly unknown[]> = 
-  T extends readonly [...unknown[], infer Final] ? Final : never;
-
-type EndItem = Last<[10, 20, 30]>; // 30
-```
-
----
-
-### Q19: How do you recursively reverse a tuple type?
-**Answer:**
-```typescript
-type Reverse<T extends readonly unknown[], Acc extends readonly unknown[] = []> =
-  T extends readonly [infer First, ...infer Rest]
-    ? Reverse<Rest, [First, ...Acc]>
-    : Acc;
-
-type Rev = Reverse<[1, 2, 3]>; // [3, 2, 1]
-```
-
----
-
-### Q20: How do you flatten an array of nested arrays by one level using conditional types?
-**Answer:**
-```typescript
-type FlattenOneLevel<T extends readonly unknown[]> = 
-  T extends readonly [infer First, ...infer Rest]
-    ? First extends readonly unknown[]
-      ? [...First, ...FlattenOneLevel<Rest>]
-      : [First, ...FlattenOneLevel<Rest>]
-    : [];
-
-type Flat = FlattenOneLevel<[[1, 2], [3], 4]>; // [1, 2, 3, 4]
-```
-
----
-
-### Q21: How do you recursively flatten an array of arbitrarily deeply nested arrays?
-**Answer:**
-```typescript
-type DeepFlatten<T extends readonly unknown[]> = 
-  T extends readonly [infer First, ...infer Rest]
-    ? First extends readonly unknown[]
-      ? [...DeepFlatten<First>, ...DeepFlatten<Rest>]
-      : [First, ...DeepFlatten<Rest>]
-    : [];
-
-type SuperFlat = DeepFlatten<[[1, [2, [3]]], [4]]>; // [1, 2, 3, 4]
-```
-
----
-
-### Q22: How do you implement a compile-time string splitter (`Split<S, Delimiter>`)?
-**Answer:**
-```typescript
-type Split<S extends string, Delimiter extends string> =
-  S extends `${infer Head}${Delimiter}${infer Tail}`
-    ? [Head, ...Split<Tail, Delimiter>]
-    : [S];
-
-type Tokens = Split<"a.b.c", ".">; // ["a", "b", "c"]
-```
-
----
-
-### Q23: How do you implement a compile-time string joiner (`Join<T, Delimiter>`)?
-**Answer:**
-```typescript
-type Join<T extends readonly (string | number)[], Delimiter extends string> =
-  T extends [] ? "" :
-  T extends [infer Only] ? `${Only & (string | number)}` :
-  T extends [infer First, ...infer Rest extends (string | number)[]]
-    ? `${First & (string | number)}${Delimiter}${Join<Rest, Delimiter>}`
-    : string;
-
-type Joined = Join<["user", "profile", "123"], "/">; // "user/profile/123"
-```
-
----
-
-### Q24: How does the built-in `Awaited<T>` utility type recursively unwrap Promises?
-**Answer:**
-```typescript
-type CustomAwaited<T> =
-  T extends null | undefined ? T :
-  T extends object & { then(onfulfilled: infer F, ...args: infer _): any }
-    ? F extends (value: infer V, ...args: infer _) => any
-      ? CustomAwaited<V>
-      : never
-    : T;
-```
-
----
-
-### Q25: How do you extract the parameters of a function as a tuple (`Parameters<T>`)?
-**Answer:**
-```typescript
-type CustomParameters<T extends (...args: any[]) => any> =
+type Parameters<T extends (...args: any[]) => any> =
   T extends (...args: infer P) => any ? P : never;
 ```
 
+**Step-by-step breakdown:**
+1. `infer P` is placed on the rest parameter `...args: infer P`.
+2. TypeScript infers `P` as a tuple representing all argument types in order.
+3. The tuple is returned.
+
 ---
 
-### Q26: How do you extract the constructor arguments of a class (`ConstructorParameters<T>`)?
-**Answer:**
+### 5. Think first
+
+What is the resulting type of `Args` if a function takes no arguments? Decide first.
+
 ```typescript
-type CustomConstructorParameters<T extends abstract new (...args: any[]) => any> =
-  T extends abstract new (...args: infer P) => any ? P : never;
+function reset() {}
+type Args = Parameters<typeof reset>;
 ```
 
 ---
 
-### Q27: How do you extract the instance type produced by a constructor function (`InstanceType<T>`)?
-**Answer:**
+**Answer and Reason:**
+
+The resulting type is:
+
 ```typescript
-type CustomInstanceType<T extends abstract new (...args: any[]) => any> =
-  T extends abstract new (...args: any[]) => infer R ? R : any;
+[]
 ```
 
+**Reason**: An empty parameter list is represented as an empty tuple `[]`.
+
 ---
 
-### Q28: How do you detect if a type is `any` using conditional types?
-**Answer:**
-Because `any` is assignable to everything and everything is assignable to `any`, testing with a type that only matches `any` (like `0 extends 1 & any`) identifies it:
+### 6. Try it yourself
+Declare a function `updateSettings(config: { theme: string; volume: number })`. Extract the type of `config` using `Parameters<typeof updateSettings>[0]`. Create a variable with that type.
+
+---
+
+### 7. More examples
+
+#### Example A: Forwarding Arguments to Another Function (Medium)
 
 ```typescript
-type IsAny<T> = 0 extends (1 & T) ? true : false;
+function logEvent(name: string, timestamp: number) {
+  console.log(name, timestamp);
+}
 
-type A = IsAny<any>;    // true
-type B = IsAny<string>; // false
+function eventWrapper(...args: Parameters<typeof logEvent>) {
+  console.log("Before event");
+  logEvent(...args);
+}
 ```
 
+**Line-by-line explanation:**
+- `...args: Parameters<typeof logEvent>`: Guarantees that `eventWrapper` accepts the exact same arguments as `logEvent`.
+
 ---
 
-### Q29: How do you detect if a type is `unknown` using conditional types?
-**Answer:**
-`unknown` is only assignable to `unknown` and `any`. Combine with `IsAny` to exclude `any`:
+### 8. Common mistakes
 
+#### Mistake 1: Indexing past the tuple length
+
+**Wrong code:**
 ```typescript
-type IsUnknown<T> = IsAny<T> extends true
-  ? false
-  : unknown extends T
-  ? true
-  : false;
-
-type U1 = IsUnknown<unknown>; // true
-type U2 = IsUnknown<any>;     // false
+function greet(name: string) {}
+type Third = Parameters<typeof greet>[2]; // undefined
 ```
 
+**Why it happens:**
+`greet` only has 1 parameter (index 0). Index 2 does not exist.
+
 ---
 
-### Q30: How do you extract all function properties from an object type?
-**Answer:**
+### 9. Rules to remember
+1. `Parameters<T>` extracts function arguments as a tuple type.
+2. Index with `[0]`, `[1]`, etc. to get individual parameter types.
+3. Works on standard functions, arrow functions, and method signatures.
+
+---
+
+### 10. Exercises
+
+#### Question 1 (Predict the compile result)
+What is the type of `Arg`?
 ```typescript
-type FunctionProperties<T> = {
-  [K in keyof T as T[K] extends Function ? K : never]: T[K];
-};
+const fn = (x: number) => x * 2;
+type Arg = Parameters<typeof fn>[0];
 ```
 
----
-
-### Q31: How do you filter out all function properties from an object type?
-**Answer:**
+#### Question 2 (Find and fix the bug)
+Fix the syntax error:
 ```typescript
-type NonFunctionProperties<T> = {
-  [K in keyof T as T[K] extends Function ? never : K]: T[K];
-};
+function run(a: string) {}
+type First = Parameters<run>[0];
 ```
 
+#### Question 3 (Write code from scratch)
+Write your own `MyParameters<T>` utility type from scratch using conditional types and `infer`.
+
+#### Question 4 (Explain in your own words)
+Why does `Parameters<T>` return a tuple rather than a union of parameter types?
+
 ---
 
-### Q32: How do you replace all occurrences of a substring in a string type (`ReplaceAll<S, From, To>`)?
-**Answer:**
-```typescript
-type ReplaceAll<S extends string, From extends string, To extends string> =
-  From extends "" ? S :
-  S extends `${infer Left}${From}${infer Right}`
-    ? `${Left}${To}${ReplaceAll<Right, From, To>}`
-    : S;
+### Solutions
 
-type Replaced = ReplaceAll<"foo-bar-baz", "-", "_">; // "foo_bar_baz"
+#### Solution to Question 1
+**Hint 1**: What is the type of parameter `x`?
+
+**Answer**:
+The type is `number`.
+
+#### Solution to Question 2
+**Hint 1**: Add `typeof` before `run`.
+
+**Answer**:
+```typescript
+type First = Parameters<typeof run>[0];
 ```
 
----
+#### Solution to Question 3
+**Hint 1**: `T extends (...args: infer P) => any ? P : never`.
 
-### Q33: How do you trim leading and trailing whitespace from a string type?
-**Answer:**
+**Answer**:
 ```typescript
-type WhiteSpace = " " | "\t" | "\n" | "\r";
-type TrimStart<S extends string> = S extends `${WhiteSpace}${infer Rest}` ? TrimStart<Rest> : S;
-type TrimEnd<S extends string> = S extends `${infer Rest}${WhiteSpace}` ? TrimEnd<Rest> : S;
-type Trim<S extends string> = TrimEnd<TrimStart<S>>;
+type MyParameters<T extends (...args: any[]) => any> =
+  T extends (...args: infer P) => any ? P : never;
 ```
 
+#### Solution to Question 4
+**Hint 1**: Does the order of parameters matter when calling a function?
+
+**Answer**:
+Function arguments must be passed in a specific order with exact positions. A tuple preserves the order, position, and names of the parameters, whereas a union would lose all positional information.
+
 ---
 
-### Q34: What is the difference between `T extends unknown ? T[] : never` and `(T)[]`?
-**Answer:**
-- `T extends unknown ? T[] : never` is **distributive**. If $T$ is `string | number`, it produces `string[] | number[]`.
-- `(T)[]` is **non-distributive**, producing `(string | number)[]`.
+### 11. Recall
+
+1. What built-in utility type extracts a function's parameters?
+2. What structure does `Parameters<T>` return?
+3. How do you extract the second parameter of a function?
+
+**If you remember only one thing:**
+`Parameters<typeof fn>` extracts a function's parameters as a tuple, which you can index by position.
 
 ---
 
-### Q35: How do you test if a type is a tuple rather than an arbitrary-length array?
-**Answer:**
-In TypeScript, tuples have a fixed literal `number` length, whereas arrays have `length: number`:
+# Checkpoint Challenge: Topics 6 to 10
+
+### Challenge Scenario
+Build a type-safe higher-order function decorator:
+
+1. Create a function `sendNotification(userId: string, message: string, priority: number): boolean`:
+   - It prints the notification and returns `true`.
+2. Extract its parameter tuple using `Parameters`.
+3. Extract its return type using `ReturnType`.
+4. Write a higher-order wrapper function `withLogging`:
+   - It takes a function `fn: (...args: any[]) => any`.
+   - It returns a new function that takes `...args: Parameters<typeof fn>` and returns `ReturnType<typeof fn>`.
+   - Inside, it logs `"Function called"`, invokes `fn(...args)`, and returns the result.
+5. Wrap `sendNotification` with `withLogging` and verify that the decorated function preserves all parameter types and return type.
+
+### Challenge Solution
 
 ```typescript
-type IsTuple<T> = T extends readonly unknown[]
-  ? number extends T["length"]
-    ? false
-    : true
-  : false;
+function sendNotification(
+  userId: string,
+  message: string,
+  priority: number
+): boolean {
+  console.log(`To ${userId}: ${message} (Priority: ${priority})`);
+  return true;
+}
 
-type T1 = IsTuple<[number, string]>; // true
-type T2 = IsTuple<number[]>;          // false
-```
+type NotificationArgs = Parameters<typeof sendNotification>;
+type NotificationReturn = ReturnType<typeof sendNotification>;
 
----
-
-### Q36: How do you slice a tuple from index $A$ to index $B$ at compile time?
-**Answer:**
-Combine the `Drop` and `Take` helper types with counter tuples:
-
-```typescript
-type Drop<T extends readonly unknown[], N extends number, Acc extends unknown[] = []> =
-  Acc["length"] extends N
-    ? T
-    : T extends readonly [unknown, ...infer Rest]
-    ? Drop<Rest, N, [...Acc, unknown]>
-    : [];
-```
-
----
-
-### Q37: How do you calculate the length of a string literal type at compile time?
-**Answer:**
-Split the string into a tuple of characters and read the tuple's `.length` property:
-
-```typescript
-type StringLength<S extends string, Acc extends unknown[] = []> =
-  S extends `${string}${infer Rest}`
-    ? StringLength<Rest, [...Acc, unknown]>
-    : Acc["length"];
-
-type Len = StringLength<"TypeScript">; // 10
-```
-
----
-
-### Q38: How do you extract keys of an object whose values match a specific type?
-**Answer:**
-```typescript
-type KeysMatching<Obj, TargetValue> = {
-  [K in keyof Obj]: Obj[K] extends TargetValue ? K : never;
-}[keyof Obj];
-
-interface User { id: number; age: number; name: string; }
-type NumericKeys = KeysMatching<User, number>; // "id" | "age"
-```
-
----
-
-### Q39: Can `infer` be used in the constraint of another `infer`?
-**Answer:**
-Yes, in TypeScript 4.7+, chained inference and constraints are fully supported:
-`T extends [infer A, infer B extends A] ? ...`
-
----
-
-### Q40: What happens when `infer` is used in a non-conditional context?
-**Answer:**
-The compiler raises syntax error:
-`'infer' declarations are only permitted in the 'extends' clause of a conditional type`.
-
----
-
-### Q41: How do you implement a type-level Fibonacci generator?
-**Answer:**
-Using tuple length addition with accumulator tuples:
-
-```typescript
-type Add<A extends unknown[], B extends unknown[]> = [...A, ...B];
-type Prev<T extends unknown[]> = T extends [unknown, ...infer Rest] ? Rest : [];
-
-type Fib<N extends number, Current extends unknown[] = [unknown], Next extends unknown[] = [unknown], Count extends unknown[] = [unknown]> =
-  Count["length"] extends N
-    ? Current["length"]
-    : Fib<N, Next, Add<Current, Next>, [...Count, unknown]>;
-
-type Fib7 = Fib<7>; // 13
-```
-
----
-
-### Q42: How does the compiler handle conditional types with unresolved circular generic constraints?
-**Answer:**
-The compiler halts resolution and falls back to `any` or issues diagnostic:
-`Type instantiation is excessively deep and possibly infinite`.
-
----
-
-### Q43: How do you check if a union contains a specific member without distribution?
-**Answer:**
-```typescript
-type UnionContains<Union, Target> = 
-  [Target] extends [Union] ? true : false;
-```
-
----
-
-### Q44: What is the difference between `Exclude<keyof T, K>` and `Omit<T, K>`?
-**Answer:**
-- `Exclude<keyof T, K>` returns the **union of remaining keys** (a set of strings/symbols).
-- `Omit<T, K>` returns a **new object type** containing the remaining properties mapped to their types.
-
----
-
-### Q45: What is the Golden Rule of Recursive Conditional Types?
-**Answer:**
-**"Always structure recursive type calculations to be tail-recursive using an accumulator tuple, ensuring the recursive invocation is returned directly without outer wrapping, unlocking compiler TCO up to 1,000 steps."**
-`;
-};
-
-
----
-
-## 💼 Section 12: Comprehensive Senior Engineering Interview Q&As (Part B: Questions 46–90)
-
-### Q46: How do you extract deep nested property paths from an object type as dot-delimited strings (`Paths<T>`)?
-**Answer:**
-Use recursive conditional types over the object keys:
-
-```typescript
-type Paths<T> = T extends object
-  ? {
-      [K in keyof T]: K extends string
-        ? T[K] extends object
-          ? `${K}` | `${K}.${Paths<T[K]>}`
-          : `${K}`
-        : never;
-    }[keyof T]
-  : never;
-
-interface UserProfile {
-  id: string;
-  contact: {
-    email: string;
-    address: { city: string; zip: number };
+function withLogging<F extends (...args: any[]) => any>(fn: F) {
+  return function (...args: Parameters<F>): ReturnType<F> {
+    console.log("Function called with args:", args);
+    const result = fn(...args);
+    return result;
   };
 }
 
-type UserPaths = Paths<UserProfile>;
-// "id" | "contact" | "contact.email" | "contact.address" | "contact.address.city" | "contact.address.zip"
+const loggedSend = withLogging(sendNotification);
+// Preserves full type safety:
+const success = loggedSend("usr_1", "Welcome", 1);
 ```
 
 ---
 
-### Q47: How do you implement a type-safe nested value retriever (`Get<T, Path>`) based on dot-delimited string paths?
-**Answer:**
-```typescript
-type Get<T, Path extends string> =
-  Path extends `${infer Head}.${infer Tail}`
-    ? Head extends keyof T
-      ? Get<T[Head], Tail>
-      : never
-    : Path extends keyof T
-    ? T[Path]
-    : never;
+# Topic 11: Unwrapping Promises and Asynchronous Types with `Awaited<T>` (TS 4.5)
 
-type City = Get<UserProfile, "contact.address.city">; // string
-type Zip = Get<UserProfile, "contact.address.zip">;   // number
+### 1. What is it?
+Introduced in TypeScript 4.5, `Awaited<T>` is a built-in utility type that models the unwrapping behavior of `await` in `async` functions or the `.then()` method on Promises.
+
+It recursively unwraps nested Promises until it reaches the underlying non-Promise type.
+
+### 2. Why does it exist?
+In JavaScript, `await` automatically unwraps nested Promises: `await Promise.resolve(Promise.resolve(42))` resolves to the number `42`.
+
+Before TypeScript 4.5, writing custom unwrappers for Promises was error-prone because developers often encountered nested Promises (`Promise<Promise<T>>`). `Awaited<T>` standardizes deep promise unwrapping directly in the compiler.
+
+### 3. Basic example
+
+```typescript
+// 1. Single Promise unwrapping:
+type T1 = Awaited<Promise<string>>; // string
+
+// 2. Nested Promise unwrapping:
+type T2 = Awaited<Promise<Promise<number>>>; // number
+
+// 3. Non-Promise passthrough:
+type T3 = Awaited<boolean>; // boolean
 ```
+
+**Line-by-line explanation:**
+- `Awaited<Promise<string>>`: Recursively strips `Promise`, returning `string`.
+- `Awaited<Promise<Promise<number>>>`: Recursively unwrap both layers of Promises, returning `number`.
+- `Awaited<boolean>`: If the type is not a Promise, it returns the type unchanged.
 
 ---
 
-### Q48: How do you detect whether an object property is optional or required using conditional types?
-**Answer:**
-An empty object `{}` is assignable to `Pick<T, K>` if and only if property $K$ is optional!
+### 4. How it works inside TypeScript
+1. **Thenable Check**: It checks if `T` has a `.then()` method (is a `PromiseLike`).
+2. **Recursive Unwrapping**: If it is a Promise, it uses `infer` to extract the resolved value `V`, and recursively calls `Awaited<V>`.
+3. **Termination**: When `V` is no longer a Promise, the recursive cycle stops and returns `V`.
+
+---
+
+### 5. Think first
+
+What is the resulting type of `Result` in the code below? Decide first.
 
 ```typescript
-type IsOptional<T, K extends keyof T> = 
-  {} extends Pick<T, K> ? true : false;
-
-interface Person {
-  requiredName: string;
-  optionalAge?: number;
+async function fetchUser() {
+  return { id: "1", name: "Alex" };
 }
 
-type T1 = IsOptional<Person, "requiredName">; // false
-type T2 = IsOptional<Person, "optionalAge">;  // true
+type Result = Awaited<ReturnType<typeof fetchUser>>;
 ```
 
 ---
 
-### Q49: How do you extract all optional keys of an object type (`OptionalKeys<T>`)?
-**Answer:**
-```typescript
-type OptionalKeys<T> = {
-  [K in keyof T]-?: {} extends Pick<T, K> ? K : never;
-}[keyof T];
+**Answer and Reason:**
 
-type Opts = OptionalKeys<Person>; // "optionalAge"
+The resulting type is:
+
+```typescript
+{ id: string; name: string }
+```
+
+**Reason**: `ReturnType<typeof fetchUser>` returns `Promise<{ id: string; name: string }>`. `Awaited` unwraps the `Promise`, leaving only the clean object type.
+
+---
+
+### 6. Try it yourself
+Create an async function `loadSettings()` that returns `{ theme: "dark" }`. Extract its unwrapped return type using `Awaited<ReturnType<typeof loadSettings>>`.
+
+---
+
+### 7. More examples
+
+#### Example A: Unwrapping Union of Promises (Medium)
+
+```typescript
+type MixedPromises = Promise<string> | Promise<number>;
+type Unwrapped = Awaited<MixedPromises>;
+// Inferred as: string | number
+```
+
+**Line-by-line explanation:**
+- `Awaited` distributes over unions of Promises, unwrapping each member.
+
+---
+
+### 8. Common mistakes
+
+#### Mistake 1: Using `ReturnType` without `Awaited` on async functions
+
+**Wrong code:**
+```typescript
+async function getData() { return 100; }
+type Data = ReturnType<typeof getData>; // Promise<number>, not number!
+```
+
+**Correct code:**
+```typescript
+type Data = Awaited<ReturnType<typeof getData>>; // number
 ```
 
 ---
 
-### Q50: How do you extract all required keys of an object type (`RequiredKeys<T>`)?
-**Answer:**
-```typescript
-type RequiredKeys<T> = {
-  [K in keyof T]-?: {} extends Pick<T, K> ? never : K;
-}[keyof T];
-
-type Reqs = RequiredKeys<Person>; // "requiredName"
-```
+### 9. Rules to remember
+1. `Awaited<T>` unwraps Promises recursively (even nested `Promise<Promise<T>>`).
+2. If `T` is not a Promise, `Awaited<T>` returns `T` unchanged.
+3. Use `Awaited<ReturnType<typeof asyncFn>>` to get the clean output of async functions.
 
 ---
 
-### Q51: How do you detect if a property is `readonly` using conditional types?
-**Answer:**
-Compare assigning to the property using conditional equality:
+### 10. Exercises
 
+#### Question 1 (Predict the compile result)
+What is the type of `Val`?
 ```typescript
-type IsReadonly<T, K extends keyof T> = 
-  Equals<{ [P in K]: T[K] }, { readonly [P in K]: T[K] }>;
+type Val = Awaited<Promise<Promise<string[]>>>;
+```
 
-interface Account {
-  readonly id: string;
-  balance: number;
+#### Question 2 (Find and fix the bug)
+The type below is supposed to be `number`, but is currently `Promise<number>`. Fix it:
+```typescript
+async function getScore() { return 95; }
+type Score = ReturnType<typeof getScore>;
+```
+
+#### Question 3 (Write code from scratch)
+Write a generic function signature `unwrapPromise<T>(p: T): Promise<Awaited<T>>`.
+
+#### Question 4 (Explain in your own words)
+Why is `Awaited<T>` recursive rather than only unwrapping a single layer?
+
+---
+
+### Solutions
+
+#### Solution to Question 1
+**Hint 1**: Unwrap all layers of Promises.
+
+**Answer**:
+The type is `string[]`.
+
+#### Solution to Question 2
+**Hint 1**: Wrap `ReturnType` inside `Awaited<...>`.
+
+**Answer**:
+```typescript
+type Score = Awaited<ReturnType<typeof getScore>>;
+```
+
+#### Solution to Question 3
+**Hint 1**: Return `Promise<Awaited<T>>`.
+
+**Answer**:
+```typescript
+function unwrapPromise<T>(p: T): Promise<Awaited<T>> {
+  return Promise.resolve(p) as Promise<Awaited<T>>;
 }
+```
 
-type R1 = IsReadonly<Account, "id">;      // true
-type R2 = IsReadonly<Account, "balance">; // false
+#### Solution to Question 4
+**Hint 1**: Think about how JavaScript runtime `await` behaves on nested promises.
+
+**Answer**:
+In JavaScript runtime, `await` unwraps nested promises recursively until a non-promise value is reached. `Awaited<T>` mirrors runtime JavaScript behavior in the type system.
+
+---
+
+### 11. Recall
+
+1. What built-in utility type unwraps Promises?
+2. What does `Awaited<number>` return?
+3. Which TypeScript version introduced `Awaited`?
+
+**If you remember only one thing:**
+Use `Awaited<ReturnType<typeof asyncFn>>` to extract the resolved value of async functions.
+
+---
+
+# Topic 12: Extracting Array Element Types with `infer`
+
+### 1. What is it?
+You can use `infer` inside a conditional type to extract the element type from an array or tuple:
+```typescript
+type ElementOf<T> = T extends (infer E)[] ? E : never;
+```
+
+### 2. Why does it exist?
+When a function takes an array of items (like a list of users, numbers, or records), you frequently need a type representing a single item from that array.
+
+Instead of writing a separate type for the array and the item, you can derive the item type directly from the array type using conditional type inference.
+
+### 3. Basic example
+
+```typescript
+type ElementOf<T> = T extends (infer E)[] ? E : never;
+
+type StringArray = string[];
+type SingleString = ElementOf<StringArray>; // string
+
+type NumberTuple = [number, boolean];
+type TupleUnion = ElementOf<NumberTuple>; // number | boolean
+```
+
+**Line-by-line explanation:**
+- `type ElementOf<T> = T extends (infer E)[] ? E : never;`: Checks if `T` is an array. If so, it infers the element type `E`.
+- `ElementOf<string[]>`: Matches `string[]`. `E` is inferred as `string`.
+- `ElementOf<[number, boolean]>`: A tuple is an array with known positions. Inferring `(infer E)[]` on `[number, boolean]` unions all element types into `number | boolean`.
+
+---
+
+### 4. How it works inside TypeScript
+1. **Array Matching**: TypeScript matches `T` against `(infer E)[]`.
+2. **Tuple Unioning**: When matching a tuple with multiple different types, TypeScript unions the candidate types into `infer E`.
+3. **Alternative Lookup**: You can also extract array elements using index lookup: `T[number]`.
+
+---
+
+### 5. Think first
+
+What is the difference between `T[number]` and `T extends (infer E)[] ? E : never`? Decide first.
+
+```typescript
+type A<T> = T extends (infer E)[] ? E : never;
+type B<T extends readonly any[]> = T[number];
 ```
 
 ---
 
-### Q52: How do you extract route parameters from a URL pattern (`/users/:userId/posts/:postId`)?
-**Answer:**
-Combine string pattern matching with recursive template literals and `infer`:
+**Answer and Reason:**
+
+- `B<T>` requires `T` to be constrained to an array beforehand (`T extends readonly any[]`).
+- `A<T>` works on **any** input type. If you pass a non-array (like `string`), `A<string>` safely returns `never`, while `string[number]` would be a compiler error.
+
+---
+
+### 6. Try it yourself
+Create an array `const ROLES = ["admin", "editor", "viewer"] as const;`. Extract the union of roles using `(typeof ROLES)[number]`.
+
+---
+
+### 7. More examples
+
+#### Example A: Extracting from Readonly Arrays (Medium)
 
 ```typescript
-type ExtractRouteParams<Path extends string> =
-  Path extends `${string}:${infer Param}/${infer Rest}`
-    ? Param | ExtractRouteParams<`/${Rest}`>
-    : Path extends `${string}:${infer Param}`
-    ? Param
-    : never;
+type ElementOfAny<T> = T extends readonly (infer E)[] ? E : never;
 
-type RouteParams = ExtractRouteParams<"/users/:userId/posts/:postId">;
-// "userId" | "postId"
+const items = [1, 2, 3] as const;
+type Item = ElementOfAny<typeof items>; // 1 | 2 | 3
+```
+
+**Line-by-line explanation:**
+- Adding `readonly` ensures it works on both mutable arrays and `as const` tuples.
+
+---
+
+### 8. Common mistakes
+
+#### Mistake 1: Forgetting `readonly` when matching `as const` arrays
+
+**Wrong code:**
+```typescript
+type ElementOf<T> = T extends (infer E)[] ? E : never;
+const list = ["a", "b"] as const; // readonly ["a", "b"]
+type R = ElementOf<typeof list>; // Evaluates to never!
+```
+
+**Why it happens:**
+`as const` produces a `readonly` array. A `readonly` array cannot extend a mutable array `(infer E)[]`.
+
+**Correct code:**
+```typescript
+type ElementOf<T> = T extends readonly (infer E)[] ? E : never;
 ```
 
 ---
 
-### Q53: How do you convert a union of types into a tuple of types (`UnionToTuple<U>`)?
-**Answer:**
-Combine `UnionToIntersection` with function overload inference to pop one element at a time from the union:
+### 9. Rules to remember
+1. `T extends readonly (infer E)[] ? E : never` extracts the element type from any array.
+2. `readonly` allows matching both mutable arrays and `as const` tuples.
+3. Indexing with `T[number]` is an alternative when `T` is already known to be an array.
+
+---
+
+### 10. Exercises
+
+#### Question 1 (Predict the compile result)
+What is the resulting type of `Item`?
+```typescript
+type ElementType<T> = T extends readonly (infer E)[] ? E : never;
+type Item = ElementType<boolean[]>;
+```
+
+#### Question 2 (Find and fix the bug)
+Fix `GetElement` so it works with `as const` arrays:
+```typescript
+type GetElement<T> = T extends (infer E)[] ? E : never;
+const flags = [true, false] as const;
+type FlagType = GetElement<typeof flags>;
+```
+
+#### Question 3 (Write code from scratch)
+Write a generic function `getFirstItem<T extends readonly any[]>(arr: T): T[0]` that returns the first element of a tuple.
+
+#### Question 4 (Explain in your own words)
+Why does a mutable array pattern `(infer E)[]` fail to match an `as const` tuple?
+
+---
+
+### Solutions
+
+#### Solution to Question 1
+**Hint 1**: What is the element type of `boolean[]`?
+
+**Answer**:
+The type is `boolean`.
+
+#### Solution to Question 2
+**Hint 1**: Add `readonly` before `(infer E)[]`.
+
+**Answer**:
+```typescript
+type GetElement<T> = T extends readonly (infer E)[] ? E : never;
+```
+
+#### Solution to Question 3
+**Hint 1**: Return `arr[0]`.
+
+**Answer**:
+```typescript
+function getFirstItem<T extends readonly any[]>(arr: T): T[0] {
+  return arr[0];
+}
+```
+
+#### Solution to Question 4
+**Hint 1**: Can a readonly array be passed where a mutable array is required?
+
+**Answer**:
+A readonly array cannot be assigned to a mutable array because mutable arrays allow operations like `.push()` and property reassignment. Therefore, a readonly tuple does not satisfy `(infer E)[]` unless the pattern explicitly includes `readonly`.
+
+---
+
+### 11. Recall
+
+1. What syntax extracts an array element using `infer`?
+2. What modifier must you include to match `as const` tuples?
+3. What is the alternative syntax using index access?
+
+**If you remember only one thing:**
+Use `T extends readonly (infer E)[] ? E : never` to extract element types from any array or tuple.
+
+---
+
+# Topic 13: Recursive Conditional Types (JSON Values, Deep Flattening)
+
+### 1. What is it?
+Introduced in TypeScript 4.1, a **Recursive Conditional Type** is a conditional type that references itself in its own definition.
+
+It allows you to perform recursive computations at compile time, such as deeply unwrapping arrays, building JSON types, or flattening nested data structures.
+
+### 2. Why does it exist?
+Real-world data structures are often recursive:
+- A JSON value can be a primitive, an array of JSON values, or an object containing JSON values.
+- A nested array might be arbitrarily deep: `number[][][]`.
+
+Before TypeScript 4.1, circular type aliases were forbidden. Recursive conditional types make modeling arbitrarily deep data structures possible.
+
+### 3. Basic example
 
 ```typescript
-type LastOfUnion<U> =
-  UnionToIntersection<U extends unknown ? (k: U) => void : never> extends
-  (k: infer I) => void ? I : never;
+// Deeply unwrap arrays of any depth:
+type DeepFlatten<T> = T extends (infer Element)[] ? DeepFlatten<Element> : T;
 
-type Push<T extends unknown[], V> = [...T, V];
+type Level1 = DeepFlatten<number[]>;       // number
+type Level2 = DeepFlatten<number[][]>;     // number
+type Level3 = DeepFlatten<number[][][]>;   // number
+type NonArr = DeepFlatten<string>;         // string
+```
 
-export type UnionToTuple<U, Last = LastOfUnion<U>> =
-  [U] extends [never]
-    ? []
-    : Push<UnionToTuple<Exclude<U, Last>>, Last>;
+**Line-by-line explanation:**
+- `type DeepFlatten<T> = T extends (infer Element)[] ? DeepFlatten<Element> : T;`:
+  - If `T` is an array, extract its `Element` and call `DeepFlatten<Element>` again.
+  - If `T` is no longer an array, return `T` (the base case).
+- `DeepFlatten<number[][][]>`: Recursively unwraps three times until `number` is reached, then terminates.
 
-type TupleRes = UnionToTuple<"a" | "b" | "c">;
-// Evaluates to: ["a", "b", "c"]
+---
+
+### 4. How it works inside TypeScript
+1. **Self-Reference**: The compiler allows a conditional type to reference itself in either branch.
+2. **Recursion Limit**: To prevent the compiler from freezing in infinite loops, TypeScript enforces a maximum recursion depth limit.
+3. **Tail-Call Optimization**: When the recursive call is in tail position, TypeScript optimizes the stack to support deeper recursion.
+
+---
+
+### 5. Think first
+
+What happens if you define a recursive conditional type without a base case? Decide first.
+
+```typescript
+type Infinite<T> = Infinite<T>;
 ```
 
 ---
 
-### Q54: How do you perform compile-time natural number addition using tuple lengths?
-**Answer:**
-Create tuples of length $A$ and $B$, spread them into a combined tuple, and read `.length`:
+**Answer and Reason:**
 
-```typescript
-type TupleOfLength<N extends number, Acc extends unknown[] = []> =
-  Acc["length"] extends N ? Acc : TupleOfLength<N, [...Acc, unknown]>;
+This code fails to compile:
 
-type TypeAdd<A extends number, B extends number> =
-  [...TupleOfLength<A>, ...TupleOfLength<B>]["length"];
-
-type Sum = TypeAdd<3, 4>; // 7
+```
+Type instantiation is excessively deep and possibly infinite.
 ```
 
+**Reason**: Every recursive type must have a terminating base case (a condition where it stops calling itself). Without a base case, TypeScript stops with a recursion limit error.
+
 ---
 
-### Q55: How do you perform compile-time subtraction (`Sub<A, B>`)?
-**Answer:**
-Match the longer tuple against the shorter tuple with a rest parameter:
+### 6. Try it yourself
+Create a recursive type `JsonValue`:
+- Can be `string | number | boolean | null`
+- Or `JsonValue[]`
+- Or `{ [key: string]: JsonValue }`
+Create a variable with that type holding a nested JSON object.
+
+---
+
+### 7. More examples
+
+#### Example A: Modeling Valid JSON Data (Medium)
 
 ```typescript
-type TypeSub<A extends number, B extends number> =
-  TupleOfLength<A> extends [...TupleOfLength<B>, ...infer Rest]
-    ? Rest["length"]
-    : never;
+type JsonPrimitive = string | number | boolean | null;
+type JsonArray = JsonValue[];
+type JsonObject = { [key: string]: JsonValue };
 
-type Diff = TypeSub<10, 4>; // 6
-```
+type JsonValue = JsonPrimitive | JsonArray | JsonObject;
 
----
-
-### Q56: How do you perform compile-time multiplication (`Multiply<A, B>`)?
-**Answer:**
-Repeated addition via accumulator tuples:
-
-```typescript
-type TypeMultiply<A extends number, B extends number, Acc extends unknown[] = [], Counter extends unknown[] = []> =
-  Counter["length"] extends B
-    ? Acc["length"]
-    : TypeMultiply<A, B, [...Acc, ...TupleOfLength<A>], [...Counter, unknown]>;
-
-type Product = TypeMultiply<3, 5>; // 15
-```
-
----
-
-### Q57: How do you write a generic Curried function type for a function with arbitrary parameters?
-**Answer:**
-Recursively consume parameters one by one:
-
-```typescript
-type Curry<Args extends readonly unknown[], Return> =
-  Args extends readonly [infer First, ...infer Rest]
-    ? (arg: First) => Curry<Rest, Return>
-    : Return;
-
-type Curried3 = Curry<[number, string, boolean], void>;
-// (arg: number) => (arg: string) => (arg: boolean) => void
-```
-
----
-
-### Q58: How do you safely parse an integer string to a literal number type (`ParseInt<S>`)?
-**Answer:**
-```typescript
-type ParseInt<S extends string> = S extends `${infer N extends number}` ? N : never;
-
-type N1 = ParseInt<"42">;     // 42
-type N2 = ParseInt<"invalid">; // never
-```
-
----
-
-### Q59: How do you detect if a type is a tuple with a fixed length vs an open array?
-**Answer:**
-```typescript
-type IsFixedTuple<T> = T extends readonly unknown[]
-  ? number extends T["length"]
-    ? false
-    : true
-  : false;
-```
-
----
-
-### Q60: How do you implement `DeepNonNullable<T>` to recursively strip `null` and `undefined`?
-**Answer:**
-```typescript
-type DeepNonNullable<T> = T extends Function
-  ? T
-  : T extends object
-  ? { [K in keyof T]: DeepNonNullable<NonNullable<T[K]>> }
-  : NonNullable<T>;
-```
-
----
-
-### Q61: What is the compiler's behavior when an unconstrained conditional type evaluates on `any`?
-**Answer:**
-If $T$ is `any`, an unconstrained conditional type `T extends U ? X : Y` evaluates to the **union of both branches** (`X | Y`), because `any` is assignable to everything and everything is assignable to `any`!
-
-```typescript
-type TestAny<T> = T extends number ? "num" : "not-num";
-type Res = TestAny<any>; // "num" | "not-num"
-```
-
----
-
-### Q62: How do you prevent `any` from evaluating to `X | Y` in conditional types?
-**Answer:**
-Guard with `IsAny<T>` before proceeding with the conditional:
-
-```typescript
-type SafeTest<T> = IsAny<T> extends true ? "was-any" : T extends number ? "num" : "other";
-```
-
----
-
-### Q63: How do you convert a kebab-case string type to camelCase (`KebabToCamel<S>`)?
-**Answer:**
-```typescript
-type KebabToCamel<S extends string> =
-  S extends `${infer Head}-${infer Rest}`
-    ? `${Head}${Capitalize<KebabToCamel<Rest>>}`
-    : S;
-
-type Camel = KebabToCamel<"user-profile-id">; // "userProfileId"
-```
-
----
-
-### Q64: How do you convert a camelCase string type to kebab-case (`CamelToKebab<S>`)?
-**Answer:**
-```typescript
-type CamelToKebab<S extends string> =
-  S extends `${infer First}${infer Rest}`
-    ? First extends Uppercase<First>
-      ? `-${Lowercase<First>}${CamelToKebab<Rest>}`
-      : `${First}${CamelToKebab<Rest>}`
-    : S;
-
-type Kebab = CamelToKebab<"userProfileId">; // "user-profile-id"
-```
-
----
-
-### Q65: How do you implement a type-safe string includes check (`StringIncludes<S, Search>`)?
-**Answer:**
-```typescript
-type StringIncludes<S extends string, Search extends string> =
-  S extends `${string}${Search}${string}` ? true : false;
-
-type HasAt = StringIncludes<"user@domain.com", "@">; // true
-type HasHash = StringIncludes<"user@domain.com", "#">; // false
-```
-
----
-
-### Q66: How do you filter a tuple to keep only elements matching a type constraint (`FilterTuple<T, Constraint>`)?
-**Answer:**
-```typescript
-type FilterTuple<T extends readonly unknown[], Constraint, Acc extends unknown[] = []> =
-  T extends readonly [infer First, ...infer Rest]
-    ? First extends Constraint
-      ? FilterTuple<Rest, Constraint, [...Acc, First]>
-      : FilterTuple<Rest, Constraint, Acc>
-    : Acc;
-
-type StringsOnly = FilterTuple<[1, "a", 2, "b", true], string>; // ["a", "b"]
-```
-
----
-
-### Q67: How do you deduplicate members of a tuple type at compile time?
-**Answer:**
-```typescript
-type TupleIncludes<T extends readonly unknown[], Element> =
-  T extends readonly [infer First, ...infer Rest]
-    ? Equals<First, Element> extends true
-      ? true
-      : TupleIncludes<Rest, Element>
-    : false;
-
-type Deduplicate<T extends readonly unknown[], Acc extends unknown[] = []> =
-  T extends readonly [infer First, ...infer Rest]
-    ? TupleIncludes<Acc, First> extends true
-      ? Deduplicate<Rest, Acc>
-      : Deduplicate<Rest, [...Acc, First]>
-    : Acc;
-
-type Unique = Deduplicate<[1, 2, 2, 3, 1, 4]>; // [1, 2, 3, 4]
-```
-
----
-
-### Q68: How do you extract keys whose values are assignable to `string | number`?
-**Answer:**
-```typescript
-type PrimitiveKeys<T> = {
-  [K in keyof T]: T[K] extends string | number ? K : never;
-}[keyof T];
-```
-
----
-
-### Q69: How do you implement a type-level Zip function that combines two tuples into tuple pairs?
-**Answer:**
-```typescript
-type Zip<A extends readonly unknown[], B extends readonly unknown[], Acc extends unknown[] = []> =
-  A extends readonly [infer AHead, ...infer ARest]
-    ? B extends readonly [infer BHead, ...infer BRest]
-      ? Zip<ARest, BRest, [...Acc, [AHead, BHead]]>
-      : Acc
-    : Acc;
-
-type Zipped = Zip<[1, 2, 3], ["a", "b", "c"]>; // [[1, "a"], [2, "b"], [3, "c"]]
-```
-
----
-
-### Q70: How do you implement a compile-time string Repeat utility (`RepeatString<S, N>`)?
-**Answer:**
-```typescript
-type RepeatString<S extends string, N extends number, Acc extends string = "", Counter extends unknown[] = []> =
-  Counter["length"] extends N
-    ? Acc
-    : RepeatString<S, N, `${Acc}${S}`, [...Counter, unknown]>;
-
-type Triple = RepeatString<"abc", 3>; // "abcabcabc"
-```
-
----
-
-### Q71: How do you detect if a type is a Union type?
-**Answer:**
-Compare the naked distributed type with the wrapped non-distributed type:
-
-```typescript
-type IsUnion<T, U = T> =
-  [T] extends [never]
-    ? false
-    : T extends unknown
-    ? [U] extends [T]
-      ? false
-      : true
-    : false;
-
-type U1 = IsUnion<string | number>; // true
-type U2 = IsUnion<string>;          // false
-```
-
----
-
-### Q72: How does `infer` interact with generic default parameters?
-**Answer:**
-If a type parameter has a default, `infer` matches the concrete instantiated type, ignoring the default value during pattern matching.
-
----
-
-### Q73: How do you flatten an object with nested properties into a single-level object with dot paths?
-**Answer:**
-```typescript
-type FlattenObject<T> = {
-  [K in Paths<T>]: Get<T, K>;
+const config: JsonValue = {
+  version: 1,
+  enabled: true,
+  servers: ["auth", "database"],
+  metadata: {
+    region: "us-east",
+  },
 };
 ```
 
----
-
-### Q74: What is the compilation performance trade-off of deep recursive types?
-**Answer:**
-Each level of recursion multiplies type checker instantiation cache lookups. Unbounded recursion or deep object graph parsing can dramatically inflate `tsc` memory usage and compilation times. Always use Tail-Call Optimization and depth guards for complex types.
+**Line-by-line explanation:**
+- `JsonValue` is self-referential: `JsonObject` holds `JsonValue`, which can contain another `JsonObject`.
 
 ---
 
-### Q75: How do you implement a Depth Guard on recursive types?
-**Answer:**
-Use a counter tuple with a maximum allowed length:
+### 8. Common mistakes
 
+#### Mistake 1: Exceeding TypeScript's recursion stack depth
+
+**Wrong code:**
+Creating an infinite recursion that fails to stop.
+
+**Why it happens:**
+Always ensure the recursive step operates on a smaller, unwrapped subset of the type so it terminates.
+
+---
+
+### 9. Rules to remember
+1. Recursive conditional types reference themselves in their branches.
+2. Every recursive type must have a base case that stops recursion.
+3. TypeScript enforces a maximum recursion depth to protect compile performance.
+
+---
+
+### 10. Exercises
+
+#### Question 1 (Predict the compile result)
+What is the resulting type of `Result`?
 ```typescript
-type MaxDepth = 5;
-type GuardedRecurse<T, Depth extends unknown[] = []> =
-  Depth["length"] extends MaxDepth
-    ? T
-    : T extends object
-    ? { [K in keyof T]: GuardedRecurse<T[K], [...Depth, unknown]> }
-    : T;
+type Unroll<T> = T extends Promise<infer Next> ? Unroll<Next> : T;
+type Result = Unroll<Promise<Promise<Promise<boolean>>>>;
 ```
 
----
-
-### Q76: How do you extract the arguments of a specific overload of a function?
-**Answer:**
-TypeScript's `Parameters<T>` only extracts the **last declared overload** of an overloaded function due to the way conditional inference processes intersection call signatures.
-
----
-
-### Q77: How do you verify at compile time that an event handler handles all events defined in an event map?
-**Answer:**
+#### Question 2 (Find and fix the bug)
+The recursive type below has no terminating base case. Fix it:
 ```typescript
-type VerifyHandler<Map, Handler> =
-  Handler extends { [K in keyof Map]: (payload: Map[K]) => void } ? true : false;
+type Loop<T> = Loop<T[]>;
 ```
 
+#### Question 3 (Write code from scratch)
+Write a recursive type `DeepElement<T>` that extracts the element of nested arrays, or returns `T` if it is not an array.
+
+#### Question 4 (Explain in your own words)
+Why is a base case required in a recursive conditional type?
+
 ---
 
-### Q78: How do you write a generic DeepMutable utility that removes `readonly` recursively?
-**Answer:**
+### Solutions
+
+#### Solution to Question 1
+**Hint 1**: Recursively unwrap all three Promises.
+
+**Answer**:
+The resulting type is `boolean`.
+
+#### Solution to Question 2
+**Hint 1**: Add a conditional check to stop recursion.
+
+**Answer**:
 ```typescript
-type DeepMutable<T> = T extends Function
-  ? T
-  : T extends readonly (infer E)[]
-  ? DeepMutable<E>[]
-  : { -readonly [K in keyof T]: DeepMutable<T[K]> };
+type Loop<T> = T extends (infer E)[] ? Loop<E> : T;
 ```
 
----
+#### Solution to Question 3
+**Hint 1**: `T extends readonly (infer E)[] ? DeepElement<E> : T`.
 
-### Q79: How do you check if a number literal is greater than another number literal at compile time (`GreaterThan<A, B>`)?
-**Answer:**
-Use tuple length pattern matching:
-
+**Answer**:
 ```typescript
-type GreaterThan<A extends number, B extends number> =
-  A extends B
-    ? false
-    : TupleOfLength<A> extends [...TupleOfLength<B>, ...unknown[]]
-    ? true
-    : false;
-
-type G1 = GreaterThan<10, 5>; // true
-type G2 = GreaterThan<3, 8>;  // false
+type DeepElement<T> = T extends readonly (infer E)[] ? DeepElement<E> : T;
 ```
 
+#### Solution to Question 4
+**Hint 1**: What happens if a function calls itself forever?
+
+**Answer**:
+Without a base case, the compiler would evaluate recursive calls endlessly, exhausting memory and crashing the compiler process. A base case provides a stopping condition that terminates recursion and returns a concrete type.
+
 ---
 
-### Q80: How do you recursively strip undefined from object properties?
-**Answer:**
+### 11. Recall
+
+1. What is a recursive conditional type?
+2. What error occurs if a recursive type runs forever?
+3. Which TypeScript version added official support for recursive conditional types?
+
+**If you remember only one thing:**
+Recursive conditional types call themselves to process deeply nested structures until a base case is reached.
+
+---
+
+# Topic 14: Covariant vs Contravariant Inference (`UnionToIntersection`)
+
+### 1. What is it?
+When you use `infer` on multiple positions:
+- Multiple inferences in **covariant positions** (return types) create a **union** (`A | B`).
+- Multiple inferences in **contravariant positions** (function parameters) create an **intersection** (`A & B`).
+
+This fundamental property enables one of the most famous advanced TypeScript utilities: `UnionToIntersection<U>`.
+
+### 2. Why does it exist?
+Sometimes you have a union of object types:
 ```typescript
-type StripUndefined<T> = {
-  [K in keyof T]: Exclude<T[K], undefined>;
-};
+type Union = { a: string } | { b: number }
 ```
-
----
-
-### Q81: What is the difference between `infer` on a tuple rest element `[...infer Rest]` and `infer Rest` on an array `(infer Rest)[]`?
-**Answer:**
-- `[...infer Rest]`: Captures the **exact remaining tuple elements** with their individual types and order preserved.
-- `(infer Rest)[]`: Collapses all elements into a single **union** of element types.
-
----
-
-### Q82: How do you implement compile-time JSON Schema validation using conditional types?
-**Answer:**
-Map JSON schema property types (`"string"`, `"number"`, `"boolean"`) to their corresponding TypeScript primitives in conditional branches.
-
----
-
-### Q83: How do you extract all values of an object that are Promises?
-**Answer:**
+And you need to merge them into a single intersecting object:
 ```typescript
-type PromiseValues<T> = {
-  [K in keyof T as T[K] extends Promise<any> ? K : never]: T[K];
-};
+{ a: string } & { b: number }
 ```
+Because function parameters are contravariant, inferring the parameter type from a distributed union of function consumers forces TypeScript to combine them into an intersection!
 
----
-
-### Q84: How do you unwrap all Promises inside an object's properties?
-**Answer:**
-```typescript
-type UnwrapObjectPromises<T> = {
-  [K in keyof T]: T[K] extends Promise<infer U> ? U : T[K];
-};
-```
-
----
-
-### Q85: How do you implement a type-safe `PickByValue<T, ValueType>`?
-**Answer:**
-```typescript
-type PickByValue<T, ValueType> = {
-  [K in keyof T as T[K] extends ValueType ? K : never]: T[K];
-};
-```
-
----
-
-### Q86: How do you implement a type-safe `OmitByValue<T, ValueType>`?
-**Answer:**
-```typescript
-type OmitByValue<T, ValueType> = {
-  [K in keyof T as T[K] extends ValueType ? never : K]: T[K];
-};
-```
-
----
-
-### Q87: How do you construct a Cartesian product of two union types at compile time?
-**Answer:**
-Distributive conditional types over two naked parameters naturally generate a Cartesian product:
+### 3. Basic example
 
 ```typescript
-type Cartesian<A, B> = A extends unknown ? (B extends unknown ? [A, B] : never) : never;
+// 1. Multiple inferences in Covariant position -> Union:
+type Covariant<T> = T extends { a: infer U; b: infer U } ? U : never;
+type R1 = Covariant<{ a: string; b: number }>; // string | number
 
-type Pairs = Cartesian<"x" | "y", 1 | 2>;
-// ["x", 1] | ["x", 2] | ["y", 1] | ["y", 2]
-```
-
----
-
-### Q88: How do you count occurrences of a character in a string type?
-**Answer:**
-```typescript
-type CountChar<S extends string, C extends string, Acc extends unknown[] = []> =
-  S extends `${string}${C}${infer Rest}`
-    ? CountChar<Rest, C, [...Acc, unknown]>
-    : Acc["length"];
-
-type Dots = CountChar<"192.168.1.1", ".">; // 3
-```
-
----
-
-### Q89: How do you check if a string starts with a specific prefix type?
-**Answer:**
-```typescript
-type StartsWith<S extends string, Prefix extends string> =
-  S extends `${Prefix}${string}` ? true : false;
-```
-
----
-
-### Q90: What is the architectural role of Conditional Types in modern enterprise software?
-**Answer:**
-**"Conditional types provide compile-time reflection and transformation. They eliminate runtime glue code, automate API contract validation, and ensure that changes to domain models automatically propagate through data transfer objects, database queries, and UI components with zero manual synchronization."**
-`;
-};
-
-
----
-
-## 🧩 Section 13: Output & Type-Prediction Puzzles (15 In-Depth Scenarios)
-
-### Puzzle 1: The `never` Distribution Disappearance
-```typescript
-type CheckType<T> = T extends number ? "number" : "not-number";
-
-type ResA = CheckType<string>;
-type ResB = CheckType<never>;
-
-console.log("ResA evaluated");
-```
-**Question**: What is the static type of `ResA`? What is the static type of `ResB`?
-**Answer & Analysis**:
-- `ResA` evaluates to `"not-number"`.
-- `ResB` evaluates to **`never`**, NOT `"not-number"`!
-- Because `never` is an empty union of 0 members, the distributive conditional type evaluates 0 times, returning `never`.
-
----
-
-### Puzzle 2: Distribution Suppression with `[T]`
-```typescript
-type IsNeverStrict<T> = [T] extends [never] ? "is-never" : "not-never";
-
-type Test1 = IsNeverStrict<never>;
-type Test2 = IsNeverStrict<string>;
-
-console.log("Strict never check complete");
-```
-**Question**: What are `Test1` and `Test2`?
-**Answer & Analysis**:
-- By wrapping both sides in square brackets `[T] extends [never]`, distribution is suppressed.
-- `Test1` evaluates to `"is-never"`.
-- `Test2` evaluates to `"not-never"`.
-
----
-
-### Puzzle 3: The `boolean` Distribution Split
-```typescript
-type Branch<T> = T extends true ? "YES" : "NO";
-
-type Result = Branch<boolean>;
-```
-**Question**: What is the type of `Result`?
-**Answer & Analysis**:
-- In TypeScript, `boolean` is defined as `true | false`.
-- The naked type parameter distributes over both variants:
-  `(true extends true ? "YES" : "NO") | (false extends true ? "YES" : "NO")`
-  => `"YES" | "NO"`.
-- Result is the union `"YES" | "NO"`, not `"NO"`!
-
----
-
-### Puzzle 4: Covariant `infer` Produces a Union
-```typescript
-type ExtractValues<T> = T extends { a: infer R; b: infer R } ? R : never;
-
-type Data = ExtractValues<{ a: string; b: number }>;
-```
-**Question**: What is the type of `Data`?
-**Answer & Analysis**:
-- `infer R` appears in two covariant (output) positions (`a` and `b`).
-- TypeScript collects candidates and computes their **Union**.
-- `Data` is inferred as `string | number`.
-
----
-
-### Puzzle 5: Contravariant `infer` Produces an Intersection
-```typescript
-type ExtractParams<T> = T extends {
-  f1: (x: infer R) => void;
-  f2: (x: infer R) => void;
-} ? R : never;
-
-type Combined = ExtractParams<{
+// 2. Multiple inferences in Contravariant position -> Intersection:
+type Contravariant<T> = T extends {
+  f1: (x: infer U) => void;
+  f2: (x: infer U) => void;
+} ? U : never;
+type R2 = Contravariant<{
   f1: (x: { name: string }) => void;
   f2: (x: { age: number }) => void;
 }>;
-```
-**Question**: What is the type of `Combined`?
-**Answer & Analysis**:
-- `infer R` appears in two contravariant (function argument) positions.
-- To safely accept calls from both functions, the candidate must satisfy both requirements simultaneously.
-- TypeScript computes their **Intersection**.
-- `Combined` is inferred as `{ name: string } & { age: number }`.
-
----
-
-### Puzzle 6: The `any` Branching Explosion
-```typescript
-type CheckNumber<T> = T extends number ? "is-number" : "not-number";
-
-type Outcome = CheckNumber<any>;
-```
-**Question**: What is the type of `Outcome`?
-**Answer & Analysis**:
-- Because `any` is assignable to `number` AND `number` is assignable to `any`, the conditional distributes into both branches!
-- `Outcome` is inferred as the union `"is-number" | "not-number"`.
-
----
-
-### Puzzle 7: Transforming Union to Intersection
-```typescript
-type UnionToIntersection<U> = 
-  (U extends unknown ? (k: U) => void : never) extends 
-  (k: infer I) => void ? I : never;
-
-type Merged = UnionToIntersection<{ token: string } | { secret: number }>;
-```
-**Question**: What is the type of `Merged`?
-**Answer & Analysis**:
-- The union of objects is mapped to a union of functions contravariant on their parameters.
-- Pattern matching against `(k: infer I) => void` intersects the parameters.
-- `Merged` is inferred as `{ token: string } & { secret: number }`.
-
----
-
-### Puzzle 8: Deep Promise Unwrapping
-```typescript
-type Unwrap<T> = T extends Promise<infer U> ? Unwrap<U> : T;
-
-type DeepVal = Unwrap<Promise<Promise<Promise<number>>>>;
-```
-**Question**: What is the type of `DeepVal`?
-**Answer & Analysis**:
-- The conditional type recurses three times until the innermost type is non-Promise.
-- `DeepVal` evaluates to `number`.
-
----
-
-### Puzzle 9: String Path Tokenizer
-```typescript
-type SplitPath<S extends string> =
-  S extends `${infer Head}/${infer Tail}`
-    ? [Head, ...SplitPath<Tail>]
-    : [S];
-
-type Segments = SplitPath<"api/v1/users">;
-```
-**Question**: What is the static type of `Segments`?
-**Answer & Analysis**:
-- The template literal pattern extracts `"api"`, recurses on `"v1/users"`, extracts `"v1"`, and concludes with `["users"]`.
-- `Segments` is inferred as `["api", "v1", "users"]`.
-
----
-
-### Puzzle 10: Deep Path Key Extraction
-```typescript
-type Config = {
-  db: {
-    host: string;
-    port: number;
-  };
-};
-
-type DeepKeys<T> = T extends object
-  ? { [K in keyof T]: K extends string ? `${K}` | `${K}.${DeepKeys<T[K]>}` : never }[keyof T]
-  : never;
-
-type Keys = DeepKeys<Config>;
-```
-**Question**: What keys are included in `Keys`?
-**Answer & Analysis**:
-- Evaluates to `"db" | "db.host" | "db.port"`.
-
----
-
-### Puzzle 11: Testing Optional Property via Empty Object Assignability
-```typescript
-type Entity = {
-  id: string;
-  note?: string;
-};
-
-type IsNoteOptional = {} extends Pick<Entity, "note"> ? true : false;
-type IsIdOptional = {} extends Pick<Entity, "id"> ? true : false;
-```
-**Question**: What are `IsNoteOptional` and `IsIdOptional`?
-**Answer & Analysis**:
-- `Pick<Entity, "note">` is `{ note?: string }`. `{}` is assignable to it, so `IsNoteOptional` is `true`.
-- `Pick<Entity, "id">` is `{ id: string }`. `{}` lacks `id`, so `IsIdOptional` is `false`.
-
----
-
-### Puzzle 12: Natural Number Addition at Compile Time
-```typescript
-type Length<T extends unknown[]> = T["length"];
-type BuildTuple<N extends number, Acc extends unknown[] = []> =
-  Acc["length"] extends N ? Acc : BuildTuple<N, [...Acc, unknown]>;
-
-type Add<A extends number, B extends number> =
-  Length<[...BuildTuple<A>, ...BuildTuple<B>]>;
-
-type Result = Add<2, 3>;
-```
-**Question**: What is the static type of `Result`?
-**Answer & Analysis**:
-- Builds tuple of length 2, tuple of length 3, combines them into length 5, and reads `.length`.
-- `Result` is literal number `5`.
-
----
-
-### Puzzle 13: String Replace All
-```typescript
-type ReplaceChar<S extends string, From extends string, To extends string> =
-  S extends `${infer Start}${From}${infer Rest}`
-    ? `${Start}${To}${ReplaceChar<Rest, From, To>}`
-    : S;
-
-type CleanStr = ReplaceChar<"2026-09-27", "-", "/">;
-```
-**Question**: What is `CleanStr`?
-**Answer & Analysis**:
-- Recursively matches `-` and replaces with `/`.
-- `CleanStr` is literal `"2026/09/27"`.
-
----
-
-### Puzzle 14: Rest Tuple Pattern Matching
-```typescript
-type Deconstruct<T> = T extends [infer Head, ...infer Tail] ? { head: Head; tail: Tail } : never;
-
-type Sample = Deconstruct<["first", 2, true]>;
-```
-**Question**: What are `Sample["head"]` and `Sample["tail"]`?
-**Answer & Analysis**:
-- `Sample["head"]` is literal `"first"`.
-- `Sample["tail"]` is tuple `[2, true]`.
-
----
-
-### Puzzle 15: Tail-Call Recursion vs Stack Overflow
-```typescript
-// Tail-recursive with accumulator:
-type Loop<Count extends number, Acc extends unknown[] = []> =
-  Acc["length"] extends Count
-    ? Acc["length"]
-    : Loop<Count, [...Acc, unknown]>;
-
-type Hundred = Loop<100>;
-```
-**Question**: Does `Loop<100>` compile under modern TypeScript?
-**Answer & Analysis**:
-- **Yes!** Because the recursive call `Loop<Count, [...Acc, unknown]>` is in tail position, TypeScript 4.5+ Tail-Call Optimization executes it iteratively without blowing the 50-stack limit (handling up to 1,000 steps).
-- `Hundred` evaluates to literal `100`.
-`;
-};
-
-
----
-
-## 🛠️ Section 14: Four Complete Production Projects (Zero Stubs, Fully Runnable)
-
-All four projects below are designed with production-grade architecture and self-contained runtime verification suites using `node:assert/strict`.
-
----
-
-### Project 1: Type-Level Deep Object Differ & Runtime Patch Engine
-
-**Architectural Objective**: Build a type-safe object diffing engine where changes between state snapshots are typed as explicit added, modified, and removed mutations, with a verifiable patch applier.
-
-```typescript
-import assert from "node:assert/strict";
-
-// Diff Representation
-export interface DiffPatch<T> {
-  added: Partial<T>;
-  modified: Partial<T>;
-  removed: (keyof T)[];
-}
-
-export class ObjectDiffer<T extends Record<string, any>> {
-  private baseState: T;
-
-  constructor(base: T) {
-    this.baseState = { ...base };
-  }
-
-  public computeDiff(nextState: T): DiffPatch<T> {
-    const added: Partial<T> = {};
-    const modified: Partial<T> = {};
-    const removed: (keyof T)[] = [];
-
-    const baseKeys = new Set(Object.keys(this.baseState));
-    const nextKeys = new Set(Object.keys(nextState));
-
-    for (const key of nextKeys) {
-      if (!baseKeys.has(key)) {
-        added[key as keyof T] = nextState[key];
-      } else if (this.baseState[key] !== nextState[key]) {
-        modified[key as keyof T] = nextState[key];
-      }
-    }
-
-    for (const key of baseKeys) {
-      if (!nextKeys.has(key)) {
-        removed.push(key as keyof T);
-      }
-    }
-
-    return { added, modified, removed };
-  }
-
-  public applyPatch(patch: DiffPatch<T>): T {
-    const updated: any = { ...this.baseState };
-
-    for (const key of patch.removed) {
-      delete updated[key];
-    }
-    for (const [key, val] of Object.entries(patch.added)) {
-      updated[key] = val;
-    }
-    for (const [key, val] of Object.entries(patch.modified)) {
-      updated[key] = val;
-    }
-
-    this.baseState = updated;
-    return this.baseState;
-  }
-}
-
-// Verification Harness
-function verifyObjectDiffer() {
-  interface UserConfig {
-    theme: string;
-    fontSize: number;
-    betaFeatures?: boolean;
-    customDomain?: string;
-  }
-
-  const initial: UserConfig = { theme: "light", fontSize: 14 };
-  const differ = new ObjectDiffer<UserConfig>(initial);
-
-  const targetState: UserConfig = {
-    theme: "dark",      // modified
-    fontSize: 14,       // unchanged
-    betaFeatures: true  // added
-  };
-
-  const patch = differ.computeDiff(targetState);
-
-  assert.equal(patch.modified.theme, "dark");
-  assert.equal(patch.added.betaFeatures, true);
-  assert.equal(patch.removed.length, 0);
-
-  const patched = differ.applyPatch(patch);
-  assert.equal(patched.theme, "dark");
-  assert.equal(patched.betaFeatures, true);
-
-  console.log("✅ Project 1 (Deep Differ & Patch Engine) Verified Successfully!");
-}
-verifyObjectDiffer();
+// Inferred as: { name: string } & { age: number }
 ```
 
+**Line-by-line explanation:**
+- `Covariant<T>`: `U` is in output/property positions. When multiple candidates exist (`string` and `number`), TypeScript unions them into `string | number`.
+- `Contravariant<T>`: `U` is in function parameter positions (input). To satisfy both functions, `U` must satisfy both inputs, so TypeScript intersects them into `{ name: string } & { age: number }`.
+
 ---
 
-### Project 2: Type-Safe Recursive Schema Flattener & Dot-Path Resolver
-
-**Architectural Objective**: Build a runtime path accessor that reads and writes deeply nested properties with full compile-time validation of dot-delimited path strings (`Paths<T>` and `Get<T, P>`).
+### 4. How it works inside TypeScript
+Building the complete `UnionToIntersection<U>` utility:
 
 ```typescript
-import assert from "node:assert/strict";
-
-export type DotPaths<T> = T extends object
-  ? {
-      [K in keyof T]: K extends string
-        ? T[K] extends object
-          ? `${K}` | `${K}.${DotPaths<T[K]>}`
-          : `${K}`
-        : never;
-    }[keyof T]
-  : never;
-
-export type PathValue<T, Path extends string> =
-  Path extends `${infer Head}.${infer Tail}`
-    ? Head extends keyof T
-      ? PathValue<T[Head], Tail>
-      : never
-    : Path extends keyof T
-    ? T[Path]
+type UnionToIntersection<U> =
+  (U extends any ? (k: U) => void : never) extends (k: infer I) => void
+    ? I
     : never;
 
-export class DeepPathResolver<T extends Record<string, any>> {
-  private target: T;
-
-  constructor(target: T) {
-    this.target = target;
-  }
-
-  public get<P extends DotPaths<T>>(path: P): PathValue<T, P> {
-    const segments = (path as string).split(".");
-    let current: any = this.target;
-
-    for (const seg of segments) {
-      if (current === undefined || current === null) return undefined as any;
-      current = current[seg];
-    }
-    return current;
-  }
-
-  public set<P extends DotPaths<T>>(path: P, value: PathValue<T, P>): void {
-    const segments = (path as string).split(".");
-    let current: any = this.target;
-
-    for (let i = 0; i < segments.length - 1; i++) {
-      const seg = segments[i];
-      if (typeof current[seg] !== "object" || current[seg] === null) {
-        current[seg] = {};
-      }
-      current = current[seg];
-    }
-    current[segments[segments.length - 1]] = value;
-  }
-
-  public snapshot(): T {
-    return structuredClone(this.target);
-  }
-}
-
-// Verification Harness
-function verifyDeepPathResolver() {
-  interface EnterpriseOrg {
-    name: string;
-    infrastructure: {
-      cloud: string;
-      kubernetes: {
-        clusterName: string;
-        nodeCount: number;
-      };
-    };
-  }
-
-  const org: EnterpriseOrg = {
-    name: "Acme Corp",
-    infrastructure: {
-      cloud: "AWS",
-      kubernetes: {
-        clusterName: "prod-cluster-01",
-        nodeCount: 12
-      }
-    }
-  };
-
-  const resolver = new DeepPathResolver(org);
-
-  // Type-Safe Deep Get:
-  const nodeCount = resolver.get("infrastructure.kubernetes.nodeCount");
-  assert.equal(nodeCount, 12);
-
-  // Type-Safe Deep Set:
-  resolver.set("infrastructure.kubernetes.nodeCount", 24);
-  assert.equal(resolver.get("infrastructure.kubernetes.nodeCount"), 24);
-
-  console.log("✅ Project 2 (Deep Path Resolver) Verified Successfully!");
-}
-verifyDeepPathResolver();
+type Merged = UnionToIntersection<{ a: 1 } | { b: 2 }>;
+// Inferred as: { a: 1 } & { b: 2 }
 ```
+
+**Step-by-step breakdown:**
+1. `(U extends any ? (k: U) => void : never)`: Distributes over each union member and places it into a contravariant function parameter position.
+   - Becomes: `((k: { a: 1 }) => void) | ((k: { b: 2 }) => void)`.
+2. `extends (k: infer I) => void`: The compiler infers `I` from the union of function signatures.
+3. Because function parameters are contravariant, TypeScript intersects the candidates:
+   - `I` resolves to `{ a: 1 } & { b: 2 }`.
 
 ---
 
-### Project 3: Type-Level Boolean Logic & Predicate Evaluator
+### 5. Think first
 
-**Architectural Objective**: Build a compile-time boolean logic engine that validates permissions and logical conditions using recursive conditional types.
+What happens when multiple candidates for `infer R` exist in return types? Does it create a union or an intersection? Decide first.
 
 ```typescript
-import assert from "node:assert/strict";
-
-// Type-Level Boolean Operators:
-export type Not<B extends boolean> = B extends true ? false : true;
-
-export type And<A extends boolean, B extends boolean> =
-  A extends true ? (B extends true ? true : false) : false;
-
-export type Or<A extends boolean, B extends boolean> =
-  A extends true ? true : (B extends true ? true : false);
-
-export type Xor<A extends boolean, B extends boolean> =
-  A extends B ? false : true;
-
-// Permission Matrix Evaluator:
-export interface UserContext {
-  isAdmin: boolean;
-  isOwner: boolean;
-  hasWritePermission: boolean;
-}
-
-export type CanEditDocument<Ctx extends UserContext> =
-  Or<Ctx["isAdmin"], And<Ctx["isOwner"], Ctx["hasWritePermission"]>>;
-
-export class PermissionEngine {
-  public static canEdit(ctx: UserContext): boolean {
-    return ctx.isAdmin || (ctx.isOwner && ctx.hasWritePermission);
-  }
-}
-
-// Verification Harness
-function verifyPermissionEngine() {
-  const adminCtx: UserContext = { isAdmin: true, isOwner: false, hasWritePermission: false };
-  const ownerWithoutWrite: UserContext = { isAdmin: false, isOwner: true, hasWritePermission: false };
-  const ownerWithWrite: UserContext = { isAdmin: false, isOwner: true, hasWritePermission: true };
-
-  assert.equal(PermissionEngine.canEdit(adminCtx), true);
-  assert.equal(PermissionEngine.canEdit(ownerWithoutWrite), false);
-  assert.equal(PermissionEngine.canEdit(ownerWithWrite), true);
-
-  console.log("✅ Project 3 (Type-Level Boolean Logic Engine) Verified Successfully!");
-}
-verifyPermissionEngine();
+type Test<T> = T extends () => infer R ? R : never;
 ```
 
 ---
 
-### Project 4: Enterprise Compile-Time Dependency Graph & Cyclic Import Validator
+**Answer and Reason:**
 
-**Architectural Objective**: Build an asynchronous module dependency validator that topologically sorts dependency graphs, detecting circular dependencies and calculating execution order.
+It creates a **union**.
+
+**Reason**: Return types are in covariant (output) positions. Candidate types in covariant positions combine as a union (`A | B`).
+
+---
+
+### 6. Try it yourself
+Use the `UnionToIntersection` utility defined above on `{ id: string } | { createdAt: number } | { active: boolean }`. Verify that the result has all three properties.
+
+---
+
+### 7. More examples
+
+#### Example A: Merging Function Signatures into Overloads (Medium)
 
 ```typescript
-import assert from "node:assert/strict";
+type Fn1 = (x: string) => void;
+type Fn2 = (x: number) => void;
 
-export interface DependencyGraph {
-  [moduleName: string]: readonly string[];
-}
-
-export class DependencyResolver {
-  private graph: DependencyGraph;
-
-  constructor(graph: DependencyGraph) {
-    this.graph = graph;
-  }
-
-  public resolveBuildOrder(): string[] {
-    const visited = new Set<string>();
-    const visiting = new Set<string>();
-    const order: string[] = [];
-
-    const visit = (node: string) => {
-      if (visiting.has(node)) {
-        throw new Error(`Circular dependency detected involving module: "${node}"`);
-      }
-      if (visited.has(node)) return;
-
-      visiting.add(node);
-      const deps = this.graph[node] ?? [];
-      for (const dep of deps) {
-        visit(dep);
-      }
-      visiting.delete(node);
-      visited.add(node);
-      order.push(node);
-    };
-
-    for (const node of Object.keys(this.graph)) {
-      if (!visited.has(node)) {
-        visit(node);
-      }
-    }
-
-    return order;
-  }
-}
-
-// Verification Harness
-function verifyDependencyResolver() {
-  const validGraph: DependencyGraph = {
-    "app": ["auth", "database"],
-    "auth": ["crypto"],
-    "database": ["crypto"],
-    "crypto": []
-  };
-
-  const resolver = new DependencyResolver(validGraph);
-  const order = resolver.resolveBuildOrder();
-
-  assert.equal(order.indexOf("crypto") < order.indexOf("auth"), true);
-  assert.equal(order.indexOf("crypto") < order.indexOf("database"), true);
-  assert.equal(order.indexOf("auth") < order.indexOf("app"), true);
-
-  // Circular graph:
-  const circularGraph: DependencyGraph = {
-    "A": ["B"],
-    "B": ["C"],
-    "C": ["A"]
-  };
-
-  const badResolver = new DependencyResolver(circularGraph);
-  assert.throws(() => {
-    badResolver.resolveBuildOrder();
-  }, /Circular dependency detected/);
-
-  console.log("✅ Project 4 (Dependency Graph & Cycle Detector) Verified Successfully!");
-}
-verifyDependencyResolver();
+type CombinedFn = UnionToIntersection<Fn1 | Fn2>;
+// Produces an overloaded function that accepts string AND number!
 ```
 
+---
+
+### 8. Common mistakes
+
+#### Mistake 1: Expecting primitive intersections to remain primitives
+
+**Wrong code:**
+```typescript
+type Clashing = UnionToIntersection<string | number>;
+// Resolves to: string & number -> never!
+```
+
+**Why it happens:**
+Intersecting incompatible primitive types (`string & number`) produces `never`.
 
 ---
 
-## 📋 Section 15: The Production DOs and DON'Ts Matrix (20 Critical Rules)
-
-| # | Category | ❌ NEVER DO (Anti-Pattern) | ✅ ALWAYS DO (Production Standard) | Technical Rationale & Failure Mode |
-|---|---|---|---|---|
-| 1 | Never Check | `type IsNever<T> = T extends never ? true : false` | `type IsNever<T> = [T] extends [never] ? true : false` | Naked `never` has 0 members; distributive conditional evaluates 0 times to `never`. |
-| 2 | Boolean Distribution | Forget that `boolean` is `true \| false` | Handle both branches or suppress with `[T]` | `T extends true` distributes into `true \| false` (boolean), surprising developers. |
-| 3 | Recursion Structure | Non-TCO recursive types (`[...Recurse<T>, E]`) | Tail-Call Accumulator pattern (`Recurse<T, [E, ...Acc]>`) | Non-TCO recursion crashes compiler at ~50 levels; TCO handles up to 1,000 steps. |
-| 4 | Union to Intersection | Re-implement with unsafe casts | Use contravariant parameter `infer I` | Contravariant inference provides mathematically sound union-to-intersection. |
-| 5 | String Parsing | Hardcode nested regex without types | Combine template literals with `infer` | Template literal pattern matching guarantees exact string slice types. |
-| 6 | Nested Dot Paths | Manually write strings like `"user.name"` | Use `Paths<T>` utility to constrain strings | Protects against typos and silently broken path accessors when schema fields rename. |
-| 7 | Unbounded Recursion | Omit depth checks on arbitrary object graphs | Introduce depth guard counter tuples | Unbounded recursive traversals cause compiler memory exhaustion on cyclical types. |
-| 8 | Tuple Slicing | Cast tuples with `as any[]` | Use rest tuple pattern matching `[infer H, ...infer T]` | Preserves exact element positions and readonly modifiers. |
-| 9 | Function Return | Duplicate function return signatures | Use `ReturnType<T>` or `infer R` | Prevents desynchronization when function implementation return type changes. |
-| 10 | Optional Detection | Check `undefined extends T[K]` alone | Check `{} extends Pick<T, K>` | Properties explicitly typed as `undefined` are not the same as optional properties. |
-| 11 | Any Distribution | Rely on conditional types with `any` | Guard with `IsAny<T>` first | `any` distributes into both true and false branches (`A \| B`), poisoning logic. |
-| 12 | Overload Inference | Expect `Parameters<T>` to return all overloads | Understand it returns only the last overload | TypeScript conditional inference processes intersection signatures from the bottom. |
-| 13 | Deep Flattening | Flatten arrays with loose loops | Use recursive conditional `DeepFlatten` | Accurately models multi-dimensional scientific or graphics data structures. |
-| 14 | Array vs Tuple | Treat `T[]` as equivalent to tuples | Check `number extends T["length"]` | Fixed tuples have literal lengths; open arrays have number length. |
-| 15 | Infer Suffix | Nest conditions to cast inferred types | Use `infer T extends Constraint` (TS 4.7) | Flattens type definitions and simplifies compiler instantiation ASTs. |
-| 16 | Key Filtering | Use manual index loops | Key remapping with `as` and conditional filtering | Cleaner, idiomatic, and faster type resolution. |
-| 17 | Self-Referencing | Declare recursive interfaces that loop forever | Guard recursive base cases with terminal checks | Without base case checks, the compiler halts with depth errors. |
-| 18 | Complex Conditionals | Nest 10 ternary conditions in one line | Break complex types into modular helper types | Improves readability, debugging, and IDE type inspection hover popups. |
-| 19 | Library Utilities | Write custom versions of `Awaited` | Use native `Awaited<T>` (TS 4.5+) | Built-in utilities are optimized in C++ in the TypeScript core checker. |
-| 20 | Monorepo Performance | Run deep conditional gymnastics in hot paths | Benchmark with `--extendedDiagnostics` | Overuse of non-TCO conditional types can double or triple CI build times. |
+### 9. Rules to remember
+1. Inferences in covariant positions produce unions (`|`).
+2. Inferences in contravariant positions produce intersections (`&`).
+3. `UnionToIntersection` leverages contravariance on function parameters.
 
 ---
 
-## 🏢 Section 16: Real-World Architectural Case Study: Enterprise Event Sourcing & CQRS Schema Projection
+### 10. Exercises
 
-### 16.1 Context & Problem Statement
-A high-frequency FinTech trading platform utilizes **Event Sourcing**: all state mutations are persisted as immutable domain events, and read models (CQRS projections) are dynamically recomputed by folding over historical event streams.
+#### Question 1 (Predict the compile result)
+What is the resulting type of `Merged`?
+```typescript
+type U = { name: string } | { age: number };
+type Merged = UnionToIntersection<U>;
+```
 
-The legacy codebase suffered from:
-1. Incomplete event handling: New event variants added by domain engineers were silently ignored by projection reducers.
-2. Inaccurate state typing: Projection handlers had to manually cast event payloads with `as any`.
-3. Lack of schema evolution safety: Modifying an event payload broke historical projections at runtime.
+#### Question 2 (Find and fix the bug)
+Explain why `UnionToIntersection<"a" | "b">` resolves to `never`:
 
-### 16.2 Architectural Solution
-The engineering team introduced a type-level Event Projection Engine utilizing:
-1. **Distributive Event Discrimination**: A single master event union mapped directly to handler signatures.
-2. **Compile-Time Exhaustiveness Projection**: Reducers must implement handlers for all events in the stream.
-3. **Type-Safe Event Folder**: A generic folding pipeline with conditional payload extraction.
+#### Question 3 (Write code from scratch)
+Write out the `UnionToIntersection<U>` definition from memory and test it.
 
-### 16.3 Production Implementation & Verification
+#### Question 4 (Explain in your own words)
+Why does inferring from function parameters create an intersection instead of a union?
+
+---
+
+### Solutions
+
+#### Solution to Question 1
+**Hint 1**: Intersect both object types.
+
+**Answer**:
+The resulting type is `{ name: string } & { age: number }`.
+
+#### Solution to Question 2
+**Hint 1**: Can a value be `"a"` and `"b"` simultaneously?
+
+**Answer**:
+`"a" & "b"` is an intersection of incompatible string literals. No value can be both `"a"` and `"b"`, so it resolves to `never`.
+
+#### Solution to Question 3
+**Hint 1**: Distribute into `(k: U) => void`, then infer `I`.
+
+**Answer**:
+```typescript
+type UnionToIntersection<U> =
+  (U extends any ? (k: U) => void : never) extends (k: infer I) => void
+    ? I
+    : never;
+```
+
+#### Solution to Question 4
+**Hint 1**: What type must a parameter be to be accepted by all handler functions?
+
+**Answer**:
+In contravariant parameter positions, a single type must be able to satisfy every function variant. To be compatible with all variants, the argument must satisfy all requirements simultaneously, which requires an intersection.
+
+---
+
+### 11. Recall
+
+1. What do multiple inferences in covariant positions produce?
+2. What do multiple inferences in contravariant positions produce?
+3. What utility type turns `{ a: string } | { b: number }` into `{ a: string } & { b: number }`?
+
+**If you remember only one thing:**
+Contravariant inference in function parameters turns unions into intersections.
+
+---
+
+# Final Checkpoint Challenge: Topics 11 to 14
+
+### Challenge Scenario
+Build an asynchronous event pipeline type system:
+
+1. Define an async handler type:
+   ```typescript
+   type UserHandler = () => Promise<{ userId: string }>;
+   type OrderHandler = () => Promise<{ orderId: string }>;
+   ```
+2. Using `ReturnType` and `Awaited`, extract the clean data models from both handlers.
+3. Using `UnionToIntersection`, merge `{ userId: string } | { orderId: string }` into a single combined payload.
+4. Write a recursive conditional type `DeepReadonly<T>`:
+   - If `T` is a primitive or function, return `T`.
+   - If `T` is an array `(infer E)[]`, return `readonly DeepReadonly<E>[]`.
+   - If `T` is an object, return `{ readonly [K in keyof T]: DeepReadonly<T[K]> }`.
+5. Apply `DeepReadonly` to the merged payload.
+
+### Challenge Solution
 
 ```typescript
-import assert from "node:assert/strict";
+type UserHandler = () => Promise<{ userId: string }>;
+type OrderHandler = () => Promise<{ orderId: string }>;
 
-// Master Domain Event Union:
-export type DomainEvent =
-  | { type: "ACCOUNT_OPENED"; accountId: string; initialDepositUSD: number; timestamp: number }
-  | { type: "FUNDS_DEPOSITED"; accountId: string; amountUSD: number; txId: string; timestamp: number }
-  | { type: "FUNDS_WITHDRAWN"; accountId: string; amountUSD: number; txId: string; timestamp: number }
-  | { type: "ACCOUNT_FROZEN"; accountId: string; reason: string; timestamp: number };
+// 2. Extract unwrapped return types:
+type UserPayload = Awaited<ReturnType<UserHandler>>;
+type OrderPayload = Awaited<ReturnType<OrderHandler>>;
 
-// Read Model Projection State
-export interface AccountReadModel {
-  readonly accountId: string;
-  readonly balanceUSD: number;
-  readonly isFrozen: boolean;
-  readonly transactionCount: number;
-}
+// 3. Union to Intersection:
+type UnionToIntersection<U> =
+  (U extends any ? (k: U) => void : never) extends (k: infer I) => void
+    ? I
+    : never;
 
-// Type-Level Event Payload Extractor:
-export type ExtractEvent<E extends DomainEvent, T extends E["type"]> =
-  E extends { type: T } ? E : never;
+type CombinedPayload = UnionToIntersection<UserPayload | OrderPayload>;
+// Inferred as: { userId: string } & { orderId: string }
 
-// Projection Reducer:
-export class AccountProjectionEngine {
-  public static project(events: readonly DomainEvent[]): Map<string, AccountReadModel> {
-    const accounts = new Map<string, AccountReadModel>();
+// 4. Recursive DeepReadonly:
+type DeepReadonly<T> =
+  T extends (...args: any[]) => any ? T :
+  T extends readonly (infer E)[] ? readonly DeepReadonly<E>[] :
+  T extends object ? { readonly [K in keyof T]: DeepReadonly<T[K]> } :
+  T;
 
-    for (const event of events) {
-      switch (event.type) {
-        case "ACCOUNT_OPENED": {
-          accounts.set(event.accountId, {
-            accountId: event.accountId,
-            balanceUSD: event.initialDepositUSD,
-            isFrozen: false,
-            transactionCount: 1
-          });
-          break;
-        }
-        case "FUNDS_DEPOSITED": {
-          const current = accounts.get(event.accountId);
-          if (current) {
-            accounts.set(event.accountId, {
-              ...current,
-              balanceUSD: current.balanceUSD + event.amountUSD,
-              transactionCount: current.transactionCount + 1
-            });
-          }
-          break;
-        }
-        case "FUNDS_WITHDRAWN": {
-          const current = accounts.get(event.accountId);
-          if (current) {
-            accounts.set(event.accountId, {
-              ...current,
-              balanceUSD: current.balanceUSD - event.amountUSD,
-              transactionCount: current.transactionCount + 1
-            });
-          }
-          break;
-        }
-        case "ACCOUNT_FROZEN": {
-          const current = accounts.get(event.accountId);
-          if (current) {
-            accounts.set(event.accountId, {
-              ...current,
-              isFrozen: true
-            });
-          }
-          break;
-        }
-      }
-    }
+// 5. Applied:
+type FinalConfig = DeepReadonly<CombinedPayload>;
 
-    return accounts;
-  }
-}
-
-// Verification Harness
-function runProjectionVerification() {
-  const stream: DomainEvent[] = [
-    { type: "ACCOUNT_OPENED", accountId: "acc_100", initialDepositUSD: 500, timestamp: 1000 },
-    { type: "FUNDS_DEPOSITED", accountId: "acc_100", amountUSD: 250, txId: "tx_1", timestamp: 1001 },
-    { type: "FUNDS_WITHDRAWN", accountId: "acc_100", amountUSD: 100, txId: "tx_2", timestamp: 1002 },
-    { type: "ACCOUNT_FROZEN", accountId: "acc_100", reason: "Compliance audit", timestamp: 1003 }
-  ];
-
-  const projections = AccountProjectionEngine.project(stream);
-  const account = projections.get("acc_100");
-
-  assert.ok(account);
-  assert.equal(account.balanceUSD, 650);
-  assert.equal(account.isFrozen, true);
-  assert.equal(account.transactionCount, 3);
-
-  console.log("✅ Case Study (CQRS Event Sourcing Projection) Verified Successfully!");
-}
-runProjectionVerification();
-```
-
----
-
-## 🏋️ Section 17: 75 Graded Practice Drills Across 5 Tiers
-
-### Tier 1: Foundations (Drills 1–15)
-1. Write a conditional type `IsString<T>` that returns `true` if $T$ is `string` and `false` otherwise.
-2. Implement a conditional type `IsNumber<T>`.
-3. Create `IsArray<T>` using `T extends readonly unknown[]`.
-4. Implement a custom `MyExclude<T, U>` and test it on a union of status codes.
-5. Implement a custom `MyExtract<T, U>`.
-6. Implement `MyNonNullable<T>`.
-7. Write `UnwrapPromise<T>` using `infer U`.
-8. Write `GetReturnType<T>` using `infer R`.
-9. Write `GetFirstArg<T>` using `infer P`.
-10. Demonstrate the difference between naked `T extends string` and `[T] extends [string]` with unions.
-11. Write a type `IsNever<T>` that correctly evaluates to `true` when given `never`.
-12. Create a type `UnwrapArray<T>` that returns the element type if $T$ is an array, or $T$ unchanged.
-13. Implement `IsBoolean<T>` taking into account that `boolean` is `true | false`.
-14. Write a conditional type that converts primitive literals to their boxed primitive names.
-15. Demonstrate that `never` vanishes from unions (`string | never => string`).
-
-### Tier 2: Intermediate (Drills 16–30)
-16. Implement `Head<T>` to extract the first element of a tuple.
-17. Implement `Tail<T>` to extract all elements except the first.
-18. Implement `Last<T>` to extract the last element of a tuple.
-19. Implement `Prepend<T, E>` to add an element to the start of a tuple.
-20. Implement `Append<T, E>` to add an element to the end of a tuple.
-21. Write `Reverse<T>` using the tail-call accumulator pattern.
-22. Implement `FlattenOneLevel<T>` to flatten an array by one level.
-23. Write `Split<S, Delimiter>` to split a string into a tuple of substrings.
-24. Write `Join<T, Delimiter>` to join a tuple of strings with a delimiter.
-25. Implement `TrimStart<S>` to remove leading whitespace.
-26. Implement `TrimEnd<S>` to remove trailing whitespace.
-27. Combine them into `Trim<S>`.
-28. Write `ReplaceAll<S, From, To>` using recursive conditional types.
-29. Implement `IsTuple<T>` to distinguish tuples from open arrays.
-30. Write a type `StringLength<S>` that returns the compile-time character count.
-
-### Tier 3: Advanced (Drills 31–45)
-31. Implement the mathematical `UnionToIntersection<U>` type.
-32. Prove that multiple contravariant `infer` positions produce an intersection.
-33. Prove that multiple covariant `infer` positions produce a union.
-34. Implement `DeepFlatten<T>` to recursively flatten arbitrarily nested arrays.
-35. Implement `Paths<T>` to extract all dot-delimited key paths from an object.
-36. Implement `Get<T, P>` to retrieve the value type at a dot-delimited path.
-37. Implement `IsOptional<T, K>` using empty object assignability.
-38. Implement `OptionalKeys<T>` to extract all optional property names.
-39. Implement `RequiredKeys<T>` to extract all required property names.
-40. Implement `IsReadonly<T, K>` using type equality.
-41. Write a compile-time addition type `Add<A, B>` using tuple lengths.
-42. Write a compile-time subtraction type `Sub<A, B>` using tuple lengths.
-43. Write a compile-time multiplication type `Multiply<A, B>`.
-44. Implement `Curry<Args, Return>` for curried function signatures.
-45. Implement `ParseInt<S>` using TypeScript 4.7's `infer N extends number`.
-
-### Tier 4: Expert & Edge Cases (Drills 46–60)
-46. Implement `UnionToTuple<U>` using `UnionToIntersection` and overload peeling.
-47. Implement `IsAny<T>` to accurately identify `any`.
-48. Implement `IsUnknown<T>` distinguishing `unknown` from `any`.
-49. Implement `IsUnion<T>` to detect union types.
-50. Implement `KebabToCamel<S>`.
-51. Implement `CamelToKebab<S>`.
-52. Implement `StringIncludes<S, Search>`.
-53. Implement `FilterTuple<T, Constraint>`.
-54. Implement `Deduplicate<T>` for tuple types.
-55. Implement `Zip<A, B>` to combine two tuples into pairs.
-56. Implement `RepeatString<S, N>` to repeat a string literal $N$ times.
-57. Implement `GreaterThan<A, B>` for numeric literals.
-58. Implement `DeepNonNullable<T>`.
-59. Implement `DeepMutable<T>`.
-60. Implement `Cartesian<A, B>` for union types.
-
-### Tier 5: System-Level & Framework Architecture (Drills 61–75)
-61. Architect a Strongly Typed Route Matcher with parameter extraction (`/api/:version/users/:id`).
-62. Build a Compile-Time SQL Query Parser that extracts selected columns from string literals.
-63. Implement an Event Sourcing Projection Engine with compile-time exhaustiveness validation.
-64. Architect a Type-Safe Deep Differ and Patch Applier for state trees.
-65. Construct a Type-Level JSON Schema Validator.
-66. Implement a Type-Safe ORM Query Builder supporting nested join paths.
-67. Architect a Compile-Time State Machine transition table with forbidden transitions.
-68. Build a Type-Safe Dependency Graph Cycle Detector.
-69. Implement a Compile-Time Template Engine that extracts dynamic variable placeholders (`{{variable}}`).
-70. Architect a GraphQL Response Selector matching query selection sets.
-71. Construct a Type-Safe Redux Toolkit-style Slice Reducer.
-72. Implement an RPC Client with automatic parameter and return type extraction from server interfaces.
-73. Build a Type-Safe Microservices Event Bus with topic wildcard matching (`orders.*`).
-74. Architect a High-Throughput Stream Pipeline with intermediate type refinement.
-75. Implement a Compile-Time Markdown Frontmatter Parser and Validator.
-
----
-
-## 🎓 Section 18: Key Takeaways & Masterclass Summary
-
-1. **Turing-Completeness**: Conditional types (`T extends U ? X : Y`) enable compile-time branching and recursion, turning TypeScript into a functional metaprogramming language.
-2. **Distribution Laws**:
-   - Naked type parameters distribute over unions: $F(A \mid B) = F(A) \mid F(B)$.
-   - Wrapping in tuples `[T] extends [U]` suppresses distribution, treating unions as atomic sets.
-3. **The `never` Trap**: `never` has 0 members; distributive conditionals return `never`. Always use `[T] extends [never]`.
-4. **Inference Positions**:
-   - Covariant `infer` produces unions.
-   - Contravariant `infer` produces intersections (`UnionToIntersection`).
-5. **Tail-Call Optimization (TS 4.5+)**: Use the Accumulator pattern to evaluate recursive types up to 1,000 steps without compiler depth crashes.
-6. **Production Invariant**: Use conditional types to automate reflection, eliminate runtime glue code, and guarantee single-source-of-truth type safety across system boundaries.
-`;
+const config: FinalConfig = {
+  userId: "usr_100",
+  orderId: "ord_500",
 };
+```
