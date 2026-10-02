@@ -1,1777 +1,2947 @@
 # Module TS-11: Library Authoring, Packaging & Module Federation
 
-## 1. Modern Library Architecture & Specification Foundations
+Welcome to TypeScript Library Authoring, Packaging, and Module Federation. This module teaches how to build, package, and publish production-grade TypeScript libraries, support dual CommonJS and ECMAScript Modules (ESM) without the Dual-Package Hazard, validate package exports with `attw` and `publint`, type Module Federation remotes, and automate releases with Changesets.
 
-### 1.1 The Anatomy of Modern npm Packaging
-Publishing a modern TypeScript library in the 2026 JavaScript ecosystem requires catering to diverse runtimes and build tools:
-- Native Node.js ESM (`"type": "module"`)
-- Legacy Node.js CommonJS (`require()`)
-- Frontend Bundlers (Vite, webpack 5, Turbopack, Rollup, esbuild)
-- TypeScript Type Checkers under `node10`, `node16`, `nodenext`, and `bundler` resolution modes.
+---
 
+# Topic 1: Library Authoring Fundamentals: Clean Public API Surface and Internal Encapsulation
+
+### 1. What is it?
+**Library Authoring** is the discipline of creating reusable TypeScript code packages consumed by other developers. A **Public API Surface** is the exact set of functions, classes, interfaces, and types explicitly exported through entry points. All internal utilities, private helpers, and experimental features must be strictly encapsulated so consumers cannot accidentally depend on them.
+
+### 2. Why does it exist?
+If a library exposes internal helper functions (e.g. `import { _internalHash } from "my-lib/dist/utils/hash"`), consumers will inevitably start importing them. If you refactor that internal function in a patch release, consumers' applications will break. A clean public API contract guarantees that you can refactor internal implementations without breaking consumer code.
+
+### 3. Basic example
+
+```typescript
+// src/internal/math-helpers.ts (Private internal code)
+export function privateClamp(n: number, min: number, max: number): number {
+  return Math.max(min, Math.min(max, n));
+}
+
+// src/index.ts (Public API Entry Point)
+import { privateClamp } from "./internal/math-helpers.js";
+
+export interface RateLimiterOptions {
+  maxRequests: number;
+}
+
+export class RateLimiter {
+  private limit: number;
+
+  constructor(options: RateLimiterOptions) {
+    this.limit = privateClamp(options.maxRequests, 1, 1000);
+  }
+
+  isAllowed(currentCount: number): boolean {
+    return currentCount < this.limit;
+  }
+}
+
+// NOTE: Notice privateClamp is NOT re-exported in index.ts!
+// Consumers can ONLY import RateLimiter and RateLimiterOptions!
 ```
-+-------------------------------------------------------------------------+
-|                  Universal Package Resolution Pipeline                  |
-+-------------------------------------------------------------------------+
-|  Consumer Environment:                                                  |
-|    ├── Node.js ESM   ──► resolves package.json "exports" ["import"]     |
-|    ├── Node.js CJS   ──► resolves package.json "exports" ["require"]    |
-|    ├── Bundler       ──► resolves package.json "exports" ["import"/"browser"]
-|    └── TypeScript    ──► resolves package.json "exports" ["types"]      |
-+-------------------------------------------------------------------------+
+
+**Line-by-line explanation:**
+- `src/internal/math-helpers.ts`: Internal implementation detail.
+- `src/index.ts`: The explicit public contract of the library.
+- `export interface RateLimiterOptions`: Re-exports only the public option types consumers need for type checking.
+- `export class RateLimiter`: The main public class.
+- Because `privateClamp` is not exported from `index.ts`, it is not part of the library's public API.
+
+---
+
+### 4. How it works inside TypeScript
+1. **Barrel Export Index**: The root `src/index.ts` serves as the single source of truth for public API declarations.
+2. **Declaration Boundary**: When `tsc` or a bundler generates `.d.ts` files, consumers importing the library package only receive types exported by the main entry point.
+3. **`export type` Syntax**: Use `export type { MyType }` for types so bundlers can eliminate unused imports during tree shaking.
+
+---
+
+### 5. More examples
+
+#### Example 1: Explicit type-only re-exports
+```typescript
+// Better for tree-shaking and bundler performance:
+export type { RateLimiterOptions } from "./limiter.js";
+export { RateLimiter } from "./limiter.js";
+```
+Using `export type` guarantees that bundlers know the symbol has no runtime JavaScript code and will completely erase it.
+
+#### Example 2: Subpath entry points for modular features
+```typescript
+// For large libraries, expose separate functional domains via separate entry points:
+// "my-lib/validation" -> src/validation/index.ts
+// "my-lib/crypto"     -> src/crypto/index.ts
 ```
 
 ---
 
-### 1.2 The `package.json` "exports" Matrix & Condition Precedence
+### 6. Common mistakes
 
-The `"exports"` field in `package.json` provides strict encapsulation and explicit entry points, rendering internal files in your `dist/` directory inaccessible unless declared.
+#### Mistake 1: Exporting internal types or classes with generic names
+```typescript
+// ANTI-PATTERN in index.ts:
+export * from "./internal/helpers"; // Accidental leak of 20 internal helper utilities!
+```
+**Why it fails:** Using `export *` blindly re-exports everything in that directory, polluting autocomplete menus in users' IDEs and leaking private APIs into SemVer guarantees.
 
-#### Critical Precedence Rules:
-1. **Condition Order Matters**: Tools evaluate export keys **in order of definition**.
-2. **`"types"` MUST ALWAYS BE FIRST**: If `"import"` appears before `"types"`, TypeScript 4.7+ and 5.x will match the JavaScript file first under certain resolution modes and fail to find the declaration file!
-3. **`"default"` MUST ALWAYS BE LAST**: Acts as the catch-all fallback.
+#### Mistake 2: Missing types for parameters used in public methods
+```typescript
+// WRONG:
+class Service {
+  configure(config: InternalConfig) {} // InternalConfig is NOT exported from index.ts!
+}
+```
+**Why it fails:** If a consumer needs to declare a variable holding `config`, they cannot import `InternalConfig`, causing TypeScript errors. If a type appears in a public function signature, that type **must** be exported.
+
+---
+
+### 7. Rules to remember
+1. `src/index.ts` is the single source of truth for your library's public API.
+2. Never use `export * from "./internal"`. Explicitly list public exports.
+3. Every type used in public function arguments or return values must be exported.
+4. Use `export type { ... }` for type-only exports to aid consumer tree-shaking.
+
+---
+
+### Think first: Prediction puzzle
+If `type Token = string;` is used in `export function setToken(t: Token): void`, but `Token` is not exported from `index.ts`, can a consumer still call `setToken("abc")`?
+
+---
+
+**Answer:**
+```
+Yes.
+```
+**Explanation:** Because TypeScript uses structural subtyping, passing the literal `"abc"` satisfies `Token` (which is an alias for `string`). However, the consumer cannot explicitly type their own helper functions with `let t: Token`.
+
+---
+
+### Practice exercises
+
+#### Exercise 1: Clean barrel export
+- **Task**: Write an `index.ts` exporting class `Client` and type `ClientOptions` using explicit named exports.
+- **Hint 1**: `export { Client } from "./client.js"; export type { ClientOptions } from "./client.js";`.
+
+#### Exercise 2: Prevent internal leak
+- **Task**: Refactor a file using `export * from "./utils"` to only re-export `formatDate`.
+- **Hint 1**: `export { formatDate } from "./utils.js";`.
+
+#### Exercise 3: Isolate experimental feature
+- **Task**: Place experimental utilities in a separate entry point `src/experimental/index.ts` instead of `src/index.ts`.
+- **Hint 1**: Export from dedicated subpath.
+
+#### Exercise 4: Ensure public return type is exported
+- **Task**: In `export function getResult(): ExecutionResult`, export `interface ExecutionResult`.
+- **Hint 1**: Add `export interface ExecutionResult { ... }`.
+
+---
+
+### Exercise solutions
+
+#### Solution 1: Clean barrel export
+```typescript
+export { HttpClient } from "./client.js";
+export type { HttpClientOptions } from "./types.js";
+```
+
+#### Solution 2: Prevent internal leak
+```typescript
+export { formatDate } from "./utils.js";
+```
+
+#### Solution 3: Isolate experimental feature
+```typescript
+// src/experimental/index.ts
+export { ExperimentalCacheEngine } from "./cache.js";
+```
+
+#### Solution 4: Ensure public return type is exported
+```typescript
+export interface ExecutionResult {
+  success: boolean;
+  durationMs: number;
+}
+
+export function executeTask(): ExecutionResult {
+  return { success: true, durationMs: 12 };
+}
+```
+
+---
+
+### Recall
+1. What is the single source of truth for a library's public API? The root entry point (`src/index.ts`).
+2. Why is `export *` dangerous in library entry points? It leaks internal implementation details that become accidental SemVer commitments.
+3. Why should `export type` be preferred for interfaces? It signals to bundlers that the symbol has no runtime JavaScript code, improving tree shaking.
+
+> **If you remember only one thing:**  
+> Explicitly curate your library's public API surface in `index.ts` and encapsulate all internal utilities to prevent breaking consumer code during refactors.
+
+---
+
+# Topic 2: Dual CommonJS & ESM Packaging: The Modern Dual-Package Architecture
+
+### 1. What is it?
+**Dual Packaging** is the architecture of publishing a TypeScript library that can be consumed seamlessly by both **CommonJS** (`require()`) and **ECMAScript Modules** (`import`):
+- Modern bundlers and Node.js ESM load the `.mjs` or ESM build.
+- Legacy Node.js applications load the `.cjs` or CommonJS build.
+- Both formats ship with matching `.d.ts` declaration files.
+
+### 2. Why does it exist?
+While modern frontend frameworks and modern Node.js versions use ESM, millions of enterprise production servers, test runners (like older Jest), and scripts still run on CommonJS. Publishing only ESM breaks CommonJS users; publishing only CJS prevents modern bundlers from performing tree shaking. A dual package supports both ecosystems.
+
+### 3. Basic example
+
+```
+dist/
+├── index.js         (ESM format: export { ... })
+├── index.d.ts       (ESM types)
+├── index.cjs        (CommonJS format: module.exports = { ... })
+└── index.d.cts      (CommonJS types)
+```
 
 ```json
+// package.json (Modern Dual-Package Specification)
 {
-  "name": "@enterprise/core-sdk",
+  "name": "my-dual-library",
   "version": "1.0.0",
   "type": "module",
-  "main": "./dist/cjs/index.cjs",
-  "module": "./dist/esm/index.js",
-  "types": "./dist/types/index.d.ts",
+  "main": "./dist/index.cjs",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
   "exports": {
     ".": {
-      "types": "./dist/types/index.d.ts",
-      "import": "./dist/esm/index.js",
-      "require": "./dist/cjs/index.cjs",
-      "default": "./dist/esm/index.js"
-    },
-    "./auth": {
-      "types": "./dist/types/auth/index.d.ts",
-      "import": "./dist/esm/auth/index.js",
-      "require": "./dist/cjs/auth/index.cjs",
-      "default": "./dist/esm/auth/index.js"
-    },
-    "./package.json": "./package.json"
-  },
-  "files": [
-    "dist"
-  ],
-  "sideEffects": false
-}
-```
-
----
-
-### 1.3 The Dual-Package Hazard & Stateful Singleton Defense
-
-If your library contains state (singletons, in-memory caches, active connection pools, or `instanceof` checks), loading both the CJS build and the ESM build inside the same process will create two distinct memory instances!
-
-```
-+-------------------------------------------------------------------------+
-|                  The Dual-Package State Fracture Hazard                 |
-+-------------------------------------------------------------------------+
-|  Application Memory Space:                                              |
-|                                                                         |
-|  [ESM Loader] ──► Loads dist/esm/index.js                               |
-|                     └── Creates Store Instance #1 (items: 5)            |
-|                                                                         |
-|  [CJS Loader] ──► Loads dist/cjs/index.cjs                              |
-|                     └── Creates Store Instance #2 (items: 0)            |
-|                                                                         |
-|  FAILURE: Store #1 !== Store #2! `instanceof` checks fail across builds!|
-+-------------------------------------------------------------------------+
-```
-
-#### The Universal Stateful Singleton Wrapper Solution:
-Ensure that one format is the primary source of truth, and the secondary format forwards directly to it, or store the singleton on `globalThis` using a unique symbol:
-
-```typescript
-// src/store.ts
-const STORE_KEY = Symbol.for("@enterprise/core-sdk/global_store");
-
-export class SharedStore {
-  private items = new Map<string, unknown>();
-
-  public static getInstance(): SharedStore {
-    const globalObj = globalThis as unknown as { [STORE_KEY]?: SharedStore };
-    if (!globalObj[STORE_KEY]) {
-      globalObj[STORE_KEY] = new SharedStore();
+      "types": {
+        "import": "./dist/index.d.ts",
+        "require": "./dist/index.d.cts"
+      },
+      "import": "./dist/index.js",
+      "require": "./dist/index.cjs"
     }
-    return globalObj[STORE_KEY];
-  }
-
-  public set(key: string, value: unknown): void { this.items.set(key, value); }
-  public get(key: string): unknown { return this.items.get(key); }
-  public has(key: string): boolean { return this.items.has(key); }
-}
-```
-With `Symbol.for`, regardless of how many times the module is loaded (CJS or ESM), `SharedStore.getInstance()` returns the exact same object reference!
-
-
----
-
-## 2. Declaration Bundling, Automated Type Testing & Module Federation
-
-### 2.1 Declaration Bundling & API Extractor (`@microsoft/api-extractor`)
-
-When TypeScript compiles a large library with hundreds of internal files, it generates a sprawling tree of separate `.d.ts` files. This causes:
-1. Slower consumer compilation (compiler reads hundreds of declaration files).
-2. Leakage of private types and internal helper types.
-3. Messy navigation in consumer IDEs.
-
-**Declaration Rollups** bundle all declarations into a single, clean `dist/index.d.ts` file:
-
-```
-+-------------------------------------------------------------------------+
-|                  Declaration Rollup Pipeline (API Extractor)            |
-+-------------------------------------------------------------------------+
-|  src/                                                                   |
-|   ├── auth/tokens.ts                                                    |
-|   ├── internal/crypto-helpers.ts  (annotated with @internal)            |
-|   ├── database/client.ts                                                |
-|   └── index.ts                                                          |
-|         │                                                               |
-|         ▼ (tsc --declaration)                                           |
-|  temp-types/                                                            |
-|   └── 140 separate .d.ts files                                          |
-|         │                                                               |
-|         ▼ (api-extractor run)                                           |
-|  dist/index.d.ts  (Clean, single-file public API contract with          |
-|                    all @internal types stripped out!)                   |
-+-------------------------------------------------------------------------+
-```
-
----
-
-### 2.2 Automated Type Testing & Quality Auditing
-
-Testing a library's runtime behavior with Jest or Vitest only verifies half of your contract. You must also write automated tests verifying that your types fail when they should and infer correctly when they should.
-
-#### 1. `@arethetypeswrong/cli` (`attw`)
-`attw` is the industry-standard linter for published packages. It checks every combination of Node.js and TypeScript resolution modes:
-- `node10` (legacy CJS)
-- `node16` (ESM)
-- `node16` (CJS)
-- `bundler`
-
-It flags common errors like:
-- Masquerading as CJS when compiled as ESM
-- Missing export conditions
-- Broken declaration file specifiers
-
-#### 2. `expect-type` / `tsd`
-```typescript
-import { expectTypeOf } from "expect-type";
-import { createClient, QueryResult } from "./index.js";
-
-// Positive test: Verify inferred type matches expected interface
-const client = createClient({ timeout: 5000 });
-expectTypeOf(client.query("SELECT * FROM users")).toEqualTypeOf<Promise<QueryResult>>();
-
-// Negative test: Verify compiler rejects invalid configuration
-// @ts-expect-error - Port must be a number, not string
-createClient({ port: "8080" });
-```
-
----
-
-### 2.3 Module Federation & Micro-Frontend Remote Types
-
-In modern enterprise architectures (Module Federation in Webpack 5 or `@module-federation/enhanced`), micro-frontends share components and business logic dynamically at runtime across independent deployments.
-
-```
-+-------------------------------------------------------------------------+
-|                  Micro-Frontend Module Federation Topology              |
-+-------------------------------------------------------------------------+
-|  [Host App: Checkout Shell]                                             |
-|     │                                                                   |
-|     ├── Dynamically loads Remote Component over HTTP                    |
-|     ▼                                                                   |
-|  [Remote App: Payment Microservice] (deployed at payment.corp.com)      |
-|     ├── remoteEntry.js (Runtime code)                                   |
-|     └── @mf-types.zip  (Compiled TypeScript declarations)                |
-+-------------------------------------------------------------------------+
-```
-
-#### TypeScript Federation Plugins:
-Tools like `@module-federation/typescript` automatically:
-1. Extract exposed component types into a zip file (`@mf-types.zip`).
-2. Serve the types alongside `remoteEntry.js`.
-3. Download and register the remote types in the host application's `node_modules/@mf-types/payment`, providing instant IntelliSense and compile-time type safety across micro-frontends!
-
----
-
-### 2.4 Semantic Versioning (SemVer) for Types
-
-A common misconception is that type changes cannot break production. In TypeScript, a type change can cause consumer CI/CD pipelines to fail:
-
-| Type System Modification | SemVer Impact | Why? |
-| :--- | :--- | :--- |
-| Adding an optional property `opts?: { retries?: number }` | **MINOR** | Non-breaking; existing consumer calls remain valid. |
-| Adding a required property `opts: { apiKey: string }` | **MAJOR** | Breaking; causes compiler errors at all call sites without `apiKey`. |
-| Widening a return type (`string` $\to$ `string \| null`) | **MAJOR** | Breaking; consumers doing `res.toUpperCase()` will fail to compile. |
-| Narrowing an input parameter type (`string \| number` $\to$ `string`) | **MAJOR** | Breaking; callers passing `number` will fail compilation. |
-| Deprecating a type with JSDoc `@deprecated` | **MINOR** | Non-breaking; produces IDE warning but code compiles. |
-| Removing a previously deprecated type or interface | **MAJOR** | Breaking; missing symbol error. |
-
-
----
-
-## 3. Comprehensive Questions & Answers (Part 1: Questions 1 to 45)
-
-### Q1: What is the purpose of `package.json` `"exports"` and how does it differ from the legacy `"main"` field?
-**Answer:**  
-`"main"` provides a single file path for CommonJS resolution (`require("pkg")`). It has no encapsulation: consumers can import any internal file (e.g. `import "pkg/dist/internal/hack.js"`).  
-`"exports"` provides:
-1. **Encapsulation**: Any file not explicitly listed in `"exports"` cannot be imported by consumers (throws `ERR_PACKAGE_PATH_NOT_EXPORTED`).
-2. **Conditional Resolution**: Resolves different files depending on the environment (ESM `import`, CJS `require`, TypeScript `types`, browser vs node).
-3. **Subpath Mapping**: Clean public aliases like `import "@corp/sdk/auth"`.
-
----
-
-### Q2: Why is `"types"` required to be the first key in each `"exports"` condition block?
-**Answer:**  
-Modern tools evaluate condition keys in insertion order. If `"import"` appears before `"types"`, TypeScript's module resolution algorithm may match the `"import"` condition first and read the compiled `.js` file, failing to discover the `.d.ts` declaration file. Placing `"types"` first guarantees type definitions are always discovered.
-
----
-
-### Q3: What is the Dual-Package Hazard, and what are its symptoms?
-**Answer:**  
-The Dual-Package Hazard occurs when an application loads both the CommonJS (`dist/index.cjs`) and ECMAScript Module (`dist/index.js`) versions of a library in the same runtime process.  
-Symptoms:
-1. Global singletons (like stores or caches) are instantiated twice, causing state desynchronization.
-2. `instanceof` checks fail: `obj instanceof MyError` evaluates to `false` if `obj` was created by the CJS build and checked by ESM code.
-3. Multiple database or socket connections are opened inadvertently.
-
----
-
-### Q4: How do you solve the Dual-Package Hazard for stateful classes?
-**Answer:**  
-Store singleton references on `globalThis` using a unique `Symbol.for`:
-```typescript
-const KEY = Symbol.for("my-pkg/unique_singleton");
-const g = globalThis as unknown as { [KEY]?: MyStore };
-if (!g[KEY]) {
-  g[KEY] = new MyStore();
-}
-export const store = g[KEY];
-```
-Regardless of how many times CJS or ESM copies are loaded, they access the identical memory address.
-
----
-
-### Q5: What is `typesVersions` in `package.json`?
-**Answer:**  
-A legacy feature introduced in TypeScript 3.1 that allows providing different `.d.ts` files for different TypeScript versions (e.g. `<4.5` vs `>=4.5`):
-```json
-{
-  "typesVersions": {
-    "<4.5": { "*": ["ts3.4/*"] }
-  }
-}
-```
-Before `exports` supported the `"types"` condition, `typesVersions` was also used for subpath type resolution.
-
----
-
-### Q6: What does `@arethetypeswrong/cli` (`attw`) test?
-**Answer:**  
-It inspects published or packed npm tarballs against all permutations of Node.js and TypeScript module resolution algorithms:
-- `node10` (CommonJS legacy)
-- `node16` (Node ESM)
-- `node16` (Node CJS)
-- `bundler` (Vite, webpack)
-It checks for broken entrypoints, ESM/CJS masquerading, and missing export conditions.
-
----
-
-### Q7: Why should library authors prefer `@ts-expect-error` over `@ts-ignore` in type test suites?
-**Answer:**  
-- `@ts-ignore` silences any error on the next line unconditionally. If the library code changes in the future and the line becomes valid, `@ts-ignore` remains silent.
-- `@ts-expect-error` requires that the next line produces a compiler error. If the line unexpectedly compiles without an error, the compiler raises an error (`Unused '@ts-expect-error' directive`), catching regressions in negative tests!
-
----
-
-### Q8: What is `expect-type` / `expectTypeOf`?
-**Answer:**  
-A zero-runtime type-testing utility that performs compile-time assertions on inferred types:
-```typescript
-import { expectTypeOf } from "expect-type";
-expectTypeOf(fetchUser("123")).toEqualTypeOf<Promise<UserDTO>>();
-expectTypeOf(fetchUser).parameter(0).toBeString();
-```
-
----
-
-### Q9: Why is `"sideEffects": false` in `package.json` critical for library authors?
-**Answer:**  
-It tells bundlers (Vite, Rollup, webpack) that none of the files in your library execute top-level side effects (like modifying prototypes or registering global event listeners). This allows the bundler to safely tree-shake and discard unused exported functions.
-
----
-
-### Q10: How do you declare files with side effects when `"sideEffects"` is used?
-**Answer:**  
-Pass an array of glob paths:
-```json
-{
-  "sideEffects": [
-    "dist/polyfills.js",
-    "*.css"
-  ]
-}
-```
-
----
-
-### Q11: What is Declaration Bundling (or Declaration Rollup)?
-**Answer:**  
-The process of combining dozens of scattered `.d.ts` files into a single, unified `.d.ts` file using tools like `@microsoft/api-extractor` or `rollup-plugin-dts`.
-
----
-
-### Q12: Why is publishing `declarationMap: true` without publishing source files bad practice?
-**Answer:**  
-If a library package includes `.d.ts.map` files, the sourcemap points to original `.ts` source files (e.g. `../src/index.ts`). If the library's `package.json` `"files"` array does not include `src/`, pressing F12 in consumer IDEs will attempt to open a non-existent file, resulting in an error. Always include `src/` in `"files"` if publishing declaration maps!
-
----
-
-### Q13: What is the purpose of `@internal` in library authoring?
-**Answer:**  
-It marks internal classes, methods, or helper types that must be exported across files within the library repo, but should be stripped out of the public `.d.ts` declaration files before publishing to npm.
-
----
-
-### Q14: How does `@microsoft/api-extractor` handle `@internal` declarations?
-**Answer:**  
-When configured with `api-extractor.json`, it generates two declaration rollups:
-1. `publicTrimmedFilePath`: Contains only public API declarations, completely stripping `@internal` symbols.
-2. `untrimmedFilePath`: Contains the full declaration tree for internal consumption.
-
----
-
-### Q15: What is Module Federation in Webpack 5?
-**Answer:**  
-An architectural pattern allowing multiple independent JavaScript builds to form a single application at runtime. Different teams can develop, build, and deploy micro-frontends independently while sharing dependencies and components seamlessly.
-
----
-
-### Q16: How are TypeScript types shared in Module Federation?
-**Answer:**  
-Through plugins like `@module-federation/typescript`:
-1. The remote build extracts exported types and zips them into `@mf-types.zip`.
-2. The host build downloads `@mf-types.zip` at build/development time and registers ambient module declarations for the remote imports (e.g. `declare module "remoteApp/Button"`).
-
----
-
-### Q17: What does `shared: { react: { singleton: true, requiredVersion: "^18.0.0" } }` mean in Module Federation?
-**Answer:**  
-It instructs the Module Federation runtime to ensure that only a single instance of `react` is loaded in memory across all host and remote micro-frontends, preventing React hooks from breaking due to duplicate React instances.
-
----
-
-### Q18: What is SemVer for TypeScript types?
-**Answer:**  
-A set of conventions determining whether a change in type signatures constitutes a Patch, Minor, or Major release:
-- **Major**: Adding required parameters, removing properties, narrowing parameter types, widening return types.
-- **Minor**: Adding optional parameters, adding properties to return types, widening parameter types.
-- **Patch**: Internal refactoring with identical external type contracts.
-
----
-
-### Q19: Why is narrowing an input parameter a breaking change?
-**Answer:**  
-If a function previously accepted `number | string` and is changed to accept only `number`, any existing consumer calling `fn("123")` will experience a compiler error upon upgrading the library.
-
----
-
-### Q20: Why is widening a return type a breaking change?
-**Answer:**  
-If a function previously returned `User` and is changed to return `User | null`, any consumer code calling `fn().id` will fail compilation because the return value might now be `null`.
-
----
-
-### Q21: What is the `prepublishOnly` npm script?
-**Answer:**  
-A script executed by npm automatically right before `npm publish` runs:
-```json
-{
-  "scripts": {
-    "prepublishOnly": "npm run clean && npm run build && npm run test:types"
-  }
-}
-```
-Ensures that the library is compiled, type-checked, and tested before artifacts are uploaded to the npm registry.
-
----
-
-### Q22: What is the purpose of the `"files"` array in `package.json`?
-**Answer:**  
-A whitelist of files and folders to include in the published npm tarball (e.g. `["dist", "README.md", "LICENSE"]`). Excludes temporary files, local configs, and tests, keeping the package download lightweight.
-
----
-
-### Q23: Why should libraries NEVER include global polyfills (e.g. `core-js` or `reflect-metadata` imports) in their entry points?
-**Answer:**  
-Because importing a library that pollutes global prototypes or globals can break the consumer application or conflict with other libraries. Polyfilling is strictly the responsibility of the end application, not libraries.
-
----
-
-### Q24: What is `peerDependencies` vs `dependencies` in library authoring?
-**Answer:**  
-- `dependencies`: Packages required by the library that will be installed automatically for the consumer.
-- `peerDependencies`: Packages expected to be provided by the consumer application (e.g. `react`, `typescript`). Prevents duplicate versions from being installed in `node_modules`.
-
----
-
-### Q25: What is `peerDependenciesMeta` with `"optional": true`?
-**Answer:**  
-Allows marking a peer dependency as optional:
-```json
-{
-  "peerDependencies": {
-    "ioredis": "^5.0.0"
   },
-  "peerDependenciesMeta": {
-    "ioredis": { "optional": true }
-  }
+  "files": ["dist"]
 }
 ```
-Consumers only install `ioredis` if they choose to use the Redis cache adapter feature of your library.
+
+**Line-by-line explanation:**
+- `"type": "module"`: Declares that `.js` files are treated as ESM by default.
+- `"main": "./dist/index.cjs"`: Legacy fallback for tools that do not support `"exports"`.
+- `"module": "./dist/index.js"`: Legacy bundler fallback (Webpack 4 / Rollup).
+- `"exports"`: The modern standard.
+  - When imported via `import "my-dual-library"`, Node.js loads `./dist/index.js` and TypeScript loads `./dist/index.d.ts`.
+  - When imported via `require("my-dual-library")`, Node.js loads `./dist/index.cjs` and TypeScript loads `./dist/index.d.cts`.
 
 ---
 
-### Q26: What is a Subpath Pattern in `package.json` `"exports"`?
-**Answer:**  
-Allows exporting an entire directory of modules with pattern matching:
+### 4. How it works inside TypeScript
+1. **Extension Suffix Pairing**:
+   - `.js` pairs with `.d.ts` (ESM).
+   - `.cjs` pairs with `.d.cts` (CommonJS).
+2. **`types` Condition Placement**: Inside `"exports"`, the `"types"` key **must** come before `"import"` and `"require"`.
+3. **TypeScript Module Resolution**: TypeScript under `NodeNext` reads `"require"` or `"import"` matching how the user's file is configured.
+
+---
+
+### 5. More examples
+
+#### Example 1: Compiling dual CJS and ESM with `tsup`
+```bash
+# In package.json scripts:
+# tsup compiles src/index.ts into both ESM and CJS with full .d.ts files in one command!
+npx tsup src/index.ts --format esm,cjs --dts
+```
+
+---
+
+### 6. Common mistakes
+
+#### Mistake 1: Placing `"types"` after `"import"` or `"require"`
 ```json
-"exports": {
-  "./icons/*": {
-    "types": "./dist/types/icons/*.d.ts",
-    "import": "./dist/esm/icons/*.js",
-    "require": "./dist/cjs/icons/*.cjs"
-  }
-}
-```
-
----
-
-### Q27: What is the risk of using wildcard subpath exports without explicit extension mappings?
-**Answer:**  
-If the pattern allows importing without extensions (e.g. `import "@pkg/icons/home"`), bundlers might resolve it, but native Node.js ESM will fail because Node requires exact file extensions.
-
----
-
-### Q28: How do you publish a library with both CommonJS (`.cjs`) and ESM (`.mjs` / `.js`) files?
-**Answer:**  
-Set `"type": "module"` in `package.json`. Emitted ESM files have `.js` extensions, and emitted CommonJS files have `.cjs` extensions. The `"exports"` map points `"import"` to `.js` and `"require"` to `.cjs`.
-
----
-
-### Q29: What is `npm pack --dry-run`?
-**Answer:**  
-Simulates creating an npm tarball and lists every single file that would be included in the published package, allowing authors to verify that sensitive files or unwanted tests are excluded.
-
----
-
-### Q30: What is `tsup`?
-**Answer:**  
-A zero-config, blazingly fast bundler for TypeScript libraries powered by esbuild. It generates CJS, ESM, and `.d.ts` declaration rollups with a single command: `tsup src/index.ts --format cjs,esm --dts`.
-
----
-
-### Q31: What is `publint`?
-**Answer:**  
-A static analysis tool that lints `package.json` to ensure `"exports"` and `"main"` fields conform to modern packaging standards across npm, Node, and Vite.
-
----
-
-### Q32: What is the difference between `dts-bundle-generator` and `rollup-plugin-dts`?
-**Answer:**  
-- `dts-bundle-generator`: A standalone CLI tool that resolves all imports and produces a single bundled `.d.ts` file without needing Rollup.
-- `rollup-plugin-dts`: A Rollup plugin that integrates declaration bundling directly into a Rollup or Vite build pipeline.
-
----
-
-### Q33: How do you type an ambient global library without any module exports?
-**Answer:**  
-Create a `.d.ts` file without top-level `import` or `export` statements, using `declare var` or `declare interface`:
-```typescript
-interface AnalyticsSDK {
-  track(event: string): void;
-}
-declare var analytics: AnalyticsSDK;
-```
-
----
-
-### Q34: What is `isolatedDeclarations` impact on library authors?
-**Answer:**  
-Requires all exported methods and variables to have explicit return types, allowing multi-threaded toolchains (like oxc or swc) to generate `.d.ts` files up to 20x faster.
-
----
-
-### Q35: How do you provide backwards-compatible CommonJS default exports in TypeScript?
-**Answer:**  
-Use `export = MyClass;` instead of `export default MyClass;` if targeting pure legacy CJS where consumers expect `const MyClass = require("pkg");` rather than `require("pkg").default`.
-
----
-
-### Q36: What is the "Wrapper Pattern" for hybrid CJS/ESM libraries?
-**Answer:**  
-Author the core library in pure ESM. Then create a small `index.cjs` file that uses dynamic `import()` or wraps the ESM build, ensuring code is not duplicated.
-
----
-
-### Q37: How do you verify that your library tree-shakes properly?
-**Answer:**  
-Use tools like `bundlejs.com` or `agadoo` to inspect whether importing a single utility from your library bundles the entire package or just that utility.
-
----
-
-### Q38: What is `npm provenance`?
-**Answer:**  
-A security mechanism linking an npm package to its source repository and GitHub Actions build workflow via Sigstore cryptographic signatures, proving the package was built from verified source code.
-
----
-
-### Q39: What is `packageManager` field in `package.json`?
-**Answer:**  
-Enforces the exact package manager and version (e.g. `"packageManager": "pnpm@9.1.0"`), used by Corepack to prevent developers from accidentally running `npm` or `yarn`.
-
----
-
-### Q40: What is `tsd` and how does it execute type assertions?
-**Answer:**  
-`tsd` checks `.test-d.ts` files using the TypeScript compiler API:
-```typescript
-import { expectType, expectError } from "tsd";
-expectType<string>(formatDate(new Date()));
-expectError(formatDate("not-a-date"));
-```
-
----
-
-### Q41: How do you handle deprecated features gracefully in library types?
-**Answer:**  
-Annotate them with JSDoc `@deprecated` explaining the replacement:
-```typescript
-/**
- * @deprecated Use `createSecureClient()` instead. Will be removed in v2.0.0.
- */
-export function createClient(): Client { ... }
-```
-
----
-
-### Q42: What does `git tag v1.0.0` have to do with npm releases?
-**Answer:**  
-Release automation tools (like Changesets, Semantic Release, or Release Please) watch for git tags or conventional commits to bump versions, generate changelogs, and publish to npm automatically.
-
----
-
-### Q43: How do you type dynamic plugin systems in TypeScript libraries?
-**Answer:**  
-Use interface merging or generic registration registries:
-```typescript
-export interface PluginRegistry {}
-export function registerPlugin<K extends keyof PluginRegistry>(
-  name: K,
-  plugin: PluginRegistry[K]
-): void;
-```
-
----
-
-### Q44: What is the danger of publishing `dependencies` as `devDependencies`?
-**Answer:**  
-The library will work locally for the author because `devDependencies` are installed in the author's repo. But when a consumer installs the library from npm, `devDependencies` are omitted, causing `Cannot find module` runtime crashes!
-
----
-
-### Q45: What is the ultimate checklist for publishing an enterprise TypeScript library?
-**Answer:**  
-1. Strict `tsconfig.json` with declaration and declarationMap.
-2. Explicit `"exports"` with `"types"` first.
-3. Automated type testing with `expect-type` or `tsd`.
-4. Automated linting with `attw` and `publint`.
-5. CI/CD publishing with `prepublishOnly` and npm provenance.
-
-
----
-
-## 4. Comprehensive Questions & Answers (Part 2: Questions 46 to 90)
-
-### Q46: How do you configure `package.json` `"exports"` for React Server Components (`"use client"` vs `"use server"`)?
-**Answer:**  
-Modern frameworks (Next.js, Remix) support conditional exports based on environment conditions `"react-server"`:
-```json
-"exports": {
-  ".": {
-    "types": "./dist/types/index.d.ts",
-    "react-server": "./dist/esm/index.server.js",
-    "default": "./dist/esm/index.client.js"
-  }
-}
-```
-This ensures server components receive the server-optimized implementation without browser DOM dependencies.
-
----
-
-### Q47: What is Changesets and why is it preferred in monorepos?
-**Answer:**  
-Changesets is a multi-package versioning and release tool:
-1. Developers run `pnpm changeset` when adding a PR, creating a markdown file describing the change and whether it is `patch`, `minor`, or `major`.
-2. On merge, Changesets aggregates changes, bumps versions across dependent monorepo packages, updates CHANGELOG.md files, and automates publishing via GitHub Actions.
-
----
-
-### Q48: What is the purpose of the `"publishConfig"` field in `package.json`?
-**Answer:**  
-Overrides `package.json` fields specifically during `npm publish`:
-```json
+// WRONG in package.json:
 {
-  "publishConfig": {
-    "access": "public",
-    "registry": "https://registry.npmjs.org/",
-    "main": "./dist/index.cjs",
-    "module": "./dist/index.js"
-  }
-}
-```
-Allows packages to use local development paths in the repo but clean distribution paths when published.
-
----
-
-### Q49: How do you support Node.js and Browser environments conditionally in `"exports"`?
-**Answer:**  
-Use `"node"` and `"browser"` conditions:
-```json
-"exports": {
-  ".": {
-    "types": "./dist/types/index.d.ts",
-    "node": {
-      "import": "./dist/esm/node.js",
-      "require": "./dist/cjs/node.cjs"
-    },
-    "browser": {
-      "import": "./dist/esm/browser.js"
-    },
-    "default": "./dist/esm/node.js"
-  }
-}
-```
-
----
-
-### Q50: How should `import.meta.url` be handled in universal libraries?
-**Answer:**  
-In pure ESM, `import.meta.url` provides the URL of the current module. In CommonJS, `import.meta` is a syntax error!  
-If authoring a dual library:
-- In CJS, use `__dirname` or `path.resolve()`.
-- Or use a build tool like `tsup` that automatically shims `import.meta.url` for CommonJS builds.
-
----
-
-### Q51: What is DefinitelyTyped and when should a library author use it?
-**Answer:**  
-DefinitelyTyped (`@types/*`) is a community repository for type definitions of third-party libraries that do not bundle their own types.  
-**Rule**: If you author a new library in TypeScript, **never** publish to DefinitelyTyped! Bundle your `.d.ts` files directly inside your npm package under `"types"` in `package.json`.
-
----
-
-### Q52: What is the difference between `unbuild` and `tsup`?
-**Answer:**  
-- `tsup`: Bundles code using esbuild; ultra-fast, handles CJS/ESM and `.d.ts` via rollup-plugin-dts.
-- `unbuild`: A unified build system by UnJS/Nuxt powered by Rollup and mkdist. Supports auto-generating declaration files, stubbing for instant local development, and ESM-first packaging.
-
----
-
-### Q53: What are "Stub builds" in library development (`jiti` / `unbuild --stub`)?
-**Answer:**  
-Instead of compiling source files to `dist/`, a stub build writes small proxy files into `dist/` that use JIT TypeScript compilation (via `jiti` or `tsx`). Changes made in `src/` are reflected instantly in consuming local test apps without running a rebuild!
-
----
-
-### Q54: How do you prevent users from accessing internal private functions when not using `"exports"`?
-**Answer:**  
-Without `"exports"`, consumers can import any file in `dist/`. The modern fix is strictly adopting `"exports"` in `package.json`, which makes internal paths completely unresolvable.
-
----
-
-### Q55: How do you test whether your published library works with TypeScript 4.8 and 5.3?
-**Answer:**  
-Use a test matrix in GitHub Actions running `npm test` against multiple TypeScript versions:
-```yaml
-strategy:
-  matrix:
-    ts-version: ['4.8.4', '5.0.4', '5.3.3', '5.5.0']
-```
-Or run `tsd` configured with target TypeScript versions.
-
----
-
-### Q56: What is the impact of function overload order on consumers?
-**Answer:**  
-TypeScript resolves function overloads from top to bottom, picking the **first matching signature**:
-```typescript
-// Specific overloads MUST come first!
-function parse(input: string): string[];
-function parse(input: any): any;
-```
-If the general overload (`any`) is placed first, it catches all calls, rendering more specific overloads unreachable.
-
----
-
-### Q57: How do you declare deprecations with code actions in IDEs?
-**Answer:**  
-Use JSDoc `@deprecated` with clear migration guidance:
-```typescript
-/**
- * @deprecated Since v2.1.0. Migrate to `Client.connect()`:
- * ```typescript
- * const client = await Client.connect({ url });
- * ```
- */
-export function init(url: string): Client { ... }
-```
-
----
-
-### Q58: What is `agadoo`?
-**Answer:**  
-A CLI tool that checks whether an npm package can be tree-shaken by a bundler like Rollup. It flags top-level side effects that prevent code elimination.
-
----
-
-### Q59: How do you design extensible options objects in library APIs?
-**Answer:**  
-Use generic type parameters with defaults:
-```typescript
-export interface RequestOptions<TExtra = Record<string, unknown>> {
-  timeout?: number;
-  retries?: number;
-  extra?: TExtra;
-}
-```
-
----
-
-### Q60: What are Branded Types and how do they benefit library consumers?
-**Answer:**  
-Branded types prevent accidental parameter swapping (e.g. passing a `UserId` where an `OrderId` was expected) by adding a phantom type tag:
-```typescript
-export type UserId = string & { readonly __brand: unique symbol };
-export type OrderId = string & { readonly __brand: unique symbol };
-```
-
----
-
-### Q61: What is the difference between `peerDependencies` and `optionalDependencies`?
-**Answer:**  
-- `peerDependencies`: Requires the host app to provide the package at a compatible version.
-- `optionalDependencies`: Packages that npm attempts to install, but if installation fails (e.g. native C++ compilation failure on certain OSs), npm continues without erroring.
-
----
-
-### Q62: Why should library authors avoid exporting namespace declarations?
-**Answer:**  
-Namespaces cannot be effectively tree-shaken by modern bundlers and do not interoperate cleanly with native ECMAScript module imports. Prefer named ES module exports.
-
----
-
-### Q63: How do you preserve JSDoc comments in emitted `.d.ts` files?
-**Answer:**  
-Ensure `"removeComments": false` is set in `tsconfig.json`. This keeps all documentation, `@param`, `@returns`, and `@example` annotations intact in published declaration files.
-
----
-
-### Q64: What is the `exports` wildcard syntax and its limitation?
-**Answer:**  
-Syntax: `"./*": "./dist/*.js"`.  
-Limitation: Does not automatically map `.d.ts` files unless a parallel `"types"` condition with wildcard matching is declared.
-
----
-
-### Q65: How do you verify that your library package contains no secret files (`.env`, `.git`) before publishing?
-**Answer:**  
-Run `npm pack --dry-run` and inspect the tarball file list, or inspect the `"files"` field in `package.json`.
-
----
-
-### Q66: What is `sourceMap: true` vs `declarationMap: true` in published libraries?
-**Answer:**  
-- `sourceMap: true`: Links emitted `.js` files to `.ts` files for runtime debugging (stack traces).
-- `declarationMap: true`: Links `.d.ts` files to `.ts` files for IDE navigation ("Go to Definition").
-
----
-
-### Q67: What is the difference between `typesVersions` and `exports["./*"].types`?
-**Answer:**  
-`exports` is the modern standard supported by Node 12+ and TS 4.7+. `typesVersions` is the legacy mechanism used by TypeScript prior to version 4.7.
-
----
-
-### Q68: How do you write a custom type-testing assertion using conditional types?
-**Answer:**  
-```typescript
-type Expect<T extends true> = T;
-type Equal<X, Y> = (<T>() => T extends X ? 1 : 2) extends (<T>() => T extends Y ? 1 : 2) ? true : false;
-
-type Test1 = Expect<Equal<string, string>>; // Compiles!
-// type Test2 = Expect<Equal<string, number>>; // Type Error!
-```
-
----
-
-### Q69: What is `bundle-analyzer` and how is it used in library authoring?
-**Answer:**  
-Generates a visual treemap of bundle sizes, allowing authors to detect accidentally bundled heavy dependencies (e.g. `lodash` or `moment`).
-
----
-
-### Q70: Why should you avoid `import * as pkg from "pkg"` in library internals?
-**Answer:**  
-It can prevent tree-shaking by treating the imported library as a monolithic object. Use specific named imports (`import { map } from "pkg"`).
-
----
-
-### Q71: How do you handle circular types across library modules?
-**Answer:**  
-Extract shared interfaces into a centralized `types.ts` file, and use `import type` to break circular value dependencies.
-
----
-
-### Q72: What does `npx attw --pack .` do?
-**Answer:**  
-Packs the current directory into an npm tarball and runs `@arethetypeswrong/cli` against the exact archive that would be published to npm.
-
----
-
-### Q73: What is the Dual-Package Hazard's effect on symbol identity?
-**Answer:**  
-`Symbol("foo") !== Symbol("foo")`. If Module A creates a symbol and Module B creates another instance of the module, their symbols do not match! Use `Symbol.for("foo")` for global symbol registry consistency.
-
----
-
-### Q74: What is the purpose of `.npmignore` vs `"files"`?
-**Answer:**  
-- `.npmignore` uses a blacklist approach: everything is published except ignored files. (Dangerous: new files might accidentally be published).
-- `"files"` in `package.json` uses a whitelist approach: ONLY listed folders are published. (Best practice).
-
----
-
-### Q75: How do you expose a CLI binary in a TypeScript library?
-**Answer:**  
-Add the `"bin"` field in `package.json` pointing to a compiled JavaScript file with a shebang (`#!/usr/bin/env node`):
-```json
-{
-  "bin": {
-    "my-cli": "./dist/cli.js"
-  }
-}
-```
-
----
-
-### Q76: How do you test that your library works in a pure CommonJS project without ESM?
-**Answer:**  
-Create a test directory with `package.json` lacking `"type": "module"`, and write a script using `const lib = require("my-lib")`. Run it with `node test.cjs`.
-
----
-
-### Q77: What is the difference between `tsup`'s `--dts` and `--dts-resolve`?
-**Answer:**  
-- `--dts`: Generates `.d.ts` files preserving external module imports.
-- `--dts-resolve`: Bundles internal and external declaration types into the final `.d.ts` file.
-
----
-
-### Q78: How do you declare optional features in TypeScript libraries?
-**Answer:**  
-Provide dedicated subpaths (e.g. `my-lib/redis` or `my-lib/s3`) with optional peer dependencies, so consumers only import and type what they use.
-
----
-
-### Q79: What is `stripInternal`'s effect on bundle size?
-**Answer:**  
-It reduces the file size of published `.d.ts` files by removing non-public API type signatures and documentation.
-
----
-
-### Q80: What is the danger of publishing unminified CJS along with minified ESM?
-**Answer:**  
-Consumers using legacy bundlers or Node CJS may inadvertently ship bloated, unminified code into their production bundles.
-
----
-
-### Q81: What is `publint`'s "has dual package hazard" warning?
-**Answer:**  
-Warns that a package exports both CJS and ESM entrypoints without utilizing the stateful wrapper pattern or global symbol registry.
-
----
-
-### Q82: How do you type an EventEmitter in a public library interface?
-**Answer:**  
-Use typed event maps with strict generic dispatchers:
-```typescript
-export interface TypedEmitter<TEvents extends Record<string, any>> {
-  on<E extends keyof TEvents>(event: E, listener: (arg: TEvents[E]) => void): this;
-  emit<E extends keyof TEvents>(event: E, arg: TEvents[E]): boolean;
-}
-```
-
----
-
-### Q83: Why is `export type * from "./types"` better than `export * from "./types"`?
-**Answer:**  
-It guarantees that all symbols from `./types` are strictly type-only, allowing build tools to completely elide the re-export from runtime JavaScript.
-
----
-
-### Q84: What is `release-it`?
-**Answer:**  
-A CLI tool that automates semantic version bumping, git tagging, commit creation, and npm publishing.
-
----
-
-### Q85: What does `npm login --auth-type=web` do?
-**Answer:**  
-Authenticates the CLI to npm using modern browser-based web authentication with Two-Factor Authentication (2FA).
-
----
-
-### Q86: How do you type middleware pipelines in public library APIs?
-**Answer:**  
-Use generic state accumulator types or tuple transformations:
-```typescript
-export type Middleware<TContext> = (ctx: TContext, next: () => Promise<void>) => Promise<void>;
-```
-
----
-
-### Q87: What is the risk of using `any` in a public library return type?
-**Answer:**  
-It infects the consumer's entire codebase, disabling type safety wherever the return value is used. Always use `unknown` if the type is indeterminate.
-
----
-
-### Q88: How do you support Node.js native fetch in libraries targeting both Node 18+ and Node 16?
-**Answer:**  
-Avoid bundling `node-fetch`. Detect global `fetch`:
-```typescript
-const fetchFn = typeof globalThis.fetch === "function" ? globalThis.fetch : undefined;
-```
-And document that older Node versions require a global polyfill.
-
----
-
-### Q89: What is `@types/node` version mismatch hazard?
-**Answer:**  
-If a library has `@types/node` in `dependencies`, it might force a newer Node.js type definition onto a consumer targeting an older Node version, causing global type collisions. Always place `@types/node` in `devDependencies`.
-
----
-
-### Q90: What is the Golden Rule of TypeScript Library Design?
-**Answer:**  
-**"Design for inference, verify with tests, encapsulate with exports, and respect SemVer."**
-
-
----
-
-## 5. Output Prediction Puzzles & Packaging Diagnostics (15 Puzzles)
-
-```typescript
-// ============================================================================
-// PUZZLE 1: Condition Order Hazard in package.json
-// ============================================================================
-// File: package.json
-/*
-{
-  "name": "calc-lib",
   "exports": {
     ".": {
       "import": "./dist/index.js",
-      "types": "./dist/index.d.ts"
+      "require": "./dist/index.cjs",
+      "types": "./dist/index.d.ts" // NEVER REACHED in some TypeScript resolvers!
     }
   }
 }
-*/
-// Question: Under TypeScript 5.0 with moduleResolution: "node16", what happens
-// when a consumer writes: import { add } from "calc-lib";?
+```
+**Why it fails:** Export condition order matters! The first matching condition wins. Always list `"types"` first.
 
-/**
- * COMPILER DIAGNOSTIC & TRACE:
- * 1. Under "node16", TypeScript checks condition keys in exact document order.
- * 2. Because "import" precedes "types", TS may resolve the JS file first and
- *    fail to locate "index.d.ts", reporting error TS7016: Could not find declaration file.
- * 3. Fix: Always place "types" as the very first condition in the object.
- */
-
-
-// ============================================================================
-// PUZZLE 2: Dual-Package State Fracture
-// ============================================================================
-class CacheStore {
-  private static inst: CacheStore;
-  public data = new Map<string, string>();
-  public static get(): CacheStore {
-    if (!this.inst) this.inst = new CacheStore();
-    return this.inst;
-  }
+#### Mistake 2: Missing `.d.cts` for CommonJS consumers
+```json
+// WRONG: Pointing CommonJS types to an ESM .d.ts file
+"require": {
+  "types": "./dist/index.d.ts", // Incompatible with CommonJS require() under NodeNext!
+  "default": "./dist/index.cjs"
 }
+```
+**Why it fails:** Under `NodeNext`, a CommonJS file importing a `.d.ts` that contains `export default` will encounter import mismatches. CommonJS declarations must be `.d.cts`.
 
-// Module A (loaded via ESM):
-const storeA = CacheStore.get();
-storeA.data.set("session_1", "active");
+---
 
-// Module B (loaded via CJS in same process):
-// In Dual-Package Hazard, Module B evaluates its own isolated class:
-const storeB = CacheStore.get();
-console.log(storeB.data.has("session_1"));
+### 7. Rules to remember
+1. Always list `"types"` as the first condition inside `"exports"`.
+2. Pair `.js` with `.d.ts` (ESM) and `.cjs` with `.d.cts` (CommonJS).
+3. Keep `"main"` and `"types"` at the root of `package.json` for legacy tool compatibility.
+4. Use modern bundlers (`tsup`, `unbuild`) to generate dual builds automatically.
 
-/**
- * RUNTIME TRACE & OUTPUT:
- * 1. ESM and CJS bundles maintain separate static variable memory spaces.
- * 2. storeA !== storeB.
- * 3. storeB.data has not received "session_1".
- * Output: false! (Catastrophic cache desynchronization).
- */
+---
 
+### Think first: Prediction puzzle
+What file does `const lib = require("my-dual-library");` load in Node.js when configured with the example above?
 
-// ============================================================================
-// PUZZLE 3: Symbol.for Singleton Healing
-// ============================================================================
-const CACHE_KEY = Symbol.for("app/cache_singleton");
-const globalRef = globalThis as unknown as { [CACHE_KEY]?: Map<string, string> };
-if (!globalRef[CACHE_KEY]) globalRef[CACHE_KEY] = new Map();
-const unifiedCache = globalRef[CACHE_KEY];
+---
 
-unifiedCache.set("token", "secret_123");
+**Answer:**
+```
+./dist/index.cjs
+```
+**Explanation:** Because `require()` matches the `"require"` condition in `"exports"`, Node.js routes execution to `./dist/index.cjs`.
 
-// In CJS loaded copy:
-const secondaryRef = (globalThis as any)[Symbol.for("app/cache_singleton")];
-console.log(secondaryRef.get("token"));
+---
 
-/**
- * RUNTIME TRACE & OUTPUT:
- * 1. Symbol.for looks up the global symbol registry shared across all realms.
- * 2. Both ESM and CJS access the identical Map instance on globalThis.
- * Output: "secret_123"
- */
+### Practice exercises
 
+#### Exercise 1: Dual package.json exports mapping
+- **Task**: Write the `"exports"` block supporting both ESM and CommonJS with corresponding types for `"."`.
+- **Hint 1**: Include `types`, `import`, and `require`.
 
-// ============================================================================
-// PUZZLE 4: Unused @ts-expect-error Regression
-// ============================================================================
-// Test File: test/types.test.ts
-function setPort(port: number): void {}
+#### Exercise 2: tsup dual build script
+- **Task**: Write a package.json `build` script using `tsup` to generate dual ESM/CJS output with declarations.
+- **Hint 1**: `tsup src/index.ts --format cjs,esm --dts`.
 
-// Line 1:
-// @ts-expect-error - port should only be number
-setPort(8080); // Wait, 8080 IS a number!
+#### Exercise 3: Explain the `.d.cts` extension
+- **Task**: Explain why `.d.cts` is required alongside `.cjs`.
+- **Hint 1**: TypeScript recognizes `.d.cts` as a CommonJS declaration file under `NodeNext`.
 
-/**
- * COMPILER DIAGNOSTIC & TRACE:
- * 1. `@ts-expect-error` instructs the compiler to expect a type error on the next line.
- * 2. Because `setPort(8080)` is completely valid, no error occurs.
- * 3. The compiler raises: Error TS2578: Unused '@ts-expect-error' directive.
- * 4. This immediately alerts the engineer that their test or type contract is wrong!
- */
+#### Exercise 4: Legacy fallback fields
+- **Task**: Write the `"main"` and `"types"` root fields for backwards compatibility with Node 12.
+- **Hint 1**: `"main": "./dist/index.cjs"`, `"types": "./dist/index.d.ts"`.
 
+---
 
-// ============================================================================
-// PUZZLE 5: Encapsulation Breach Prevention with "exports"
-// ============================================================================
-// Package: @corp/sdk
-// package.json:
-/*
+### Exercise solutions
+
+#### Solution 1: Dual package.json exports mapping
+```json
 {
-  "name": "@corp/sdk",
   "exports": {
-    "./client": "./dist/client.js"
+    ".": {
+      "types": {
+        "import": "./dist/index.d.ts",
+        "require": "./dist/index.d.cts"
+      },
+      "import": "./dist/index.js",
+      "require": "./dist/index.cjs"
+    }
   }
 }
-*/
-// Consumer tries:
-// import { internalHelper } from "@corp/sdk/dist/internal/helper.js";
+```
 
-/**
- * RUNTIME / COMPILER DIAGNOSTIC & TRACE:
- * 1. The presence of "exports" strictly locks down the package folder.
- * 2. Node.js throws: Error [ERR_PACKAGE_PATH_NOT_EXPORTED]: Package subpath
- *    './dist/internal/helper.js' is not defined by "exports" in package.json.
- * 3. TypeScript raises: TS2307: Cannot find module '@corp/sdk/dist/internal/helper.js'.
- */
-
-
-// ============================================================================
-// PUZZLE 6: SemVer Type Invariant: Widening Return Type
-// ============================================================================
-// Library Version 1.0.0:
-export function findUser(id: string): { id: string; name: string } {
-  return { id, name: "Alice" };
+#### Solution 2: tsup dual build script
+```json
+{
+  "scripts": {
+    "build": "tsup src/index.ts --format cjs,esm --dts --clean"
+  }
 }
+```
 
-// Library Version 1.1.0 (Author thought this was a non-breaking Minor update):
-export function findUserV2(id: string): { id: string; name: string } | null {
-  return null;
+#### Solution 3: Explain the `.d.cts` extension
+Under `moduleResolution: "NodeNext"`, TypeScript treats `.cjs` files as CommonJS modules. If the type definition is named `.d.ts`, the compiler assumes ESM type semantics. Naming it `.d.cts` explicitly marks it as CommonJS declarations.
+
+#### Solution 4: Legacy fallback fields
+```json
+{
+  "main": "./dist/index.cjs",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts"
 }
+```
 
-// Consumer Code:
-// const user = findUser("1");
-// console.log(user.name.toUpperCase());
+---
 
-/**
- * SEMVER IMPACT & TRACE:
- * 1. Consumer code expected a non-null object.
- * 2. Widening the return type to include `null` causes Compile Error TS18047:
- *    'user' is possibly 'null' across all consumer call sites.
- * 3. Verdict: Widening return types is ALWAYS A BREAKING MAJOR CHANGE!
- */
+### Recall
+1. Why is dual packaging necessary? To support both modern ESM environments (with tree shaking) and legacy CommonJS systems (`require()`).
+2. Where must the `"types"` key be positioned within an `"exports"` block? At the very top (first key).
+3. What is the declaration file extension for CommonJS output? `.d.cts`.
 
+> **If you remember only one thing:**  
+> Dual packaging provides `.js`/`.d.ts` for ESM and `.cjs`/`.d.cts` for CommonJS, with `"types"` always listed first in `package.json` `"exports"`.
 
-// ============================================================================
-// PUZZLE 7: SemVer Type Invariant: Narrowing Parameter
-// ============================================================================
-// Version 1.0.0:
-export function logMessage(msg: string | number): void {}
+---
 
-// Version 1.1.0:
-export function logMessageV2(msg: string): void {}
+# Topic 3: The `package.json` Standard: `exports`, `imports`, `types`, and Condition Ordering
 
-// Consumer Code:
-// logMessage(404);
+### 1. What is it?
+The **`package.json`** file is the manifest defining a library package. In modern packaging, the **`"exports"`** field replaces `"main"` as the primary encapsulation boundary, while the **`"imports"`** field defines internal subpath aliases starting with `#`.
 
-/**
- * SEMVER IMPACT & TRACE:
- * 1. In v1.0.0, passing a number was completely valid.
- * 2. In v2, parameter types are contravariant: narrowing accepted inputs
- *    breaks existing consumers passing numbers.
- * 3. Verdict: Narrowing parameters is ALWAYS A BREAKING MAJOR CHANGE!
- */
+### 2. Why does it exist?
+Legacy `package.json` configurations allowed consumers to bypass entry points and import deep internal files (`import "pkg/dist/internals/secret.js"`). The modern `"exports"` map strictly forbids unauthorized deep imports, creating a secure encapsulation boundary around your library package.
 
+### 3. Basic example
 
-// ============================================================================
-// PUZZLE 8: Branded Type Parameter Safety
-// ============================================================================
-type AccountId = string & { readonly __brand: unique symbol };
-type TransferId = string & { readonly __brand: unique symbol };
-
-function processTransfer(acc: AccountId, tx: TransferId): void {
-  console.log(`Processing tx ${tx as string} for account ${acc as string}`);
+```json
+{
+  "name": "enterprise-toolkit",
+  "version": "2.0.0",
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./security": {
+      "types": "./dist/security/index.d.ts",
+      "import": "./dist/security/index.js"
+    },
+    "./package.json": "./package.json"
+  }
 }
+```
 
-const myAccount = "acc_99" as AccountId;
-const myTx = "tx_01" as TransferId;
+**Consumer Usage:**
+```typescript
+// 1. Root import: Allowed
+import { Toolkit } from "enterprise-toolkit";
 
-// Call A: Correct order
-processTransfer(myAccount, myTx);
+// 2. Subpath import: Allowed
+import { encrypt } from "enterprise-toolkit/security";
 
-// Call B: Swapped arguments!
-// processTransfer(myTx, myAccount);
+// 3. Unauthorized deep import: COMPILE ERROR!
+// import { privateHash } from "enterprise-toolkit/dist/security/hash.js";
+// Error: Package subpath './dist/security/hash.js' is not defined by "exports"
+```
 
-/**
- * COMPILER DIAGNOSTIC & TRACE:
- * 1. Without branding, both parameters are string, allowing accidental swaps.
- * 2. With branded types, Call B raises Error TS2345:
- *    Argument of type 'TransferId' is not assignable to parameter of type 'AccountId'.
- */
+**Line-by-line explanation:**
+- `"."`: Maps the root package name (`"enterprise-toolkit"`).
+- `"./security"`: Maps the explicit subpath `"enterprise-toolkit/security"`.
+- `"./package.json": "./package.json"`: Explicitly exports `package.json` so build tools can read the package version.
+- Any file not listed in `"exports"` is completely blocked from consumer imports.
 
+---
 
-// ============================================================================
-// PUZZLE 9: NodeNext Mandatory .js Extension
-// ============================================================================
-// In src/math.ts:
-export const multiply = (a: number, b: number) => a * b;
+### 4. How it works inside TypeScript
+1. **Export Conditions Order**: Node.js and TypeScript evaluate conditions sequentially:
+   - `types`: Evaluated by TypeScript.
+   - `import`: Evaluated when imported via `import`.
+   - `require`: Evaluated when imported via `require()`.
+   - `default`: Generic catch-all fallback.
+2. **Wildcard Patterns**: `"./features/*": "./dist/features/*.js"` matches arbitrary subpaths under `features/`.
 
-// In src/index.ts (targeting moduleResolution: "nodenext"):
-// import { multiply } from "./math";
+---
 
-/**
- * COMPILER DIAGNOSTIC & TRACE:
- * 1. NodeNext strictly mirrors Node ESM module resolution rules.
- * 2. Relative imports without an explicit extension are rejected.
- * 3. Error TS2835: Relative import paths need an explicit file extension.
- *    Did you mean './math.js'?
- */
+### 5. More examples
 
-
-// ============================================================================
-// PUZZLE 10: @internal Property Stripping
-// ============================================================================
-export class ApiClient {
-  public endpoint: string = "https://api.corp.com";
-
-  /** @internal */
-  public _secretSigningKey: string = "k_raw_secret";
-}
-
-// Question: What does the emitted dist/index.d.ts contain when compiled
-// with stripInternal: true?
-
-/**
- * DECLARATION EMIT TRACE:
- * 1. The compiler strips all AST nodes flagged with the `@internal` JSDoc tag.
- * 2. Emitted .d.ts:
- *    export declare class ApiClient {
- *      endpoint: string;
- *    }
- * 3. `_secretSigningKey` is completely absent from the published contract!
- */
-
-
-// ============================================================================
-// PUZZLE 11: Tree-Shaking and sideEffects: false
-// ============================================================================
-// In utils.ts:
-export function usedHelper() { return "used"; }
-export function heavyHelper() {
-  console.log("Initializing huge 10MB dataset...");
-  return "heavy";
-}
-
-// In app.ts:
-// import { usedHelper } from "./utils.js";
-// console.log(usedHelper());
-
-/**
- * BUNDLER COMPILATION TRACE:
- * 1. With "sideEffects": false in package.json, Rollup/Vite/Webpack proves
- *    `heavyHelper` is never imported.
- * 2. It completely deletes `heavyHelper` from the final bundle.
- * 3. If sideEffects was true or omitted, the top-level initialization could
- *    be retained depending on bundler conservatism.
- */
-
-
-// ============================================================================
-// PUZZLE 12: Conditional Exports: Node vs Browser
-// ============================================================================
-// package.json:
-/*
+#### Example 1: Conditional exports for Browser vs Node.js
+```json
 {
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",
       "browser": "./dist/browser.js",
-      "node": "./dist/node.js"
+      "node": "./dist/node.js",
+      "default": "./dist/index.js"
     }
   }
 }
-*/
-// Question: What file is imported when this package is bundled by Vite for a web app?
+```
+When bundled by Vite/Webpack for the browser, `./dist/browser.js` is loaded; when running in Node.js, `./dist/node.js` is loaded.
 
-/**
- * RESOLUTION TRACE:
- * 1. Vite configures export conditions to include ["browser", "import", "module"].
- * 2. The "browser" condition matches before "node".
- * 3. Vite bundles `./dist/browser.js` into the web application.
- */
+---
 
+### 6. Common mistakes
 
-// ============================================================================
-// PUZZLE 13: Subpath Wildcard Types Mapping
-// ============================================================================
-// package.json:
-/*
-"exports": {
-  "./icons/*": {
-    "types": "./dist/icons/*.d.ts",
-    "import": "./dist/icons/*.js"
+#### Mistake 1: Forgetting to export `./package.json`
+```json
+// GOTCHA: Omitting ./package.json
+// Tools like Next.js or React Native that read pkg/package.json will throw:
+// Error: Package subpath './package.json' is not defined by "exports"
+```
+**Why it matters:** Always add `"./package.json": "./package.json"` to your `"exports"` map.
+
+#### Mistake 2: Missing leading `./` in export keys
+```json
+// WRONG:
+{
+  "exports": {
+    "security": "./dist/security.js" // Error: Must start with './'!
   }
 }
-*/
-// Consumer writes:
-// import homeIcon from "my-pkg/icons/home.js";
+```
+**Why it fails:** All subpath keys in `"exports"` MUST start with `./` (e.g. `"./security"`).
 
-/**
- * RESOLUTION TRACE:
- * 1. The wildcard `*` matches `"home.js"`.
- * 2. Types condition resolves to `./dist/icons/home.js.d.ts` (MISMATCH!).
- * 3. Fix: Use exact extensionless patterns or wildcard without .js suffix:
- *    "./icons/*": { "types": "./dist/icons/*.d.ts", "import": "./dist/icons/*.js" }
- *    and import "my-pkg/icons/home".
- */
+---
 
+### 7. Rules to remember
+1. All subpath keys in `"exports"` must begin with `./`.
+2. Always list `"types"` before runtime conditions (`"import"`, `"require"`, `"default"`).
+3. Explicitly export `"./package.json": "./package.json"`.
+4. Any path not listed in `"exports"` is strictly private.
 
-// ============================================================================
-// PUZZLE 14: Overload Signature Resolution Precedence
-// ============================================================================
-function formatInput(val: any): string;
-function formatInput(val: Date): number;
-function formatInput(val: any): any {
-  return val instanceof Date ? val.getTime() : String(val);
+---
+
+### Think first: Prediction puzzle
+Can a user import `my-pkg/utils` if `package.json` defines `"exports": { ".": "./dist/index.js" }`?
+
+---
+
+**Answer:**
+```
+No, it fails with a module not found error.
+```
+**Explanation:** The `"exports"` field encapsulates the package. Because `"./utils"` is not mapped in `"exports"`, external imports are blocked.
+
+---
+
+### Practice exercises
+
+#### Exercise 1: Multi-subpath export mapping
+- **Task**: Configure `"exports"` for `"."` and `"./helpers"` with types and ESM files.
+- **Hint 1**: Define keys `"."` and `"./helpers"`.
+
+#### Exercise 2: Add package.json self-export
+- **Task**: Add the export line allowing build tools to read `./package.json`.
+- **Hint 1**: `"./package.json": "./package.json"`.
+
+#### Exercise 3: Wildcard subpath export
+- **Task**: Map `./components/*` to `./dist/components/*.js` with types `./dist/components/*.d.ts`.
+- **Hint 1**: Use `*` wildcard in both key and value.
+
+#### Exercise 4: Browser conditional export
+- **Task**: Configure an export that loads `./dist/web.js` in browsers and `./dist/server.js` in Node.js.
+- **Hint 1**: Conditions: `"browser"` and `"node"`.
+
+---
+
+### Exercise solutions
+
+#### Solution 1: Multi-subpath export mapping
+```json
+{
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./helpers": {
+      "types": "./dist/helpers.d.ts",
+      "import": "./dist/helpers.js"
+    },
+    "./package.json": "./package.json"
+  }
+}
+```
+
+#### Solution 2: Add package.json self-export
+```json
+{
+  "exports": {
+    "./package.json": "./package.json"
+  }
+}
+```
+
+#### Solution 3: Wildcard subpath export
+```json
+{
+  "exports": {
+    "./components/*": {
+      "types": "./dist/components/*.d.ts",
+      "import": "./dist/components/*.js"
+    }
+  }
+}
+```
+
+#### Solution 4: Browser conditional export
+```json
+{
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "browser": "./dist/web.js",
+      "node": "./dist/server.js",
+      "default": "./dist/server.js"
+    }
+  }
+}
+```
+
+---
+
+### Recall
+1. What does the `"exports"` field do to files not explicitly listed? Blocks them from external consumer access.
+2. What character must all subpath keys start with? `./`.
+3. Why should `"./package.json"` be exported? To allow tooling and bundlers to inspect package metadata.
+
+> **If you remember only one thing:**  
+> The `"exports"` field forms a strict encapsulation boundary where only explicitly mapped subpaths can be imported by consumers.
+
+---
+
+# Topic 4: Modern Zero-Config Bundlers: Building with `tsup` and `unbuild`
+
+### 1. What is it?
+Modern TypeScript library bundlers—specifically **`tsup`** (powered by esbuild) and **`unbuild`** (powered by Rollup & jiti)—are purpose-built build tools for library authors. They produce dual ESM/CJS bundles, roll up `.d.ts` declaration files, and clean output directories with minimal configuration.
+
+### 2. Why does it exist?
+Configuring raw Webpack or Rollup for a TypeScript library requires writing 100 lines of plugins, loaders, and declaration rollups. `tsup` does all of this in a single CLI command with sub-second build times.
+
+### 3. Basic example
+
+```typescript
+// tsup.config.ts (Configuration file for tsup)
+import { defineConfig } from "tsup";
+
+export default defineConfig({
+  entry: ["src/index.ts", "src/security/index.ts"],
+  format: ["esm", "cjs"],
+  dts: true,              // Generates .d.ts and .d.cts declaration rollups!
+  splitting: false,       // Avoids unnecessary chunks in libraries
+  sourcemap: true,
+  clean: true,            // Wipes dist/ before each build
+  treeshake: true,
+  minify: false,          // Keep libraries readable for debugging
+});
+```
+
+**Run Build via CLI:**
+```bash
+npx tsup
+```
+
+**Emitted output in `dist/`:**
+```
+dist/
+├── index.js          (ESM output)
+├── index.cjs         (CJS output)
+├── index.d.ts        (Rolled-up ESM declarations)
+├── index.d.cts       (Rolled-up CJS declarations)
+├── security/index.js
+├── security/index.cjs
+└── security/index.d.ts
+```
+
+---
+
+### 4. How it works inside TypeScript
+1. **esbuild Speed**: `tsup` uses `esbuild` for transpilation, compiling thousands of lines of TypeScript in less than 50 milliseconds.
+2. **Declaration Rollup**: Because `esbuild` cannot generate `.d.ts` files, `tsup` runs an isolated TypeScript worker using `rollup-plugin-dts` to bundle all declarations into a single, clean `.d.ts` file per entry point.
+3. **No Intermediate Files**: Consumers don't get 50 separate small `.d.ts` files; they get a single cohesive `index.d.ts`.
+
+---
+
+### 5. More examples
+
+#### Example 1: Injecting shims for CJS/ESM compatibility
+```typescript
+export default defineConfig({
+  entry: ["src/index.ts"],
+  format: ["esm", "cjs"],
+  shims: true, // Polyfills import.meta.url in CJS and __dirname in ESM automatically!
+});
+```
+
+---
+
+### 6. Common mistakes
+
+#### Mistake 1: Enabling minification on published library code
+```typescript
+// AVOID:
+export default defineConfig({
+  minify: true // Makes debugging stack traces impossible for library users!
+});
+```
+**Why it matters:** End-user applications (like Next.js or Vite) already minify their final bundles. Minifying your library makes it impossible for consumers to read stack traces when debugging your library.
+
+#### Mistake 2: Missing `clean: true`
+```typescript
+// GOTCHA: Omitting clean
+// Old renamed files stay in dist/ and get accidentally published to npm!
+```
+**Why it matters:** Always set `clean: true` so stale output is wiped before building.
+
+---
+
+### 7. Rules to remember
+1. Use `tsup` or `unbuild` for zero-boilerplate library builds.
+2. Enable `dts: true` to generate rolled-up declaration files.
+3. Enable `clean: true` to prevent publishing stale artifacts.
+4. Set `shims: true` if you use `__dirname` or `import.meta.url`.
+
+---
+
+### Think first: Prediction puzzle
+Does `tsup` use the official TypeScript compiler (`tsc`) to transpile JavaScript code?
+
+---
+
+**Answer:**
+```
+No, it uses esbuild.
+```
+**Explanation:** `tsup` uses `esbuild` for ultra-fast JavaScript code generation, using TypeScript only to generate the declaration (`.d.ts`) files.
+
+---
+
+### Practice exercises
+
+#### Exercise 1: Basic tsup config
+- **Task**: Write a `tsup.config.ts` targeting `src/index.ts` with `esm` and `cjs` formats and declarations.
+- **Hint 1**: `entry: ["src/index.ts"]`, `format: ["esm", "cjs"]`, `dts: true`.
+
+#### Exercise 2: CLI build script
+- **Task**: Write the `package.json` script to run `tsup` in watch mode during development.
+- **Hint 1**: `"dev": "tsup --watch"`.
+
+#### Exercise 3: Enable shims
+- **Task**: Configure `tsup` to polyfill `__dirname` and `import.meta.url`.
+- **Hint 1**: Set `shims: true`.
+
+#### Exercise 4: Multi-entry configuration
+- **Task**: Configure `tsup` to build both `src/index.ts` and `src/cli.ts`.
+- **Hint 1**: `entry: ["src/index.ts", "src/cli.ts"]`.
+
+---
+
+### Exercise solutions
+
+#### Solution 1: Basic tsup config
+```typescript
+import { defineConfig } from "tsup";
+
+export default defineConfig({
+  entry: ["src/index.ts"],
+  format: ["esm", "cjs"],
+  dts: true,
+  clean: true,
+});
+```
+
+#### Solution 2: CLI build script
+```json
+{
+  "scripts": {
+    "dev": "tsup --watch",
+    "build": "tsup"
+  }
+}
+```
+
+#### Solution 3: Enable shims
+```typescript
+import { defineConfig } from "tsup";
+
+export default defineConfig({
+  entry: ["src/index.ts"],
+  shims: true,
+});
+```
+
+#### Solution 4: Multi-entry configuration
+```typescript
+import { defineConfig } from "tsup";
+
+export default defineConfig({
+  entry: {
+    index: "src/index.ts",
+    cli: "src/cli.ts",
+  },
+  format: ["esm"],
+  dts: true,
+});
+```
+
+---
+
+### Recall
+1. What engine powers `tsup`'s fast transpilation? `esbuild`.
+2. What option in `tsup` generates `.d.ts` declaration files? `dts: true`.
+3. Why should libraries generally avoid minification? Because consuming applications minify final bundles; unminified library code preserves readable stack traces.
+
+> **If you remember only one thing:**  
+> `tsup` builds dual ESM/CJS packages and rolls up `.d.ts` declaration files in milliseconds with zero complex Webpack boilerplate.
+
+---
+
+# Topic 5: Declaration Packaging: Bundled `.d.ts` Rollups, Declaration Maps, and Sourcemaps
+
+### 1. What is it?
+When building a library with 30 source files, standard `tsc` emits 30 individual `.d.ts` files reflecting the internal folder structure (`dist/utils/calc.d.ts`, `dist/models/user.d.ts`). **Declaration Rollup** is the process of bundling all those individual declaration files into a single clean `dist/index.d.ts` file, while **Declaration Maps** (`.d.ts.map`) maintain IDE "Go to Definition" navigation back to original `.ts` source files.
+
+### 2. Why does it exist?
+Shipping hundreds of tiny `.d.ts` files slows down the TypeScript Language Server in consumers' IDEs, exposes internal folder layouts, and risks broken relative type references. A single rolled-up `.d.ts` file loads faster and presents a clean, consolidated API.
+
+### 3. Basic example
+
+**Without Rollup (Messy `tsc` output):**
+```
+dist/
+├── index.d.ts
+├── utils/
+│   ├── format.d.ts
+│   └── math.d.ts
+└── models/
+    ├── user.d.ts
+    └── account.d.ts
+```
+
+**With Declaration Rollup (`tsup --dts` or API Extractor):**
+```
+dist/
+├── index.js
+├── index.d.ts        (Single unified declaration file containing all public types!)
+└── index.d.ts.map    (Declaration sourcemap)
+```
+
+**Inside `dist/index.d.ts`:**
+```typescript
+// Bundled declarations with internal types inlined or scoped cleanly:
+interface UserDTO {
+  id: string;
+  name: string;
 }
 
-const result = formatInput(new Date());
-// Question: What is the type of `result`?
-
-/**
- * COMPILER DIAGNOSTIC & TRACE:
- * 1. Overload signatures are matched from top to bottom.
- * 2. The first overload accepts `any`, which matches `Date`.
- * 3. TypeScript selects the first overload, typing `result` as `string`, NOT `number`!
- * 4. Rule: Specific overloads must ALWAYS precede general overloads.
- */
-
-
-// ============================================================================
-// PUZZLE 15: Module Federation Remote Type Augmentation
-// ============================================================================
-// File: remote-types.d.ts
-declare module "remotePayment/CheckoutButton" {
-  import React from "react";
-  export interface CheckoutProps { amount: number; currency: "USD" | "EUR"; }
-  const CheckoutButton: React.FC<CheckoutProps>;
-  export default CheckoutButton;
+declare class UserManager {
+  getUser(id: string): UserDTO;
 }
 
-// In Host App:
-// import CheckoutButton from "remotePayment/CheckoutButton";
-// <CheckoutButton amount={99} currency="USD" />;
+export { UserDTO, UserManager };
+//# sourceMappingURL=index.d.ts.map
+```
 
-/**
- * COMPILER TRACE:
- * 1. The ambient declaration provides complete compile-time type checking
- *    for dynamic HTTP module federation imports.
- * 2. Passing invalid props (e.g. currency="BTC") produces compile error TS2322.
- */
+---
+
+### 4. How it works inside TypeScript
+1. **Declaration Tree Walking**: Tools like `rollup-plugin-dts` or Microsoft's `API Extractor` parse all emitted `.d.ts` files starting from `index.d.ts`.
+2. **Inlining & Renaming**: Unexported helper interfaces are either omitted or inlined with unique names to prevent namespace collisions.
+3. **Sourcemap Mapping**: The declaration map links each line in `dist/index.d.ts` to the original character position in `src/models/user.ts`.
+
+---
+
+### 5. More examples
+
+#### Example 1: Microsoft API Extractor for Enterprise Libraries
+```json
+// api-extractor.json
+{
+  "$schema": "https://developer.microsoft.com/json-schemas/api-extractor/v7/api-extractor.schema.json",
+  "mainEntryPointFilePath": "<projectFolder>/dist/types/index.d.ts",
+  "dtsRollup": {
+    "enabled": true,
+    "untrimmedFilePath": "<projectFolder>/dist/index.d.ts"
+  }
+}
+```
+API Extractor also detects accidental API leaks, enforces doc comment standards, and produces API report diffs for pull requests.
+
+---
+
+### 6. Common mistakes
+
+#### Mistake 1: Missing `.d.ts.map` files when bundling declarations
+```bash
+# If declaration maps are omitted:
+# Consumers clicking "Go to Definition" on your functions get stuck in 'dist/index.d.ts'
+# instead of jumping to the real source code!
+```
+**Why it matters:** Always generate declaration maps so consumers can view implementation comments and real source logic.
+
+#### Mistake 2: Name collisions in bundled declarations
+```typescript
+// If fileA and fileB both declare internal 'interface Options', a naive rollup tool can collide!
+// Professional tools (tsup, API Extractor) automatically rename internal clashes to Options_1.
+```
+
+---
+
+### 7. Rules to remember
+1. Bundle declarations into a single `dist/index.d.ts` for faster IDE resolution and cleaner distribution.
+2. Always ship `.d.ts.map` declaration maps alongside `.d.ts` files.
+3. Use `tsup --dts` or `API Extractor` to generate declaration rollups.
+4. Ensure internal unexported interfaces don't collide during bundling.
+
+---
+
+### Think first: Prediction puzzle
+Does bundling declaration files change the runtime behavior of the library?
+
+---
+
+**Answer:**
+```
+No.
+```
+**Explanation:** Declaration files (`.d.ts`) contain zero runtime code. They only affect compile-time type checking and IDE autocomplete.
+
+---
+
+### Practice exercises
+
+#### Exercise 1: Enable declaration rollup in tsup
+- **Task**: Configure `tsup` to roll up declarations and output sourcemaps.
+- **Hint 1**: `dts: true`, `sourcemap: true`.
+
+#### Exercise 2: Inspect declaration sourcemap
+- **Task**: State what URL directive is placed at the bottom of `dist/index.d.ts`.
+- **Hint 1**: `//# sourceMappingURL=index.d.ts.map`.
+
+#### Exercise 3: Explain API Extractor benefits
+- **Task**: List two benefits of using Microsoft API Extractor over simple declaration emission.
+- **Hint 1**: Generates API review reports and rolls up declarations cleanly.
+
+#### Exercise 4: Clean distribution folder
+- **Task**: Explain why a single `index.d.ts` loads faster in VS Code than 50 separate `.d.ts` files.
+- **Hint 1**: Reduces filesystem I/O operations by the Language Server.
+
+---
+
+### Exercise solutions
+
+#### Solution 1: Enable declaration rollup in tsup
+```typescript
+import { defineConfig } from "tsup";
+
+export default defineConfig({
+  entry: ["src/index.ts"],
+  dts: true,
+  sourcemap: true,
+});
+```
+
+#### Solution 2: Inspect declaration sourcemap
+The directive is:
+```typescript
+//# sourceMappingURL=index.d.ts.map
+```
+
+#### Solution 3: Explain API Extractor benefits
+1. Detects accidental leaks of internal types in public APIs.
+2. Creates markdown API reports (`api-report.md`) to catch accidental breaking changes in pull requests.
+
+#### Solution 4: Clean distribution folder
+A single rolled-up declaration file allows the TypeScript Language Server to read all types in a single sequential disk read, avoiding dozens of disk lookups across nested folders.
+
+---
+
+### Recall
+1. What is Declaration Rollup? Bundling multiple `.d.ts` files into a single unified `index.d.ts` file.
+2. What file enables "Go to Definition" to jump from `.d.ts` to `.ts` source files? The declaration map (`.d.ts.map`).
+3. Which tool from Microsoft provides enterprise-grade declaration rollups and API reviews? API Extractor.
+
+> **If you remember only one thing:**  
+> Bundle declarations into a single `index.d.ts` with `.d.ts.map` declaration maps for fast IDE performance and seamless source navigation.
+
+---
+
+# Checkpoint Challenge 1: Dual Packaging & API Design (Topics 1-5)
+
+### Challenge Specification
+Construct a production Dual-Package Library Setup:
+1. Design a clean `src/index.ts` public API surface with explicit `export type` usage.
+2. Configure `tsup.config.ts` for dual ESM/CJS generation with rolled-up declarations.
+3. Write a production `package.json` with `"type": "module"`, `"exports"` condition order, and legacy fallbacks.
+4. Verify that internal helper files are encapsulated and not reachable from consumers.
+
+### Solution
+
+```typescript
+// 1. src/index.ts (Curated Public API Surface)
+export interface CachePolicy {
+  ttlMs: number;
+  maxEntries: number;
+}
+
+export class MemoryCache<T> {
+  private store = new Map<string, { value: T; expiresAt: number }>();
+
+  constructor(private policy: CachePolicy) {}
+
+  set(key: string, value: T): void {
+    this.store.set(key, {
+      value,
+      expiresAt: Date.now() + this.policy.ttlMs,
+    });
+  }
+
+  get(key: string): T | null {
+    const entry = this.store.get(key);
+    if (!entry || entry.expiresAt < Date.now()) {
+      this.store.delete(key);
+      return null;
+    }
+    return entry.value;
+  }
+}
+
+// Explicit type export
+export type { CachePolicy as ICachePolicy };
+```
+
+```typescript
+// 2. tsup.config.ts (Dual Packaging Build Configuration)
+import { defineConfig } from "tsup";
+
+export default defineConfig({
+  entry: ["src/index.ts"],
+  format: ["esm", "cjs"],
+  dts: true,
+  sourcemap: true,
+  clean: true,
+  shims: true,
+  treeshake: true,
+});
+```
+
+```json
+// 3. package.json (Production Dual-Package Manifest)
+{
+  "name": "@enterprise/cache-core",
+  "version": "1.0.0",
+  "type": "module",
+  "main": "./dist/index.cjs",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": {
+        "import": "./dist/index.d.ts",
+        "require": "./dist/index.d.cts"
+      },
+      "import": "./dist/index.js",
+      "require": "./dist/index.cjs"
+    },
+    "./package.json": "./package.json"
+  },
+  "files": ["dist"],
+  "scripts": {
+    "build": "tsup"
+  }
+}
+```
+
+```bash
+# 4. Build Execution & Verification
+npx tsup
+# Emits dist/index.js, dist/index.cjs, dist/index.d.ts, dist/index.d.cts
 ```
 
 
 ---
 
-## 6. Enterprise Capstone Projects
+# Topic 6: The Dual-Package Hazard (DPH): Symbol Identity & State Duplication
+
+### 1. What is it?
+The **Dual-Package Hazard (DPH)** occurs when an application or its dependencies accidentally load **both** the CommonJS version AND the ESM version of the same library at runtime in the same process:
+- Package A imports `my-lib` via ESM (`import`).
+- Package B imports `my-lib` via CommonJS (`require()`).
+Node.js treats `dist/index.js` and `dist/index.cjs` as two completely separate modules, instantiating two independent copies of the code and memory state!
+
+### 2. Why does it exist?
+Because JavaScript modules in Node.js are cached by their absolute filesystem URL or path. Since `./dist/index.js` and `./dist/index.cjs` are different files on disk, Node.js evaluates both files independently.
+
+### 3. Basic example
 
 ```typescript
-// ============================================================================
-// PROJECT 1: Universal npm Package Specification & Linter Engine
-// ============================================================================
+// Problem Demonstration: Duplicate Singletons & Broken instanceof
+// If my-lib exports a class:
+export class Registry {
+  static instances: string[] = [];
+  static register(name: string) { this.instances.push(name); }
+}
 
+// In Consumer App:
+// file1.mjs:
+import { Registry as EsmRegistry } from "my-lib";
+EsmRegistry.register("client_A");
+
+// file2.cjs:
+const { Registry: CjsRegistry } = require("my-lib");
+console.log(CjsRegistry.instances); // [] - EMPTY!
+// Catastrophic Bug: CjsRegistry has its own isolated static array!
+// EsmRegistry !== CjsRegistry
+// new EsmRegistry() instanceof CjsRegistry === FALSE!
+```
+
+---
+
+### 4. How it works inside TypeScript
+1. **Broken `instanceof`**: If an error class `class CustomError extends Error` is instantiated by the CJS bundle, an ESM `catch (err)` block checking `if (err instanceof CustomError)` will evaluate to `false`.
+2. **State Duplication**: Any module-level variables (connection pools, cache dictionaries, counters) exist in duplicate.
+3. **The Solution (CJS Wrapper Pattern)**: To eliminate the hazard, compile the core logic into CommonJS **only**, and have the ESM entry point act as a thin wrapper that re-exports the CommonJS instance!
+
+```javascript
+// dist/index.cjs (Holds the actual implementation and single state)
+class Registry {
+  static instances = [];
+}
+module.exports = { Registry };
+
+// dist/index.js (Thin ESM wrapper delegating to the SAME CJS file!)
+import cjs from "./index.cjs";
+export const Registry = cjs.Registry;
+```
+Now, whether imported via `import` or `require()`, both point to the identical heap memory references in `index.cjs`!
+
+---
+
+### 5. More examples
+
+#### Example 1: Global Symbol sharing for cross-package singletons
+```typescript
+// If dual builds must exist independently, store singletons on globalThis using Symbol.for:
+const REGISTRY_KEY = Symbol.for("@myorg/library.registry.state");
+
+export class SafeRegistry {
+  private static get store(): string[] {
+    const g = globalThis as any;
+    return (g[REGISTRY_KEY] ??= []);
+  }
+
+  static add(item: string) {
+    this.store.push(item);
+  }
+}
+```
+Because `Symbol.for` shares a global string registry across the entire process, both the ESM and CJS copies share the exact same state array!
+
+---
+
+### 6. Common mistakes
+
+#### Mistake 1: Publishing completely independent stateful bundles
+```typescript
+// FATAL MISTAKE:
+// Bundling dist/index.js and dist/index.cjs independently with local state
+let activeConnections = 0; // Will be duplicated in memory if dual-loaded!
+```
+**Why it fails:** If a consumer's dependency tree contains both ESM and CJS consumers, two connection pools will open, exhausting database sockets.
+
+#### Mistake 2: Assuming `Symbol()` is globally unique
+```typescript
+const KEY = Symbol("my.key"); // NOT shared across dual bundles!
+```
+**Why it fails:** Standard `Symbol("key")` generates a unique memory identity on every execution. Use `Symbol.for("my.key")` to look up or create in the global runtime symbol registry.
+
+---
+
+### 7. Rules to remember
+1. The Dual-Package Hazard occurs when both CJS and ESM versions of a library are loaded into the same process.
+2. It breaks `instanceof` checks and duplicates module-level state.
+3. Use the CJS wrapper pattern or `Symbol.for` on `globalThis` to preserve singleton identity.
+4. Stateless pure-function utility libraries (like lodash) are immune to state duplication, but still susceptible to `instanceof` mismatches.
+
+---
+
+### Think first: Prediction puzzle
+Does `Symbol("token") === Symbol("token")` evaluate to `true` across two different evaluated modules?
+
+---
+
+**Answer:**
+```
+false
+```
+**Explanation:** `Symbol("token")` creates a unique symbol every time it is called. Only `Symbol.for("token")` checks and reuses the global registry.
+
+---
+
+### Practice exercises
+
+#### Exercise 1: Implement global shared state
+- **Task**: Write a class `Counter` that stores its `count` on `globalThis` using `Symbol.for`.
+- **Hint 1**: `const KEY = Symbol.for("app.counter");`.
+
+#### Exercise 2: CJS wrapper for ESM
+- **Task**: Write an ESM wrapper file that imports a CJS module and re-exports its `Client` class.
+- **Hint 1**: `import cjs from "./index.cjs"; export const Client = cjs.Client;`.
+
+#### Exercise 3: Explain broken `instanceof`
+- **Task**: Explain why `instanceof` evaluates to false when a class is loaded from both `.js` and `.cjs`.
+- **Hint 1**: Prototype identity is based on constructor function reference equality.
+
+#### Exercise 4: Detect dual package hazard warning
+- **Task**: Name the CLI tool that detects Dual-Package Hazard risks in published packages.
+- **Hint 1**: `publint` or `attw`.
+
+---
+
+### Exercise solutions
+
+#### Solution 1: Implement global shared state
+```typescript
+const COUNTER_KEY = Symbol.for("@lib/counter.state");
+
+export class SharedCounter {
+  private static get state(): { count: number } {
+    const g = globalThis as any;
+    return (g[COUNTER_KEY] ??= { count: 0 });
+  }
+
+  static increment(): number {
+    return ++this.state.count;
+  }
+}
+```
+
+#### Solution 2: CJS wrapper for ESM
+```javascript
+import cjs from "./index.cjs";
+
+export const Client = cjs.Client;
+export default cjs;
+```
+
+#### Solution 3: Explain broken `instanceof`
+`instanceof` checks if the prototype of the constructor exists anywhere in the object's prototype chain. Because Node.js creates two separate constructor functions with different prototypes for `index.js` and `index.cjs`, an instance of one does not match the prototype of the other.
+
+#### Solution 4: Detect dual package hazard warning
+The tools are `publint` and `@arethetypeswrong/cli` (`attw`).
+
+---
+
+### Recall
+1. What causes the Dual-Package Hazard? Loading both the ESM and CJS bundles of a package in the same Node.js process.
+2. What happens to `instanceof` checks under the Dual-Package Hazard? They fail because the two bundles create different constructor function references.
+3. How can you share state across dual bundles safely? By storing state on `globalThis` using `Symbol.for()`.
+
+> **If you remember only one thing:**  
+> The Dual-Package Hazard duplicates state and breaks `instanceof`; use `Symbol.for` or the CJS wrapper pattern to ensure singleton identity.
+
+---
+
+# Topic 7: Packaging Validation Tooling: `publint` and `@arethetypeswrong/cli` (`attw`)
+
+### 1. What is it?
+**`publint`** and **`@arethetypeswrong/cli` (`attw`)** are automated CLI validation tools that analyze your built npm package before publication to detect broken `package.json` configurations, missing types, invalid condition orders, and Dual-Package Hazards.
+
+### 2. Why does it exist?
+Configuring `package.json` `"exports"` correctly across all combinations of TypeScript versions, Node.js ESM/CJS modes, and bundlers is notoriously difficult. A package that works on your machine can easily fail for consumers. `attw` tests your package against all 6 major TypeScript module resolution modes automatically.
+
+### 3. Basic example
+
+```bash
+# 1. Run publint to verify package.json exports syntax and file presence
+npx publint
+
+# 2. Run Are The Types Wrong (attw) to test all TS resolution modes
+npx @arethetypeswrong/cli --pack .
+```
+
+**Sample `attw` Output Matrix:**
+```
+┌───────────────────┬──────────────┬────────────────┬────────────────┐
+│ Entrypoint        │ node10       │ node16 (ESM)   │ node16 (CJS)   │
+├───────────────────┼──────────────┼────────────────┼────────────────┤
+│ . (import)        │ 🟢 (resolved)│ 🟢 (resolved)  │ 🟢 (resolved)  │
+│ . (require)       │ 🟢 (resolved)│ 🟢 (resolved)  │ 🟢 (resolved)  │
+│ ./security        │ 🟢 (resolved)│ 🟢 (resolved)  │ 🟢 (resolved)  │
+└───────────────────┴──────────────┴────────────────┴────────────────┘
+All checks passed! Zero packaging errors detected.
+```
+
+**Line-by-line explanation:**
+- `npx publint`: Checks for broken paths, missing files listed in `"exports"`, and invalid condition keys.
+- `npx @arethetypeswrong/cli --pack .`: Packs a temporary `.tgz` tarball (exactly as `npm publish` would) and verifies that every entry point resolves correctly under `node10`, `node16 (ESM)`, and `node16 (CJS)`.
+
+---
+
+### 4. How it works inside TypeScript
+1. **`--pack .` Parameter**: Ensures `attw` tests the actual files bundled into the npm tarball (honoring `.npmignore` and `"files"`), catching missing build output.
+2. **Resolution Matrix**: `attw` tests:
+   - Does `import "pkg"` resolve to a valid `.d.ts` file?
+   - Does `require("pkg")` resolve to a valid `.d.cts` file?
+   - Is there a Dual-Package Hazard or prototype mismatch?
+
+---
+
+### 5. More examples
+
+#### Example 1: Integrating `attw` and `publint` into CI Pre-Publish Scripts
+```json
+// package.json
+{
+  "scripts": {
+    "build": "tsup",
+    "check:exports": "publint",
+    "check:types": "attw --pack .",
+    "prepublishOnly": "pnpm build && pnpm check:exports && pnpm check:types"
+  }
+}
+```
+
+---
+
+### 6. Common mistakes
+
+#### Mistake 1: Testing `attw` on source files instead of the packed tarball
+```bash
+# WRONG: Running without --pack
+attw . # Checks local folder, missing missing-files packaging errors!
+```
+**Why it fails:** Always use `--pack .`. This packs the actual archive that npm will distribute, catching cases where you forgot to include `dist/` in `"files"`.
+
+#### Mistake 2: Ignoring red flags in `attw`
+```
+// ATTW WARNING: "Masquerading as CJS" or "Cannot be loaded by require()"
+```
+**Why it matters:** Red flags in `attw` mean real consumers will experience build errors. Fix your `"exports"` conditions until all checks are green.
+
+---
+
+### 7. Rules to remember
+1. Always run `publint` to validate `package.json` fields.
+2. Always run `attw --pack .` before publishing to npm.
+3. Add `attw` and `publint` to your CI pipeline.
+4. Green across all columns in `attw` guarantees universal consumer compatibility.
+
+---
+
+### Think first: Prediction puzzle
+What does `publint` report if `package.json` `"exports"` points to `./dist/index.js`, but `./dist/index.js` was never compiled?
+
+---
+
+**Answer:**
+```
+Error: File does not exist: ./dist/index.js
+```
+**Explanation:** `publint` checks every path listed in `package.json` to verify that the target files actually exist on disk.
+
+---
+
+### Practice exercises
+
+#### Exercise 1: Run publint
+- **Task**: Write the npm script to run `publint`.
+- **Hint 1**: `"lint:package": "publint"`.
+
+#### Exercise 2: Run attw with tarball packing
+- **Task**: Write the command to test package types using temporary tarball packing.
+- **Hint 1**: `npx @arethetypeswrong/cli --pack .`.
+
+#### Exercise 3: Add pre-publish check hook
+- **Task**: Add a `prepublishOnly` script in `package.json` that runs the build, `publint`, and `attw`.
+- **Hint 1**: `"prepublishOnly": "npm run build && publint && attw --pack ."`.
+
+#### Exercise 4: Explain "Masquerading as ESM"
+- **Task**: Explain what `attw`'s "Masquerading as ESM" warning means.
+- **Hint 1**: A `.js` file contains `export` statements inside a package marked `"type": "commonjs"`.
+
+---
+
+### Exercise solutions
+
+#### Solution 1: Run publint
+```json
+{
+  "scripts": {
+    "check:exports": "publint"
+  }
+}
+```
+
+#### Solution 2: Run attw with tarball packing
+```bash
+npx @arethetypeswrong/cli --pack .
+```
+
+#### Solution 3: Add pre-publish check hook
+```json
+{
+  "scripts": {
+    "prepublishOnly": "npm run build && publint && attw --pack ."
+  }
+}
+```
+
+#### Solution 4: Explain "Masquerading as ESM"
+The warning occurs when a file contains ESM syntax (like `export` or `import`), but the enclosing `package.json` does not specify `"type": "module"`, causing Node.js to evaluate it as CommonJS and crash with `SyntaxError: Cannot use import statement outside a module`.
+
+---
+
+### Recall
+1. What does `publint` check? Syntax, file existence, and condition ordering in `package.json`.
+2. What does `attw --pack .` check? Resolvability and correctness of types across all TypeScript module resolution modes using the packed npm tarball.
+3. Why should these tools be run in CI? To catch packaging errors before publishing broken releases to npm.
+
+> **If you remember only one thing:**  
+> Run `publint` and `attw --pack .` before every release to guarantee that your package exports and types resolve cleanly across all runtimes.
+
+---
+
+# Topic 8: Package Whitelisting and Publishing: `"files"`, `.npmignore`, and NPM Provenance
+
+### 1. What is it?
+When publishing a package to the npm registry with `npm publish`, you must control exactly which files are uploaded.
+- **`"files"` array in `package.json`**: An explicit whitelist of folders and files to include in the package tarball.
+- **NPM Provenance (`--provenance`)**: Generates a cryptographically signed public ledger proving that the package was built and published from a specific GitHub Actions workflow and commit.
+
+### 2. Why does it exist?
+Without an explicit `"files"` whitelist, `npm publish` will upload your entire workspace: test files, configuration secrets, internal `.env` files, and raw source code. Using an explicit `"files"` whitelist ensures that only the compiled `dist/` directory and documentation are published. NPM Provenance protects against supply chain attacks.
+
+### 3. Basic example
+
+```json
+// package.json (Production Publishing Whitelist)
+{
+  "name": "@enterprise/auth-tools",
+  "version": "1.0.0",
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "publishConfig": {
+    "access": "public",
+    "provenance": true
+  }
+}
+```
+
+```yaml
+# .github/workflows/publish.yml (Automated Provenance Publishing)
+name: Publish to NPM
+on:
+  release:
+    types: [published]
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write # Mandatory for NPM Provenance cryptographic signatures!
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v3
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          registry-url: 'https://registry.npmjs.org'
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm build
+      - run: pnpm publish --provenance --no-git-checks
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+```
+
+**Line-by-line explanation:**
+- `"files": ["dist", "README.md", "LICENSE"]`: Explicit whitelist. Only `dist/`, README, and LICENSE are packaged. Everything else (`src/`, `tests/`, `.github/`, `tsconfig.json`) is excluded.
+- `"provenance": true`: Configures npm to sign releases cryptographically.
+- `id-token: write`: Grants GitHub Actions permission to mint OpenID Connect (OIDC) identity tokens for npm.
+
+---
+
+### 4. How it works inside TypeScript
+1. **Always Included**: `package.json`, `README.md`, `LICENSE`, and `CHANGELOG.md` are always included by npm, even if omitted from `"files"`.
+2. **Always Excluded**: `.git`, `.env`, `node_modules`, and `.npmrc` are always excluded by npm for security.
+3. **Inspect Tarball Contents**: Run `npm pack --dry-run` to preview the exact list of files that will be uploaded.
+
+---
+
+### 5. More examples
+
+#### Example 1: Previewing published files with `npm pack --dry-run`
+```bash
+npm pack --dry-run
+```
+Outputs:
+```
+npm notice 📦  @enterprise/auth-tools@1.0.0
+npm notice === Tarball Contents ===
+npm notice 1.2kB dist/index.js
+npm notice 1.4kB dist/index.cjs
+npm notice 450B  dist/index.d.ts
+npm notice 450B  dist/index.d.cts
+npm notice 2.1kB README.md
+npm notice 1.1kB LICENSE
+npm notice 850B  package.json
+npm notice === Tarball Details ===
+npm notice total files: 7
+```
+
+---
+
+### 6. Common mistakes
+
+#### Mistake 1: Relying on `.npmignore` instead of `"files"`
+```bash
+# RISKY: Using .npmignore
+# If someone adds a new folder 'secrets/' and forgets to update .npmignore,
+# that folder will be uploaded to the public npm registry!
+```
+**Why it fails:** `.npmignore` is a blacklist (opt-out). The `"files"` field is a whitelist (opt-in). Whitelists are dramatically safer.
+
+#### Mistake 2: Missing `id-token: write` when enabling provenance
+```yaml
+# In GitHub Actions without id-token: write
+# Error: NPM Provenance generation failed: Unable to exchange OIDC token!
+```
+**Why it fails:** NPM Provenance requires GitHub Actions OIDC permissions to sign releases.
+
+---
+
+### 7. Rules to remember
+1. Always use the `"files"` whitelist array in `package.json`.
+2. Never rely on `.npmignore` for production packages.
+3. Preview tarball contents before publishing with `npm pack --dry-run`.
+4. Enable `--provenance` in GitHub Actions for cryptographic supply chain security.
+
+---
+
+### Think first: Prediction puzzle
+Does `npm pack --dry-run` upload files to the npm registry?
+
+---
+
+**Answer:**
+```
+No.
+```
+**Explanation:** `--dry-run` only builds and displays the tarball file list in the terminal without uploading anything.
+
+---
+
+### Practice exercises
+
+#### Exercise 1: Package whitelist definition
+- **Task**: Configure `package.json` to only publish `dist/` and `LICENSE`.
+- **Hint 1**: `"files": ["dist", "LICENSE"]`.
+
+#### Exercise 2: Dry-run command
+- **Task**: Write the command to inspect the contents of your package tarball before publishing.
+- **Hint 1**: `npm pack --dry-run`.
+
+#### Exercise 3: Scoped package public access
+- **Task**: Set `"publishConfig"` so a scoped package (`@myorg/pkg`) publishes publicly instead of privately.
+- **Hint 1**: `"publishConfig": { "access": "public" }`.
+
+#### Exercise 4: OIDC permission for provenance
+- **Task**: Write the GitHub Actions workflow permission needed for npm provenance.
+- **Hint 1**: `permissions: { id-token: write }`.
+
+---
+
+### Exercise solutions
+
+#### Solution 1: Package whitelist definition
+```json
+{
+  "files": [
+    "dist",
+    "LICENSE",
+    "README.md"
+  ]
+}
+```
+
+#### Solution 2: Dry-run command
+```bash
+npm pack --dry-run
+```
+
+#### Solution 3: Scoped package public access
+```json
+{
+  "publishConfig": {
+    "access": "public",
+    "provenance": true
+  }
+}
+```
+
+#### Solution 4: OIDC permission for provenance
+```yaml
+permissions:
+  contents: read
+  id-token: write
+```
+
+---
+
+### Recall
+1. Why is the `"files"` whitelist safer than `.npmignore`? Because it only includes explicitly listed files, preventing accidental leaks of new files or secrets.
+2. What does NPM Provenance prove? That the package was built and published from a verifiable GitHub Actions workflow and commit.
+3. How do you preview the exact files included in a package? Run `npm pack --dry-run`.
+
+> **If you remember only one thing:**  
+> Use the `"files"` whitelist array in `package.json` and publish with `--provenance` for verified supply-chain security.
+
+---
+
+# Topic 9: Testing Public Type Contracts: `tsd` and Type-Level Unit Testing
+
+### 1. What is it?
+**Type-Level Unit Testing** is the practice of writing automated tests that verify your library's public TypeScript types, ensuring that return types are accurate, invalid arguments trigger compile errors, and generics infer correctly. Popular tools include **`tsd`** and Vitest's `expectTypeOf()`.
+
+### 2. Why does it exist?
+Standard testing frameworks (Jest, Vitest) only execute JavaScript code at runtime. They cannot verify whether a type is inferred as `string` vs `any`, or whether an invalid function call triggers a compile-time diagnostic error. Type tests catch accidental type regressions before releases.
+
+### 3. Basic example
+
+```typescript
+// test-d/index.test-d.ts (Type Test Suite using tsd)
+import { expectType, expectError, expectAssignable } from "tsd";
+import { MemoryCache, CachePolicy } from "../src/index.js";
+
+// 1. Verify Class Construction
+const policy: CachePolicy = { ttlMs: 1000, maxEntries: 100 };
+const cache = new MemoryCache<string>(policy);
+
+// 2. Test Return Types
+expectType<string | null>(cache.get("key"));
+
+// 3. Test Type Assignment Guard
+expectAssignable<CachePolicy>({ ttlMs: 500, maxEntries: 50 });
+
+// 4. Test Negative Assertions (Must trigger compile errors!)
+expectError(new MemoryCache<string>({ ttlMs: "invalid_string" })); // Should fail: ttlMs must be number
+expectError(cache.set("key", 12345)); // Should fail: cache expects string value, not number!
+```
+
+**Run Type Tests via CLI:**
+```bash
+npx tsd
+```
+
+**Line-by-line explanation:**
+- `expectType<T>(expr)`: Asserts that the inferred type of `expr` matches `T` identically (not a subtype, but an exact match).
+- `expectAssignable<T>(expr)`: Asserts that `expr` is assignable to `T`.
+- `expectError(expr)`: Asserts that `expr` produces a TypeScript compile error. If `expr` compiles successfully, the test **fails**!
+
+---
+
+### 4. How it works inside TypeScript
+1. **Language Service Diagnostics**: `tsd` runs the TypeScript compiler against `test-d/` files and matches the diagnostics against `expectError` and `expectType` directives.
+2. **Strict Equality Check**: Unlike standard assignability, `expectType` tests for type identity, ensuring `string` is not satisfied by `any`.
+3. **CI Integration**: Add `tsd` to your `test` script in `package.json`.
+
+---
+
+### 5. More examples
+
+#### Example 1: Testing with Vitest `expectTypeOf`
+```typescript
+import { test, expectTypeOf } from "vitest";
+import { formatCurrency } from "../src/index.js";
+
+test("type contract", () => {
+  expectTypeOf(formatCurrency(100)).toEqualTypeOf<string>();
+  expectTypeOf(formatCurrency).toBeCallableWith(50);
+});
+```
+
+---
+
+### 6. Common mistakes
+
+#### Mistake 1: Testing types with runtime `typeof` assertions
+```typescript
+// WRONG: Runtime typeof checks do not test TypeScript types!
+expect(typeof result).toBe("string"); // Only tests runtime string, cannot distinguish string vs any vs 'hello'!
+```
+**Why it fails:** At runtime, types are erased. Use `expectType<T>()` from `tsd` or `expectTypeOf()` from Vitest.
+
+#### Mistake 2: Missing negative compilation tests
+```typescript
+// INCOMPLETE: Testing only valid calls
+// If a breaking change allows any argument to be passed, your tests will still pass!
+```
+**Why it matters:** Always write `expectError()` tests to prove that invalid arguments are properly rejected by the compiler.
+
+---
+
+### 7. Rules to remember
+1. Use `tsd` or Vitest `expectTypeOf` to test public type signatures.
+2. Use `expectType<T>()` for exact type identity matching.
+3. Use `expectError()` to verify that illegal calls are rejected at compile time.
+4. Run type tests in CI alongside runtime unit tests.
+
+---
+
+### Think first: Prediction puzzle
+Does `expectType<string>(value)` pass if `value` is typed as `any`?
+
+---
+
+**Answer:**
+```
+No, it fails.
+```
+**Explanation:** `expectType` checks for strict type identity. `any` is not identical to `string`, so the test fails.
+
+---
+
+### Practice exercises
+
+#### Exercise 1: Exact return type assertion
+- **Task**: Write a `tsd` assertion verifying that `calc(10)` returns type `number`.
+- **Hint 1**: `expectType<number>(calc(10))`.
+
+#### Exercise 2: Negative type assertion
+- **Task**: Assert that calling `greet(123)` produces a compile error.
+- **Hint 1**: `expectError(greet(123))`.
+
+#### Exercise 3: Assignability check
+- **Task**: Assert that `{ id: "1", role: "admin" }` is assignable to `User`.
+- **Hint 1**: `expectAssignable<User>({ id: "1", role: "admin" })`.
+
+#### Exercise 4: Type test script in package.json
+- **Task**: Add a `"test:types"` script to `package.json` running `tsd`.
+- **Hint 1**: `"test:types": "tsd"`.
+
+---
+
+### Exercise solutions
+
+#### Solution 1: Exact return type assertion
+```typescript
+import { expectType } from "tsd";
+expectType<number>(calc(10));
+```
+
+#### Solution 2: Negative type assertion
+```typescript
+import { expectError } from "tsd";
+expectError(greet(123));
+```
+
+#### Solution 3: Assignability check
+```typescript
+import { expectAssignable } from "tsd";
+expectAssignable<User>({ id: "1", role: "admin" });
+```
+
+#### Solution 4: Type test script in package.json
+```json
+{
+  "scripts": {
+    "test:types": "tsd",
+    "test": "vitest run && npm run test:types"
+  }
+}
+```
+
+---
+
+### Recall
+1. Why can't runtime unit tests verify TypeScript types? Because TypeScript types are completely erased at runtime.
+2. What does `expectError()` test in `tsd`? Asserts that the enclosed code produces a TypeScript compiler error.
+3. How does `expectType` differ from `expectAssignable`? `expectType` requires exact identical types; `expectAssignable` permits subtypes.
+
+> **If you remember only one thing:**  
+> Use `tsd` to write automated unit tests for your library's public types, including `expectError` tests for negative cases.
+
+---
+
+# Topic 10: SemVer for TypeScript Libraries: Breaking Type Changes vs Runtime Changes
+
+### 1. What is it?
+**Semantic Versioning (SemVer)** dictates version numbers as `MAJOR.MINOR.PATCH`:
+- `PATCH`: Backwards-compatible bug fixes.
+- `MINOR`: Backwards-compatible new features.
+- `MAJOR`: Breaking changes.
+In TypeScript libraries, **Breaking Changes can occur purely at the type level**, even when the runtime JavaScript code has not changed at all!
+
+### 2. Why does it exist?
+If a library changes an interface property from `string | undefined` to strictly `string`:
+- The JavaScript function still executes the exact same way.
+- But consumers' TypeScript builds will fail to compile!
+Under SemVer for TypeScript libraries, any change that causes previously compiling consumer code to fail compilation is considered a **Breaking Change** requiring a **MAJOR** version bump.
+
+### 3. Basic example
+
+```typescript
+// Version 1.0.0
+export interface ClientConfig {
+  apiKey: string;
+  timeout?: number;
+  retries?: number;
+}
+export function createClient(config: ClientConfig): void {}
+
+// --- SCENARIO A: BREAKING TYPE CHANGE (Requires MAJOR bump: 2.0.0) ---
+// Adding a new REQUIRED property:
+export interface ClientConfig {
+  apiKey: string;
+  timeout?: number;
+  retries?: number;
+  region: string; // BREAKING! Any existing code calling createClient({ apiKey: "..." }) fails to compile!
+}
+
+// --- SCENARIO B: NON-BREAKING ADDITION (Requires MINOR bump: 1.1.0) ---
+// Adding an OPTIONAL property:
+export interface ClientConfig {
+  apiKey: string;
+  timeout?: number;
+  retries?: number;
+  region?: string; // SAFE: Existing consumer code continues to compile!
+}
+```
+
+---
+
+### 4. How it works inside TypeScript
+1. **Contravariance in Callbacks**: Narrowing callback parameter types is a breaking change.
+2. **Widening Return Types**: Adding a union member to a return type (`string` $\to$ `string | null`) is a breaking change because consumers must now handle `null`.
+3. **Narrowing Argument Types**: Removing a union member from an argument (`string | number` $\to$ `string`) is a breaking change because callers passing numbers will fail.
+
+---
+
+### 5. More examples
+
+#### Example 1: Breaking vs Non-Breaking Type Matrix
+| Modification | Type Position | Breaking? | SemVer Bump |
+|---|---|---|---|
+| Adding optional property | Parameter / Input | NO | MINOR |
+| Adding required property | Parameter / Input | **YES** | **MAJOR** |
+| Adding property | Return value / Output | NO | MINOR |
+| Removing property | Return value / Output | **YES** | **MAJOR** |
+| Widening return type (`T` $\to$ `T \| null`) | Return value / Output | **YES** | **MAJOR** |
+| Narrowing parameter type (`T \| null` $\to$ `T`) | Parameter / Input | **YES** | **MAJOR** |
+
+---
+
+### 6. Common mistakes
+
+#### Mistake 1: Treating type-only breaking changes as a PATCH release
+```typescript
+// Changing a return type from Promise<string> to Promise<string | undefined>
+// in a patch release: 1.0.1 -> Breaks thousands of downstream CI builds!
+```
+**Why it fails:** In static languages like TypeScript, compilation failures break CI pipelines. Treat type-breaking changes with the same severity as runtime crashes.
+
+#### Mistake 2: Renaming public interfaces without deprecation aliases
+```typescript
+// BAD: Renaming interface in 1.1.0
+// export interface NewOptions {} // Old 'interface Options' removed!
+
+// GOOD: Deprecate first in MINOR release:
+/** @deprecated Use NewOptions instead */
+export type Options = NewOptions;
+```
+
+---
+
+### 7. Rules to remember
+1. Adding required properties to input interfaces is a MAJOR breaking change.
+2. Widening return types (`string` $\to$ `string | null`) is a MAJOR breaking change.
+3. Adding optional properties to input interfaces is a MINOR feature.
+4. Deprecate old types before removing them in the next major version.
+
+---
+
+### Think first: Prediction puzzle
+Is changing a function parameter from `(data: string)` to `(data: string | number)` a breaking change for callers?
+
+---
+
+**Answer:**
+```
+No, it is a non-breaking MINOR change.
+```
+**Explanation:** Existing callers passing `string` continue to compile without error. The function simply widened its input acceptance.
+
+---
+
+### Practice exercises
+
+#### Exercise 1: Identify breaking return type change
+- **Task**: State whether changing `getUser(): User` to `getUser(): User | null` is breaking.
+- **Hint 1**: Consumers must now check for null.
+
+#### Exercise 2: Graceful interface renaming
+- **Task**: Rename `OldConfig` to `AppConfig` while maintaining backwards compatibility via a type alias.
+- **Hint 1**: `export type OldConfig = AppConfig;`.
+
+#### Exercise 3: Non-breaking option addition
+- **Task**: Add a new `cache` option to `interface Options { id: string }` without breaking existing consumers.
+- **Hint 1**: Make it optional: `cache?: boolean`.
+
+#### Exercise 4: Deprecation JSDoc annotation
+- **Task**: Annotate a function with `@deprecated` including migration advice.
+- **Hint 1**: `/** @deprecated Use newFunction() instead */`.
+
+---
+
+### Exercise solutions
+
+#### Solution 1: Identify breaking return type change
+It is a **MAJOR breaking change**. Any consumer calling `getUser().name` will immediately fail compilation with `Object is possibly 'null'`.
+
+#### Solution 2: Graceful interface renaming
+```typescript
+export interface AppConfig {
+  apiUrl: string;
+}
+
+/** @deprecated Use AppConfig instead. Will be removed in v2.0.0 */
+export type OldConfig = AppConfig;
+```
+
+#### Solution 3: Non-breaking option addition
+```typescript
+export interface Options {
+  id: string;
+  cache?: boolean; // Optional: Safe for existing callers!
+}
+```
+
+#### Solution 4: Deprecation JSDoc annotation
+```typescript
 /**
- * Architectural Overview:
- * Validates package.json configurations against modern Node.js and TypeScript
- * resolution invariants (mirroring publint and @arethetypeswrong/cli).
- * Flags condition precedence hazards, missing types, and dual-package risks.
+ * @deprecated Since v1.2.0. Use `fetchUserData()` instead.
  */
+export function getUserDataLegacy(): void {}
+```
 
-export interface ExportConditionGroup {
-  types?: string;
-  import?: string;
-  require?: string;
-  browser?: string;
-  default?: string;
-  [customKey: string]: string | undefined;
-}
+---
 
-export interface PackageManifest {
-  name: string;
-  version: string;
-  type?: "module" | "commonjs";
-  main?: string;
-  module?: string;
-  types?: string;
-  exports?: Record<string, ExportConditionGroup | string>;
-  files?: string[];
-  sideEffects?: boolean | string[];
-}
+### Recall
+1. Can a TypeScript library have a breaking change without any runtime JavaScript changes? Yes; any type change that causes existing consumer code to fail compilation is a breaking change.
+2. Is adding a required property to an options interface breaking or non-breaking? Breaking (requires MAJOR bump).
+3. How should public interfaces be phased out? Deprecated in a MINOR release using `@deprecated`, then removed in the next MAJOR release.
 
-export interface PackageAuditResult {
-  valid: boolean;
-  errors: string[];
-  warnings: string[];
-}
+> **If you remember only one thing:**  
+> In TypeScript libraries, any change that breaks consumer compilation requires a SemVer MAJOR release.
 
-export class PackageManifestAuditor {
-  public static audit(manifest: PackageManifest): PackageAuditResult {
-    const errors: string[] = [];
-    const warnings: string[] = [];
+---
 
-    // Rule 1: Exports presence
-    if (!manifest.exports) {
-      warnings.push("Package lacks modern 'exports' map. Internal files are not encapsulated.");
-    } else {
-      // Rule 2: Root export "." must exist
-      if (!manifest.exports["."]) {
-        errors.push("Missing root export '.' in 'exports' map.");
-      } else {
-        const rootExport = manifest.exports["."];
-        if (typeof rootExport === "object") {
-          // Rule 3: Condition Order Invariant - "types" MUST be first!
-          const keys = Object.keys(rootExport);
-          if (keys.includes("types") && keys[0] !== "types") {
-            errors.push(
-              "Condition Order Hazard: 'types' must be the FIRST key in the condition object to prevent resolution misdirection."
-            );
-          }
+# Checkpoint Challenge 2: Package Validation & Type Testing (Topics 6-10)
 
-          // Rule 4: Dual package hazard warning
-          if (rootExport.import && rootExport.require) {
-            warnings.push(
-              "Dual Package Hazard: Package exposes both ESM and CJS. Ensure stateful singletons use Symbol.for on globalThis."
-            );
-          }
-        }
-      }
-    }
+### Challenge Specification
+Construct an automated Packaging and Type Verification Engine:
+1. Write a `tsup.config.ts` configured for clean dual packaging.
+2. Write a `package.json` with strict `"files"` whitelisting and `"exports"` mapping.
+3. Write a `test-d/index.test-d.ts` test suite using `tsd` testing:
+   - Return type assertions with `expectType`.
+   - Rejection of invalid properties with `expectError`.
+4. Include an npm pre-publish script running `publint`, `attw`, and `tsd`.
 
-    // Rule 5: files whitelist
-    if (!manifest.files || manifest.files.length === 0) {
-      warnings.push("Package lacks 'files' whitelist. May accidentally publish tests or private source files.");
-    }
+### Solution
 
-    // Rule 6: sideEffects flag
-    if (manifest.sideEffects === undefined) {
-      warnings.push("Package lacks 'sideEffects' field. Bundlers cannot aggressively tree-shake unused exports.");
-    }
+```typescript
+// 1. tsup.config.ts
+import { defineConfig } from "tsup";
 
-    return {
-      valid: errors.length === 0,
-      errors,
-      warnings
-    };
-  }
-}
+export default defineConfig({
+  entry: ["src/index.ts"],
+  format: ["esm", "cjs"],
+  dts: true,
+  sourcemap: true,
+  clean: true,
+  shims: true,
+});
+```
 
-
-// ============================================================================
-// PROJECT 2: Automated Type-Testing Assertion Harness
-// ============================================================================
-
-/**
- * Architectural Overview:
- * A lightweight compile-time type testing harness implementing Type Assertions
- * (Equal, Extends, NotEqual) for automated regression testing of library types.
- */
-
-export type TypeEqual<A, B> =
-  (<T>() => T extends A ? 1 : 2) extends
-  (<T>() => T extends B ? 1 : 2) ? true : false;
-
-export type TypeExtends<Sub, Super> = Sub extends Super ? true : false;
-
-export class TypeTestHarness {
-  private passedTests = 0;
-  private failedTests = 0;
-
-  public assert<T extends true>(testName: string): void {
-    console.log(`  ✔ Type Assertion Passed: [${testName}]`);
-    this.passedTests++;
-  }
-
-  public report(): { passed: number; failed: number } {
-    return { passed: this.passedTests, failed: this.failedTests };
-  }
-}
-
-
-// ============================================================================
-// PROJECT 3: Declaration Rollup & @internal API Stripper Pipeline
-// ============================================================================
-
-/**
- * Architectural Overview:
- * Simulates declaration bundling and API extraction (like @microsoft/api-extractor).
- * Parses raw TypeScript declaration entries, strips all declarations annotated
- * with @internal, and outputs a consolidated, public-only .d.ts rollup.
- */
-
-export interface RawDeclarationNode {
-  name: string;
-  kind: "function" | "class" | "interface" | "type";
-  signature: string;
-  isInternal: boolean;
-  jsdoc?: string;
-}
-
-export class DeclarationRollupEngine {
-  private declarations: RawDeclarationNode[] = [];
-
-  public register(node: RawDeclarationNode): void {
-    this.declarations.push(node);
-  }
-
-  public bundlePublicDts(): string {
-    const publicNodes = this.declarations.filter(n => !n.isInternal);
-
-    const outputLines: string[] = [
-      "// Universal Public Declaration Rollup",
-      "// Stripped of all @internal symbols for enterprise security.",
-      ""
-    ];
-
-    for (const node of publicNodes) {
-      if (node.jsdoc) {
-        outputLines.push(`/** ${node.jsdoc} */`);
-      }
-      outputLines.push(`export declare ${node.signature};`);
-      outputLines.push("");
-    }
-
-    return outputLines.join("\n");
-  }
-
-  public getStrippedCount(): number {
-    return this.declarations.filter(n => n.isInternal).length;
-  }
-}
-
-
-// ============================================================================
-// PROJECT 4: Micro-Frontend Module Federation Type Contract Registry
-// ============================================================================
-
-/**
- * Architectural Overview:
- * Manages remote micro-frontend module type contracts. Generates ambient
- * declarations for host apps consuming dynamic remote modules over HTTP.
- */
-
-export interface RemoteComponentSpec {
-  remoteName: string;
-  modulePath: string; // e.g. "CheckoutButton"
-  propsInterface: string;
-  propsFields: Array<{ name: string; type: string; optional?: boolean }>;
-}
-
-export class ModuleFederationTypeRegistry {
-  private components: RemoteComponentSpec[] = [];
-
-  public registerRemote(spec: RemoteComponentSpec): void {
-    this.components.push(spec);
-  }
-
-  public generateHostAmbientDeclarations(): string {
-    const lines: string[] = [
-      "// Auto-generated Module Federation Remote Type Declarations",
-      "import React from 'react';",
-      ""
-    ];
-
-    for (const comp of this.components) {
-      const fullModuleSpecifier = `${comp.remoteName}/${comp.modulePath}`;
-      lines.push(`declare module "${fullModuleSpecifier}" {`);
-      lines.push(`  export interface ${comp.propsInterface} {`);
-
-      for (const field of comp.propsFields) {
-        const opt = field.optional ? "?" : "";
-        lines.push(`    ${field.name}${opt}: ${field.type};`);
-      }
-
-      lines.push("  }");
-      lines.push(`  const Component: React.FC<${comp.propsInterface}>;`);
-      lines.push("  export default Component;");
-      lines.push("}");
-      lines.push("");
-    }
-
-    return lines.join("\n");
-  }
-}
-
-
-// ============================================================================
-// COMPREHENSIVE VERIFICATION TEST SUITE
-// ============================================================================
-
-export function runModuleVerificationTests(): boolean {
-  console.log("=== Running TS-11 Production Verification Tests ===");
-
-  // Test 1: Package Manifest Auditor - Valid Manifest
-  const validAudit = PackageManifestAuditor.audit({
-    name: "@enterprise/auth",
-    version: "1.0.0",
-    exports: {
-      ".": {
-        types: "./dist/index.d.ts",
-        import: "./dist/index.js",
-        require: "./dist/index.cjs"
-      }
+```json
+// 2. package.json
+{
+  "name": "@enterprise/identity-vault",
+  "version": "1.0.0",
+  "type": "module",
+  "main": "./dist/index.cjs",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": {
+        "import": "./dist/index.d.ts",
+        "require": "./dist/index.d.cts"
+      },
+      "import": "./dist/index.js",
+      "require": "./dist/index.cjs"
     },
-    files: ["dist"],
-    sideEffects: false
-  });
-  if (!validAudit.valid) throw new Error("Test 1 Failed: Valid manifest flagged as invalid!");
-  console.log("✔ Test 1 Passed: Valid Manifest Verified");
-
-  // Test 2: Package Manifest Auditor - Condition Order Hazard
-  const invalidAudit = PackageManifestAuditor.audit({
-    name: "@enterprise/bad",
-    version: "1.0.0",
-    exports: {
-      ".": {
-        import: "./dist/index.js",
-        types: "./dist/index.d.ts" // Wrong order!
-      }
-    }
-  });
-  if (invalidAudit.valid || invalidAudit.errors.length === 0) {
-    throw new Error("Test 2 Failed: Condition order hazard missed!");
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "build": "tsup",
+    "test:types": "tsd",
+    "test:exports": "publint && attw --pack .",
+    "prepublishOnly": "npm run build && npm run test:types && npm run test:exports"
   }
-  console.log("✔ Test 2 Passed: 'types' First Condition Precedence Hazard Caught");
+}
+```
 
-  // Test 3: Type Test Harness Compile-Time Assertions
-  const harness = new TypeTestHarness();
-  harness.assert<TypeEqual<string, string>>("string === string");
-  harness.assert<TypeExtends<"admin", string>>("'admin' extends string");
-  harness.assert<TypeEqual<TypeEqual<number, boolean>, false>>("number !== boolean");
-  const stats = harness.report();
-  if (stats.passed !== 3) throw new Error("Test 3 Failed: Type assertions failed!");
-  console.log("✔ Test 3 Passed: Type Assertions Verified");
-
-  // Test 4: Declaration Rollup & @internal Stripper
-  const rollup = new DeclarationRollupEngine();
-  rollup.register({
-    name: "createSession",
-    kind: "function",
-    signature: "function createSession(userId: string): Promise<string>",
-    isInternal: false,
-    jsdoc: "Creates an authenticated user session."
-  });
-  rollup.register({
-    name: "_decryptMasterKey",
-    kind: "function",
-    signature: "function _decryptMasterKey(): Buffer",
-    isInternal: true,
-    jsdoc: "Internal security helper."
-  });
-
-  const bundledDts = rollup.bundlePublicDts();
-  if (bundledDts.includes("_decryptMasterKey")) {
-    throw new Error("Test 4 Failed: Internal symbol leaked into public declaration rollup!");
-  }
-  if (!bundledDts.includes("createSession")) {
-    throw new Error("Test 4 Failed: Public symbol missing from declaration rollup!");
-  }
-  if (rollup.getStrippedCount() !== 1) {
-    throw new Error("Test 4 Failed: Stripped count incorrect!");
-  }
-  console.log("✔ Test 4 Passed: @internal API Stripping and Rollup Verified");
-
-  // Test 5: Module Federation Ambient Declaration Generator
-  const fedRegistry = new ModuleFederationTypeRegistry();
-  fedRegistry.registerRemote({
-    remoteName: "paymentRemote",
-    modulePath: "StripeButton",
-    propsInterface: "StripeButtonProps",
-    propsFields: [
-      { name: "amountCents", type: "number" },
-      { name: "currency", type: "'USD' | 'EUR'" },
-      { name: "onSuccess", type: "(txId: string) => void", optional: true }
-    ]
-  });
-
-  const fedDts = fedRegistry.generateHostAmbientDeclarations();
-  if (
-    !fedDts.includes('declare module "paymentRemote/StripeButton"') ||
-    !fedDts.includes("amountCents: number;")
-  ) {
-    throw new Error("Test 5 Failed: Module federation ambient declarations incorrect!");
-  }
-  console.log("✔ Test 5 Passed: Micro-Frontend Module Federation Ambient Declarations Verified");
-
-  console.log("🎉 ALL TS-11 VERIFICATION TESTS PASSED SUCCESSFULLY!");
-  return true;
+```typescript
+// 3. src/index.ts (Implementation)
+export interface VaultOptions {
+  secretKey: string;
+  maxLeaseSeconds?: number;
 }
 
-runModuleVerificationTests();
+export class IdentityVault {
+  constructor(private options: VaultOptions) {}
+
+  generateToken(subject: string): string {
+    return `tok_${subject}_${this.options.secretKey.slice(0, 4)}`;
+  }
+}
+```
+
+```typescript
+// 4. test-d/index.test-d.ts (Type Tests)
+import { expectType, expectError } from "tsd";
+import { IdentityVault, VaultOptions } from "../src/index.js";
+
+// Test valid construction
+const vault = new IdentityVault({ secretKey: "super_secret" });
+
+// Test return type
+expectType<string>(vault.generateToken("user_42"));
+
+// Negative assertion: Missing required 'secretKey'
+expectError(new IdentityVault({ maxLeaseSeconds: 60 }));
+
+// Negative assertion: Invalid argument type
+expectError(vault.generateToken(12345));
+```
 
 
 ---
 
-## 7. Practice Drills, Key Takeaways & Enterprise Summary
+# Topic 11: Module Federation Fundamentals: Micro-Frontends and Shared Runtime Singletons
 
-### 7.1 75 Hands-On Production Drills
+### 1. What is it?
+**Module Federation** (popularized by Webpack 5, Rspack, and Vite) is an architectural pattern that allows multiple independent applications or builds to share code and components dynamically at runtime.
+- **Host (Shell)**: The main container application that loads remotes.
+- **Remote**: An independently deployed micro-frontend that exposes components or functions.
+- **Shared Dependencies**: Libraries (like `react`, `react-dom`, or state stores) loaded once as runtime singletons to prevent loading duplicate copies.
 
-1. **Drill 1**: Configure `package.json` with an `"exports"` field replacing legacy `"main"`.
-2. **Drill 2**: Add `"types"` as the very first condition in the root `.` export block.
-3. **Drill 3**: Create a dual build exposing `./dist/index.js` (ESM) and `./dist/index.cjs` (CJS).
-4. **Drill 4**: Test importing the package in a consumer project using `node16` resolution.
-5. **Drill 5**: Create a subpath export for `./auth` and verify encapsulation prevents importing non-exported files.
-6. **Drill 6**: Reproduce the Dual-Package Hazard by loading two instances of a stateful singleton class.
-7. **Drill 7**: Solve the Dual-Package Hazard using `globalThis` and `Symbol.for("unique_store_id")`.
-8. **Drill 8**: Configure `"sideEffects": false` in `package.json` and verify bundle tree-shaking with Rollup.
-9. **Drill 9**: Define a `"sideEffects"` array retaining CSS files and global polyfill files.
-10. **Drill 10**: Install `@arethetypeswrong/cli` and run `npx attw --pack .` on your library.
-11. **Drill 11**: Fix any condition order warnings flagged by `attw`.
-12. **Drill 12**: Install `publint` and run `npx publint` on `package.json`.
-13. **Drill 13**: Write positive type tests using `expectTypeOf` to assert generic return types.
-14. **Drill 14**: Write negative type tests using `// @ts-expect-error` asserting compile failures on invalid arguments.
-15. **Drill 15**: Intentionally fix a line above `@ts-expect-error` and observe error `TS2578`.
-16. **Drill 16**: Configure `"files": ["dist", "README.md", "LICENSE"]` in `package.json`.
-17. **Drill 17**: Run `npm pack --dry-run` to inspect all files included in the published tarball.
-18. **Drill 18**: Verify that sensitive local files (`.env`, `.npmrc`, test directories) are omitted.
-19. **Drill 19**: Configure `declarationMap: true` and include `src/` in the published tarball for IDE navigation.
-20. **Drill 20**: Configure `@microsoft/api-extractor` with `api-extractor.json` to roll up `.d.ts` files.
-21. **Drill 21**: Annotate an internal helper with `@internal` and verify it is stripped from `dist/index.d.ts`.
-22. **Drill 22**: Set up `rollup-plugin-dts` to bundle TypeScript declarations into a single file.
-23. **Drill 23**: Configure `tsup` with `--format cjs,esm --dts` for zero-config dual builds.
-24. **Drill 24**: Create a branded type `type UserId = string & { readonly __brand: unique symbol }`.
-25. **Drill 25**: Write a type-guard function constructing and validating a branded `UserId`.
-26. **Drill 26**: Set up a Webpack 5 Module Federation config exposing a `./Button` component.
-27. **Drill 27**: Configure `@module-federation/typescript` to generate `@mf-types.zip`.
-28. **Drill 28**: In a host application, consume the remote types and verify IntelliSense props completion.
-29. **Drill 29**: Configure `peerDependencies` for React in a component library with a broad version range (`^18.0.0 || ^19.0.0`).
-30. **Drill 30**: Add `peerDependenciesMeta` marking an optional database adapter as `"optional": true`.
-31. **Drill 31**: Write a SemVer audit test verifying that function argument addition is optional, not required.
-32. **Drill 32**: Write a test verifying that widening a return type is flagged as a Breaking Major release.
-33. **Drill 33**: Set up `prepublishOnly` script running `npm run build && npm run test:types`.
-34. **Drill 34**: Configure GitHub Actions to publish with `--provenance` to the npm registry.
-35. **Drill 35**: Test dynamic imports in a library using `import()` for lazy-loaded plugin features.
-36. **Drill 36**: Configure conditional exports for React Server Components with `"react-server"`.
-37. **Drill 37**: Export browser-specific implementations using the `"browser"` condition in `"exports"`.
-38. **Drill 38**: Add `"publishConfig"` to point to clean distribution paths during npm publishing.
-39. **Drill 39**: Set up Changesets in a monorepo and run `pnpm changeset` to create a changelog entry.
-40. **Drill 40**: Configure Corepack and the `"packageManager"` field to enforce `pnpm@9.x`.
-41. **Drill 41**: Test library imports in a legacy CommonJS project using `const lib = require("my-lib")`.
-42. **Drill 42**: Use `export =` to support default CJS imports without `.default` property nesting.
-43. **Drill 43**: Add JSDoc `@deprecated` annotations with migration instructions to an old function signature.
-44. **Drill 44**: Configure `"removeComments": false` in `tsconfig.json` to preserve JSDoc documentation in `.d.ts`.
-45. **Drill 45**: Write an automated type equality assertion utility `TypeEqual<A, B>`.
-46. **Drill 46**: Use `tsd` to type-check `.test-d.ts` files in CI.
-47. **Drill 47**: Implement the Wrapper Pattern for a hybrid CJS/ESM library without code duplication.
-48. **Drill 48**: Test tree-shaking using `bundlejs.com` or `agadoo`.
-49. **Drill 49**: Build a CLI binary using the `"bin"` field in `package.json` with `#!/usr/bin/env node`.
-50. **Drill 50**: Use `chmod +x` on the compiled binary script to make it executable.
-51. **Drill 51**: Prevent global prototype pollution by auditing library dependencies.
-52. **Drill 52**: Design an extensible configuration options type using generics with default values.
-53. **Drill 53**: Create wildcard subpath exports for an icon directory (`./icons/*`).
-54. **Drill 54**: Write typed EventEmitter interfaces using mapped generic event tables.
-55. **Drill 55**: Re-export types using `export type * from "./types"` to guarantee type elision.
-56. **Drill 56**: Configure CI test matrices testing the library across multiple TypeScript versions.
-57. **Drill 57**: Verify that `@types/node` is strictly in `devDependencies`, never in `dependencies`.
-58. **Drill 58**: Profile declaration generation time using `tsc --extendedDiagnostics`.
-59. **Drill 59**: Set up `unbuild` to test stub builds (`unbuild --stub`) during local monorepo development.
-60. **Drill 60**: Use `jiti` for on-the-fly TypeScript execution in development tools.
-61. **Drill 61**: Write function overloads ensuring specific overloads precede general ones.
-62. **Drill 62**: Test that consumer IDE "Go to Definition" navigates to source `.ts` files via `.d.ts.map`.
-63. **Drill 63**: Build an enterprise SDK exposing three independent entry points: `/client`, `/server`, `/types`.
-64. **Drill 64**: Add `npm run lint:package` using both `publint` and `attw`.
-65. **Drill 65**: Verify that no ambient global declarations leak into consumer global namespaces.
-66. **Drill 66**: Implement a runtime type registry synchronized with TypeScript ambient definitions.
-67. **Drill 67**: Publish a pre-release version using `npm publish --tag beta`.
-68. **Drill 68**: Test installing the beta version in a scratch testing project.
-69. **Drill 69**: Promote the beta release to latest using `npm dist-tag add my-lib@1.0.0-beta.1 latest`.
-70. **Drill 70**: Audit and resolve circular type imports between declaration files.
-71. **Drill 71**: Configure `"isolatedDeclarations": true` across all library packages for parallel compiler support.
-72. **Drill 72**: Verify that all exported signatures have explicit return types under `isolatedDeclarations`.
-73. **Drill 73**: Package a full-stack library containing client hooks, server middleware, and shared types.
-74. **Drill 74**: Run the end-to-end type verification suite with 100% passing assertions.
-75. **Drill 75**: Publish the audited package to npm with full provenance and declaration maps.
+### 2. Why does it exist?
+In large enterprise organizations, different teams own different parts of an application (e.g., Team Checkout, Team Dashboard, Team Auth). With standard npm dependencies, whenever Team Checkout updates their code, the entire host application must be recompiled and redeployed. With Module Federation:
+- Team Checkout deploys their remote independently to a CDN.
+- The host application fetches the latest remote bundle at runtime without needing a rebuild or redeployment!
+
+### 3. Basic example
+
+```javascript
+// remote/rspack.config.js (The Remote Application exposing a component)
+const { ModuleFederationPlugin } = require("@rspack/core").container;
+
+module.exports = {
+  plugins: [
+    new ModuleFederationPlugin({
+      name: "checkoutApp",
+      filename: "remoteEntry.js",
+      exposes: {
+        "./CheckoutButton": "./src/CheckoutButton.tsx",
+        "./CartSummary": "./src/CartSummary.tsx",
+      },
+      shared: {
+        react: { singleton: true, requiredVersion: "^18.2.0" },
+        "react-dom": { singleton: true, requiredVersion: "^18.2.0" },
+      },
+    }),
+  ],
+};
+```
+
+```javascript
+// host/rspack.config.js (The Host Shell consuming the remote)
+const { ModuleFederationPlugin } = require("@rspack/core").container;
+
+module.exports = {
+  plugins: [
+    new ModuleFederationPlugin({
+      name: "hostShell",
+      remotes: {
+        checkoutApp: "checkoutApp@https://cdn.example.com/checkout/remoteEntry.js",
+      },
+      shared: {
+        react: { singleton: true },
+        "react-dom": { singleton: true },
+      },
+    }),
+  ],
+};
+```
+
+**Host Application Code:**
+```typescript
+// Dynamically importing the federated remote:
+import React, { lazy, Suspense } from "react";
+
+const RemoteCheckoutButton = lazy(() => import("checkoutApp/CheckoutButton"));
+
+export function App() {
+  return (
+    <div>
+      <h1>Main Host Portal</h1>
+      <Suspense fallback={<div>Loading remote checkout...</div>}>
+        <RemoteCheckoutButton amount={49.99} />
+      </Suspense>
+    </div>
+  );
+}
+```
 
 ---
 
-### 7.2 Enterprise Best Practices & Architecture Checklist
+### 4. How it works inside TypeScript
+1. **Dynamic Chunk Loading**: At runtime in the browser, `remoteEntry.js` is loaded via a `<script>` tag.
+2. **Shared Scope Negotiation**: The host and remote negotiate version requirements for shared dependencies. If both require `react: "^18.2.0"`, only one single copy of React is loaded into memory, avoiding the dreaded "Multiple instances of React" hook crash.
+3. **Type Problem**: Because `checkoutApp/CheckoutButton` is fetched from an external CDN at runtime, standard TypeScript compiler will report: `Cannot find module 'checkoutApp/CheckoutButton'`.
 
-1. **Adopt `package.json` `"exports"` exclusively**: Discard legacy `"main"` for modern modular encapsulation.
-2. **Order `"types"` condition first**: Non-negotiable invariant to avoid declaration resolution failures.
-3. **Heal the Dual-Package Hazard with `Symbol.for`**: Protect stateful singletons and caches across realms.
-4. **Always whitelist files with `"files"`**: Never publish unnecessary tests, dotfiles, or internal docs.
-5. **Verify packages with `attw` and `publint`**: Automated linting prevents 99% of published package bugs.
-6. **Include `src/` if publishing `declarationMap: true`**: Keep developer IDE "Go to Definition" functional.
-7. **Write compile-time type tests (`expect-type` / `tsd`)**: Protect your type contracts against subtle regressions.
-8. **Never bundle global polyfills in libraries**: Let the consumer application manage runtime polyfills.
-9. **Respect SemVer for Types**: Understand that widening return types or narrowing parameters breaks consumers.
-10. **Enable `sideEffects: false`**: Allow modern bundlers to tree-shake unused exports cleanly.
+---
+
+### 5. More examples
+
+#### Example 1: Typing remote modules manually with ambient declarations
+```typescript
+// host/src/declarations.d.ts
+declare module "checkoutApp/CheckoutButton" {
+  import { ComponentType } from "react";
+  export interface CheckoutButtonProps {
+    amount: number;
+    onSuccess?: () => void;
+  }
+  const CheckoutButton: ComponentType<CheckoutButtonProps>;
+  export default CheckoutButton;
+}
+```
+Now `import("checkoutApp/CheckoutButton")` has full type checking and autocompletion in the host application!
+
+---
+
+### 6. Common mistakes
+
+#### Mistake 1: Forgetting `singleton: true` on React in shared configuration
+```javascript
+// WRONG in shared config:
+shared: ["react", "react-dom"] // Missing singleton: true!
+```
+**Why it fails:** If `singleton: true` is omitted, the host and remote might instantiate two separate copies of React. When the remote component calls `useState()` or `useEffect()`, React crashes with `Invalid hook call: hooks can only be called inside the body of a function component`.
+
+#### Mistake 2: Synchronous top-level imports of remotes
+```typescript
+// WRONG in host:
+import RemoteButton from "checkoutApp/CheckoutButton"; // Crashes if remoteEntry.js is not yet downloaded!
+```
+**Why it fails:** Remote containers load asynchronously. You must load remotes using `React.lazy(() => import("..."))` or an async bootstrap boundary (`import("./bootstrap")`).
+
+---
+
+### 7. Rules to remember
+1. Always mark framework dependencies (`react`, `react-dom`, `vue`) as `singleton: true`.
+2. Load federated remote components asynchronously via `React.lazy()` and `Suspense`.
+3. Provide ambient type declarations or use automated type-sync tools to type remotes.
+4. Use an async bootstrap entry point (`import("./bootstrap")`) in federated hosts.
+
+---
+
+### Think first: Prediction puzzle
+What happens if the Host uses React 18.2 and a Remote uses React 17.0 with `singleton: true`?
+
+---
+
+**Answer:**
+```
+Module Federation issues a version mismatch warning and falls back to the higher version if semver compatible, or warns in the console.
+```
+**Explanation:** `singleton: true` tells the runtime to pick one instance; `requiredVersion` determines if the negotiated version satisfies both apps.
+
+---
+
+### Practice exercises
+
+#### Exercise 1: Ambient declaration for remote component
+- **Task**: Declare an ambient type for `"authRemote/LoginForm"` accepting `onLogin(token: string): void`.
+- **Hint 1**: `declare module "authRemote/LoginForm" { ... }`.
+
+#### Exercise 2: Shared singleton configuration
+- **Task**: Write the `shared` object configuration for `react` enforcing a singleton.
+- **Hint 1**: `shared: { react: { singleton: true } }`.
+
+#### Exercise 3: Lazy remote component
+- **Task**: Wrap a remote import in `React.lazy()`.
+- **Hint 1**: `React.lazy(() => import("remoteApp/Widget"))`.
+
+#### Exercise 4: Async bootstrap pattern
+- **Task**: Write the two-line `index.ts` that implements the async bootstrap boundary.
+- **Hint 1**: `import("./bootstrap.js");`.
+
+---
+
+### Exercise solutions
+
+#### Solution 1: Ambient declaration for remote component
+```typescript
+declare module "authRemote/LoginForm" {
+  import React from "react";
+  export interface LoginFormProps {
+    onLogin: (token: string) => void;
+  }
+  const LoginForm: React.FC<LoginFormProps>;
+  export default LoginForm;
+}
+```
+
+#### Solution 2: Shared singleton configuration
+```javascript
+shared: {
+  react: {
+    singleton: true,
+    requiredVersion: "^18.0.0",
+  },
+  "react-dom": {
+    singleton: true,
+    requiredVersion: "^18.0.0",
+  }
+}
+```
+
+#### Solution 3: Lazy remote component
+```typescript
+import { lazy } from "react";
+const RemoteWidget = lazy(() => import("remoteApp/Widget"));
+```
+
+#### Solution 4: Async bootstrap pattern
+```typescript
+// src/index.ts
+import("./bootstrap.js");
+export {};
+```
+
+---
+
+### Recall
+1. What role does `remoteEntry.js` play in Module Federation? It is the manifest and loader script exposed by a remote container.
+2. Why is `singleton: true` critical for React? To prevent multiple instances of React from being loaded, which breaks React Hooks.
+3. How do you load a federated component in React? Using `React.lazy(() => import("remote/Component"))` wrapped in `<Suspense>`.
+
+> **If you remember only one thing:**  
+> Module Federation shares code between independently deployed apps at runtime, using `singleton: true` to prevent library duplication.
+
+---
+
+# Topic 12: Typing Federated Remotes: `@module-federation/typescript` and Remote Type Sync
+
+### 1. What is it?
+**Federated Type Sync** is the automated generation and consumption of `.d.ts` declaration files across Module Federation boundaries. Using plugins like **`@module-federation/typescript`** or `@originjs/vite-plugin-federation`:
+- The **Remote** compiles and exposes a tarball of `.d.ts` files alongside `remoteEntry.js`.
+- The **Host** automatically downloads these `.d.ts` files during development and places them in `@mf-types/`, giving full IDE auto-completion and compile-time type safety for remote components.
+
+### 2. Why does it exist?
+Writing manual `declare module "remoteApp/Button"` files by hand is error-prone. If the Remote team adds a required prop `variant: "primary" | "secondary"`, the Host team has no idea until the component crashes at runtime in production. Automated type sync guarantees that host builds fail if remote props change.
+
+### 3. Basic example
+
+```javascript
+// remote/webpack.config.js
+const { FederatedTypesPlugin } = require("@module-federation/typescript");
+
+module.exports = {
+  plugins: [
+    new FederatedTypesPlugin({
+      federationConfig: {
+        name: "ordersRemote",
+        filename: "remoteEntry.js",
+        exposes: {
+          "./OrderCard": "./src/OrderCard.tsx",
+        },
+        shared: { react: { singleton: true } },
+      },
+    }),
+  ],
+};
+```
+
+**What the Remote Emits:**
+Alongside `remoteEntry.js`, the plugin compiles `dist/@mf-types.zip` containing `OrderCard.d.ts`.
+
+**In Host Application:**
+When the host builds, `@module-federation/typescript` downloads `@mf-types.zip` from the remote and unzips it into:
+```
+host/
+├── @mf-types/
+│   └── ordersRemote/
+│       └── OrderCard.d.ts
+└── tsconfig.json
+```
+
+```json
+// host/tsconfig.json (Include the downloaded federated types!)
+{
+  "compilerOptions": {
+    "paths": {
+      "*": ["./@mf-types/*"]
+    }
+  },
+  "include": ["src/**/*", "@mf-types/**/*"]
+}
+```
+
+```typescript
+// host/src/App.tsx: Full type checking and auto-completion!
+import OrderCard from "ordersRemote/OrderCard";
+
+// TypeScript validates that props match OrderCard.d.ts!
+<OrderCard orderId="ord_101" />
+```
+
+---
+
+### 4. How it works inside TypeScript
+1. **Automated Declaration Extraction**: The remote uses `tsc` or `api-extractor` to emit types for each exposed file.
+2. **Download on Build**: During `npm run build` or `npm run dev`, the host fetches the remote types archive via HTTP.
+3. **IDE Integration**: TypeScript reads `./@mf-types/ordersRemote/OrderCard.d.ts` via standard `paths` mapping in `tsconfig.json`.
+
+---
+
+### 5. More examples
+
+#### Example 1: Vite Module Federation Type Generation
+```typescript
+// vite.config.ts
+import federation from "@originjs/vite-plugin-federation";
+
+export default {
+  plugins: [
+    federation({
+      name: "remote-app",
+      filename: "remoteEntry.js",
+      exposes: {
+        "./Button": "./src/Button.vue",
+      },
+      shared: ["vue"],
+    }),
+  ],
+};
+```
+
+---
+
+### 6. Common mistakes
+
+#### Mistake 1: Forgetting to add `@mf-types` to `tsconfig.json` `include`
+```json
+// WRONG:
+{
+  "include": ["src/**/*"] // Missing @mf-types! TypeScript will NOT see the downloaded types!
+}
+```
+**Why it fails:** If `@mf-types` is outside `src/`, you must add `"@mf-types/**/*"` to the `"include"` array in `tsconfig.json`.
+
+#### Mistake 2: Missing remote during offline development
+```bash
+# If the remote dev server is not running:
+# The host fails to download @mf-types and throws type errors!
+```
+**Why it matters:** Commit or cache `@mf-types` or mock the remote types when developing offline.
+
+---
+
+### 7. Rules to remember
+1. Use `@module-federation/typescript` to automate cross-application type sync.
+2. The remote generates a types archive alongside `remoteEntry.js`.
+3. The host downloads types and maps them via `paths` in `tsconfig.json`.
+4. Include `"@mf-types/**/*"` in the host's `tsconfig.json` `"include"` array.
+
+---
+
+### Think first: Prediction puzzle
+Does the host application download the remote's `.ts` source code files?
+
+---
+
+**Answer:**
+```
+No.
+```
+**Explanation:** The host only downloads the compiled `.d.ts` declaration files. The actual JavaScript implementation is loaded dynamically in the browser at runtime.
+
+---
+
+### Practice exercises
+
+#### Exercise 1: Configure tsconfig for @mf-types
+- **Task**: Update `tsconfig.json` `paths` and `include` to load types from `@mf-types`.
+- **Hint 1**: `"paths": { "*": ["./@mf-types/*"] }`, `"include": ["src/**/*", "@mf-types/**/*"]`.
+
+#### Exercise 2: Identify remote types artifact
+- **Task**: Name the zip archive typically emitted by `@module-federation/typescript`.
+- **Hint 1**: `@mf-types.zip`.
+
+#### Exercise 3: Type check remote prop change
+- **Task**: Explain what happens in the host CI build if a remote adds a new required prop to a component.
+- **Hint 1**: Host compilation fails during type checking.
+
+#### Exercise 4: Clean old downloaded types
+- **Task**: Write a shell command to remove old cached federated types before re-syncing.
+- **Hint 1**: `rm -rf @mf-types`.
+
+---
+
+### Exercise solutions
+
+#### Solution 1: Configure tsconfig for @mf-types
+```json
+{
+  "compilerOptions": {
+    "baseUrl": ".",
+    "paths": {
+      "*": ["./@mf-types/*"]
+    }
+  },
+  "include": ["src/**/*", "@mf-types/**/*"]
+}
+```
+
+#### Solution 2: Identify remote types artifact
+The standard artifact is `@mf-types.zip`.
+
+#### Solution 3: Type check remote prop change
+During the host's CI build, the federated types plugin downloads the remote's updated `.d.ts` file. When `tsc` runs on the host codebase, it detects that the new required prop is missing from the JSX call site and terminates with a compiler diagnostic error, preventing broken code from deploying.
+
+#### Solution 4: Clean old downloaded types
+```bash
+rm -rf @mf-types
+```
+
+---
+
+### Recall
+1. Why is manual ambient typing of remotes risky? Because remote teams can change component props without the host being notified, causing production crashes.
+2. How does `@module-federation/typescript` distribute types? Compiles `.d.ts` into a zip archive hosted alongside `remoteEntry.js`.
+3. Where are downloaded remote types stored in the host? In the `@mf-types/` directory.
+
+> **If you remember only one thing:**  
+> Use `@module-federation/typescript` to automatically generate and download `.d.ts` files across micro-frontend boundaries.
+
+---
+
+# Topic 13: Exposing CLI Binaries and Executable Tools in TypeScript Packages
+
+### 1. What is it?
+TypeScript packages can expose command-line interface (CLI) tools that users run directly via `npx` or by installing globally.
+A CLI tool requires:
+1. A **Shebang line** (`#!/usr/bin/env node`) at the very top of the compiled executable file.
+2. A **`"bin"` field** in `package.json` mapping the command name to the executable file path.
+3. Executable filesystem permissions (`chmod +x`).
+
+### 2. Why does it exist?
+Many enterprise libraries include developer utility scripts (e.g., code generators, database migration runners, linter tools). Publishing a CLI tool alongside your library lets users run `npx my-tool init` with zero installation.
+
+### 3. Basic example
+
+```typescript
+// src/cli.ts (CLI Entry Point)
+#!/usr/bin/env node
+
+import { Command } from "commander";
+
+const program = new Command();
+
+program
+  .name("enterprise-cli")
+  .description("CLI developer utilities for Enterprise Toolkit")
+  .version("1.0.0");
+
+program
+  .command("init")
+  .description("Initialize configuration files")
+  .option("-t, --type <type>", "Project type", "standard")
+  .action((options) => {
+    console.log(`[CLI] Initializing enterprise project with type: ${options.type}`);
+  });
+
+program.parse(process.argv);
+```
+
+```typescript
+// tsup.config.ts (Compile CLI to dist/cli.js)
+import { defineConfig } from "tsup";
+
+export default defineConfig({
+  entry: {
+    index: "src/index.ts",
+    cli: "src/cli.ts", // Separate binary entry point!
+  },
+  format: ["esm"],
+  banner: {
+    js: "#!/usr/bin/env node", // Guarantees shebang is preserved at line 1!
+  },
+});
+```
+
+```json
+// package.json (Exposing the binary command)
+{
+  "name": "enterprise-cli",
+  "version": "1.0.0",
+  "type": "module",
+  "bin": {
+    "enterprise-cli": "./dist/cli.js"
+  },
+  "files": ["dist"]
+}
+```
+
+**Running the tool:**
+```bash
+# Executing locally during development
+node ./dist/cli.js init --type microservice
+
+# Executing after publication to npm
+npx enterprise-cli init
+```
+
+---
+
+### 4. How it works inside TypeScript
+1. **The Shebang (`#!/usr/bin/env node`)**: Instructs UNIX shells (Linux, macOS, WSL) to execute this file using the Node.js runtime.
+2. **`banner` in `tsup`**: Bundlers often strip comments. Adding `banner: { js: "#!/usr/bin/env node" }` in `tsup.config.ts` ensures the shebang line remains at the absolute top of `dist/cli.js`.
+3. **NPM Symlinking**: When installed globally or run via `npx`, npm creates a symlink in the system `PATH` pointing to `./dist/cli.js`.
+
+---
+
+### 5. More examples
+
+#### Example 1: Exit codes for automation pipelines
+```typescript
+function run() {
+  try {
+    // perform task
+    process.exit(0); // Success
+  } catch (err) {
+    console.error(err);
+    process.exit(1); // Failure (halts CI pipeline!)
+  }
+}
+```
+
+---
+
+### 6. Common mistakes
+
+#### Mistake 1: Missing the Shebang line
+```bash
+# If #!/usr/bin/env node is missing:
+# Running on Linux/macOS fails with:
+# ./dist/cli.js: line 1: syntax error near unexpected token '('
+```
+**Why it fails:** Without a shebang, the operating system attempts to run the JavaScript file as a Bash shell script!
+
+#### Mistake 2: Missing execution permissions on UNIX
+```bash
+# Ensure execution bit is set before publishing:
+chmod +x dist/cli.js
+```
+
+---
+
+### 7. Rules to remember
+1. Executable CLI files must begin with `#!/usr/bin/env node`.
+2. Map the command name in the `"bin"` field in `package.json`.
+3. Use `banner: { js: "#!/usr/bin/env node" }` in `tsup` to ensure the shebang isn't stripped.
+4. Exit with `process.exit(1)` on errors so CI/CD pipelines detect failures.
+
+---
+
+### Think first: Prediction puzzle
+What does npm do with the `"bin"` field when a package is installed globally (`npm i -g`)?
+
+---
+
+**Answer:**
+```
+It creates a symlink in the global system PATH pointing to the target file.
+```
+**Explanation:** This allows users to execute the tool by typing the command name directly in any terminal.
+
+---
+
+### Practice exercises
+
+#### Exercise 1: Define `"bin"` mapping
+- **Task**: Map command `"my-tool"` to `./dist/bin.js` in `package.json`.
+- **Hint 1**: `"bin": { "my-tool": "./dist/bin.js" }`.
+
+#### Exercise 2: Add shebang banner in tsup
+- **Task**: Configure `tsup` to inject the Node.js shebang at the top of generated JS.
+- **Hint 1**: `banner: { js: "#!/usr/bin/env node" }`.
+
+#### Exercise 3: Parse command line arguments
+- **Task**: Write a small script reading `process.argv.slice(2)` and printing the first argument.
+- **Hint 1**: `const arg = process.argv[2];`.
+
+#### Exercise 4: CLI error exit
+- **Task**: Terminate a CLI tool with a non-zero exit code on failure.
+- **Hint 1**: `process.exit(1)`.
+
+---
+
+### Exercise solutions
+
+#### Solution 1: Define `"bin"` mapping
+```json
+{
+  "bin": {
+    "my-tool": "./dist/bin.js"
+  }
+}
+```
+
+#### Solution 2: Add shebang banner in tsup
+```typescript
+import { defineConfig } from "tsup";
+
+export default defineConfig({
+  entry: ["src/bin.ts"],
+  banner: {
+    js: "#!/usr/bin/env node",
+  },
+});
+```
+
+#### Solution 3: Parse command line arguments
+```typescript
+#!/usr/bin/env node
+const args = process.argv.slice(2);
+const command = args[0] ?? "help";
+console.log(`Executing CLI command: ${command}`);
+```
+
+#### Solution 4: CLI error exit
+```typescript
+if (!process.env.API_KEY) {
+  console.error("FATAL: Missing API_KEY environment variable");
+  process.exit(1);
+}
+```
+
+---
+
+### Recall
+1. What line must be at the very top of an executable Node.js CLI script? `#!/usr/bin/env node`.
+2. What field in `package.json` links the CLI command name to its executable file? `"bin"`.
+3. How do you prevent bundlers from stripping the shebang line? Using the `banner` option in bundler configs.
+
+> **If you remember only one thing:**  
+> Expose CLI tools by configuring `"bin"` in `package.json` and injecting `#!/usr/bin/env node` via bundler banners.
+
+---
+
+# Topic 14: Automated Releases and Monorepo Versioning with Changesets
+
+### 1. What is it?
+**Changesets** (`@changesets/cli`) is the industry-standard tool for managing versions, changelogs, and npm publishing in multi-package monorepos and standalone libraries. Developers document changes with small markdown files called "changesets", and an automated GitHub Action consumes them to bump SemVer versions and publish packages.
+
+### 2. Why does it exist?
+In a monorepo with 30 packages, manual version bumping is a nightmare:
+- If Package A has a breaking change, which other packages depend on it?
+- What should their version numbers become?
+- Writing changelogs manually across 30 repositories causes human error.
+Changesets calculates the dependency graph, bumps dependent package versions automatically, and generates formatted `CHANGELOG.md` files.
+
+### 3. Basic example
+
+```bash
+# 1. Initialize Changesets in your repository
+npx changeset init
+```
+
+Creates `.changeset/config.json`:
+```json
+{
+  "$schema": "https://unpkg.com/@changesets/config/schema.json",
+  "changelog": "@changesets/cli/changelog",
+  "commit": false,
+  "fixed": [],
+  "linked": [],
+  "access": "public",
+  "baseBranch": "main"
+}
+```
+
+**Developer Workflow on Pull Request:**
+```bash
+# 2. When creating a PR, the developer generates a changeset:
+npx changeset
+```
+Prompt:
+- Which packages changed? (Selects `@myorg/core`)
+- Is this a major, minor, or patch bump? (Selects `minor`)
+- Summary: `"Added new RateLimiter memory cache option"`
+
+Creates a committed file: `.changeset/warm-foxes-sing.md`.
+
+**Release Workflow (CI):**
+```bash
+# 3. Bumps version numbers and updates CHANGELOG.md files across all packages:
+npx changeset version
+
+# 4. Publishes all updated packages to npm:
+npx changeset publish
+```
+
+---
+
+### 4. How it works inside TypeScript
+1. **Decentralized Change Tracking**: Each pull request adds its own independent `.changeset/*.md` file, eliminating Git merge conflicts on `package.json` version strings.
+2. **Graph-Aware Bumping**: If `@myorg/core` has a minor bump, Changesets inspects the monorepo graph and automatically creates patch bumps for `@myorg/app` and `@myorg/cli` that depend on it!
+3. **GitHub Action Automation**: The `@changesets/action` opens a persistent "Version Packages" pull request on GitHub, automatically updating it as new PRs merge.
+
+---
+
+### 5. More examples
+
+#### Example 1: GitHub Actions Release Pipeline
+```yaml
+# .github/workflows/release.yml
+name: Release
+on:
+  push:
+    branches: [main]
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v3
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          registry-url: 'https://registry.npmjs.org'
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm build
+
+      # Opens PR for version bumps OR publishes to npm if PR was merged!
+      - uses: changesets/action@v1
+        with:
+          publish: pnpm changeset publish
+          version: pnpm changeset version
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+```
+
+---
+
+### 6. Common mistakes
+
+#### Mistake 1: Manually editing `version` in `package.json`
+```json
+// WRONG in a Changesets monorepo:
+// Manually changing "version": "1.1.0" in package.json
+```
+**Why it fails:** Manually editing versions skips changelog generation and fails to update dependent packages. Always use `npx changeset` to record intent.
+
+#### Mistake 2: Missing `NODE_AUTH_TOKEN` in CI publish step
+```yaml
+# Error: ENEEDAUTH: This command requires you to be logged in to npm!
+```
+**Why it fails:** Ensure `NODE_AUTH_TOKEN` is passed to the environment during `changeset publish`.
+
+---
+
+### 7. Rules to remember
+1. Developers run `npx changeset` to record SemVer changes on feature branches.
+2. Changeset markdown files are committed to Git.
+3. `changeset version` updates `package.json` files and generates `CHANGELOG.md`.
+4. `changeset publish` uploads updated packages to the npm registry.
+
+---
+
+### Think first: Prediction puzzle
+Why do changeset files have funny generated names like `.changeset/sweet-peaches-run.md`?
+
+---
+
+**Answer:**
+```
+To avoid Git merge conflicts between different pull requests.
+```
+**Explanation:** If all developers edited a single `CHANGELOG.md` file in their PRs, constant merge conflicts would occur. Unique random filenames allow dozens of PRs to merge simultaneously without conflict.
+
+---
+
+### Practice exercises
+
+#### Exercise 1: Changeset config initialization
+- **Task**: Write the command to initialize Changesets in a monorepo.
+- **Hint 1**: `npx changeset init`.
+
+#### Exercise 2: Developer change recording
+- **Task**: Write the command a developer runs to add a new changeset.
+- **Hint 1**: `npx changeset`.
+
+#### Exercise 3: Version bump command
+- **Task**: Write the command that consumes pending changesets and updates `package.json` versions.
+- **Hint 1**: `npx changeset version`.
+
+#### Exercise 4: Publish command
+- **Task**: Write the command to publish all bumped packages.
+- **Hint 1**: `npx changeset publish`.
+
+---
+
+### Exercise solutions
+
+#### Solution 1: Changeset config initialization
+```bash
+npx changeset init
+```
+
+#### Solution 2: Developer change recording
+```bash
+npx changeset
+```
+
+#### Solution 3: Version bump command
+```bash
+npx changeset version
+```
+
+#### Solution 4: Publish command
+```bash
+npx changeset publish
+```
+
+---
+
+### Recall
+1. What problem does Changesets solve in monorepos? Automates version bumping, dependency graph updates, and changelog generation without merge conflicts.
+2. How do developers specify whether a change is major, minor, or patch? Through the interactive `npx changeset` CLI prompt.
+3. What does `changeset version` do? Consumes markdown changesets, updates `package.json` version strings, updates internal dependency versions, and writes `CHANGELOG.md`.
+
+> **If you remember only one thing:**  
+> Use Changesets to document SemVer changes in pull requests and automate multi-package monorepo releases in CI.
+
+---
+
+# Checkpoint Challenge 3: Enterprise Library & Federation Synthesis (Topics 11-14)
+
+### Challenge Specification
+Construct a complete Enterprise Publishing & Micro-Frontend Architecture:
+1. Create a **Shared Library** (`@enterprise/shared-auth`) packaged with `tsup` (dual ESM/CJS, rolled-up declarations).
+2. Configure a **CLI Binary** (`auth-tool`) exposed via `package.json` `"bin"`.
+3. Configure a **Module Federation Remote** exposing an `AuthWidget` component with a shared React singleton.
+4. Provide a Host application setup that loads the remote component with `React.lazy` and `Suspense` and consumes the shared library.
+
+### Solution
+
+```json
+// 1. packages/shared-auth/package.json (Dual Package + CLI Binary)
+{
+  "name": "@enterprise/shared-auth",
+  "version": "1.0.0",
+  "type": "module",
+  "main": "./dist/index.cjs",
+  "types": "./dist/index.d.ts",
+  "bin": {
+    "auth-tool": "./dist/cli.js"
+  },
+  "exports": {
+    ".": {
+      "types": {
+        "import": "./dist/index.d.ts",
+        "require": "./dist/index.d.cts"
+      },
+      "import": "./dist/index.js",
+      "require": "./dist/index.cjs"
+    },
+    "./package.json": "./package.json"
+  },
+  "files": ["dist"],
+  "scripts": {
+    "build": "tsup"
+  }
+}
+```
+
+```typescript
+// 2. packages/shared-auth/tsup.config.ts
+import { defineConfig } from "tsup";
+
+export default defineConfig({
+  entry: {
+    index: "src/index.ts",
+    cli: "src/cli.ts",
+  },
+  format: ["esm", "cjs"],
+  dts: true,
+  sourcemap: true,
+  clean: true,
+  banner: {
+    js: "#!/usr/bin/env node",
+  },
+});
+```
+
+```javascript
+// 3. apps/remote-auth/rspack.config.js (Module Federation Remote)
+const { ModuleFederationPlugin } = require("@rspack/core").container;
+
+module.exports = {
+  plugins: [
+    new ModuleFederationPlugin({
+      name: "authRemote",
+      filename: "remoteEntry.js",
+      exposes: {
+        "./AuthWidget": "./src/AuthWidget.tsx",
+      },
+      shared: {
+        react: { singleton: true, requiredVersion: "^18.2.0" },
+        "react-dom": { singleton: true, requiredVersion: "^18.2.0" },
+      },
+    }),
+  ],
+};
+```
+
+```typescript
+// 4. apps/host-portal/src/App.tsx (Host Shell consuming remote & shared library)
+import React, { lazy, Suspense } from "react";
+import { MemoryCache } from "@enterprise/shared-auth";
+
+// Ambient type for remote component
+declare module "authRemote/AuthWidget" {
+  export interface AuthWidgetProps {
+    portalId: string;
+    onAuthenticated: (userId: string) => void;
+  }
+  const AuthWidget: React.FC<AuthWidgetProps>;
+  export default AuthWidget;
+}
+
+const RemoteAuthWidget = lazy(() => import("authRemote/AuthWidget"));
+
+export function App() {
+  const tokenCache = new MemoryCache<string>({ ttlMs: 60000, maxEntries: 10 });
+
+  const handleAuth = (userId: string) => {
+    tokenCache.set("currentUser", userId);
+    console.log(`[Host Portal] User authenticated: ${userId}`);
+  };
+
+  return (
+    <div style={{ padding: "20px" }}>
+      <h1>Enterprise Portal Shell</h1>
+      <Suspense fallback={<div>Loading remote authentication widget...</div>}>
+        <RemoteAuthWidget portalId="PORTAL_99" onAuthenticated={handleAuth} />
+      </Suspense>
+    </div>
+  );
+}
+```
