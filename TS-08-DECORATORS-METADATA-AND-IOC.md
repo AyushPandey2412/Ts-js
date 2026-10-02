@@ -1,433 +1,1351 @@
-# Module TS-08: Decorators (Stage 3), Metadata, & IoC/DI Containers
+# Module TS-08: Decorators, Metadata Reflection & Inversion of Control
 
-> **Track**: TypeScript Production Engineering Masterclass (TS 5.x)  
-> **Prerequisites**: [TS-00](file:///C:/Users/ayush/OneDrive/Desktop/js-learning/TS-00-QUEUE-AND-INDEX.md), [TS-01](file:///C:/Users/ayush/OneDrive/Desktop/js-learning/TS-01-TYPE-ARCHITECTURE-AND-STRUCTURAL-SUBTYPING.md), [TS-02](file:///C:/Users/ayush/OneDrive/Desktop/js-learning/TS-02-GENERICS-AND-TYPE-OPERATORS.md), [TS-03](file:///C:/Users/ayush/OneDrive/Desktop/js-learning/TS-03-CONDITIONAL-TYPES-AND-INFERENCE.md), [TS-04](file:///C:/Users/ayush/OneDrive/Desktop/js-learning/TS-04-MAPPED-TYPES-AND-METAPROGRAMMING.md), [TS-05](file:///C:/Users/ayush/OneDrive/Desktop/js-learning/TS-05-TEMPLATE-LITERAL-TYPES-AND-PARSERS.md), [TS-06](file:///C:/Users/ayush/OneDrive/Desktop/js-learning/TS-06-OOP-CLASS-INTERNALS-AND-SOLID.md), [TS-07](file:///C:/Users/ayush/OneDrive/Desktop/js-learning/TS-07-ENTERPRISE-DESIGN-PATTERNS-AND-BUILDERS.md)  
-> **Target Audience**: Principal Engineers, Framework Authors, Platform Architects  
-> **Universal Specification**: Complete Technical Treatise, 90 Real-World Interview Q&As with Runnable Code, 15 Prediction Puzzles with Step-by-Step Traces, 4 Complete Runnable Production Projects with Test Assertions, 20 DOs & DON'Ts, Real-World Enterprise Case Study, 75 Practice Drills (5 Tiers).
+Welcome to TypeScript Decorators, Metadata Reflection, and Inversion of Control (IoC). This module teaches modern TC39 Stage 3 decorators (supported natively in TypeScript 5.0+), decorator metadata (`Symbol.metadata` in TypeScript 5.2+), and how to build a production-grade Inversion of Control (IoC) dependency injection container from scratch.
 
 ---
 
-# Module TS-08: Decorators (Stage 3), Metadata, & IoC/DI Containers
+# Topic 1: Modern TC39 Stage 3 Decorators vs Legacy Experimental Decorators
 
-## 1. Architectural Deep-Dive & Specification Foundations
+### 1. What is it?
+A **Decorator** is a function applied to a class, method, getter/setter, field, or auto-accessor that modifies or extends its behavior.
+TypeScript historically supported two completely different decorator systems:
+1. **Legacy Experimental Decorators (Stage 2)**: Enabled by `"experimentalDecorators": true` in `tsconfig.json`. Relied on `reflect-metadata` and mutated property descriptors directly.
+2. **Modern TC39 Stage 3 Decorators (TS 5.0+)**: The official JavaScript language standard. Enabled when `"experimentalDecorators": false` (or omitted). Decorators accept a target and a standardized `context` object, returning a replacement function or value.
 
-### 1.1 The Decorator Evolution: Legacy (Stage 2) vs Modern (TC39 Stage 3 / TS 5.0+)
+### 2. Why does it exist?
+The legacy Stage 2 proposal stalled in TC39 committee review for years due to performance issues and prototype mutation quirks. Modern Stage 3 decorators provide a standardized, engine-optimizable specification that works across all JavaScript runtimes without requiring non-standard compiler transformations.
 
-For nearly a decade, the TypeScript ecosystem relied on experimental decorators (`"experimentalDecorators": true`, originating in TC39 Stage 2). With **TypeScript 5.0**, TypeScript implemented the finalized **TC39 Stage 3 Decorator Standard** directly into the core language. Modern decorators are now native ECMAScript standard features requiring **zero experimental compiler flags**.
-
-```
-+-------------------------------------------------------------------------+
-|                  TC39 Stage 3 vs Legacy Decorator Evolution             |
-+-------------------------------------------------------------------------+
-|  Feature                  | Legacy (Stage 2)     | Modern (Stage 3)     |
-|  -------------------------+----------------------+----------------------|
-|  Standardization Status   | Abandoned Draft      | TC39 Stage 3 Standard|
-|  tsconfig.json flag       | experimentalDecorators| NONE (Standard TS)  |
-|  Metadata Library         | reflect-metadata npm | Built-in Symbol.metadata|
-|  Argument Signature       | (target, key, desc)  | (target, context)    |
-|  Auto-Accessors           | NOT Supported        | Supported (accessor) |
-|  Private Member (#) Decs  | FORBIDDEN            | Fully Supported      |
-|  Type Safety              | Weak / Untyped       | Strongly Typed       |
-+-------------------------------------------------------------------------+
-```
-
----
-
-### 1.2 TC39 Stage 3 Decorator Anatomy & Context Interfaces
-
-A Stage 3 Decorator is an ordinary JavaScript function that receives two arguments:
-1. `target`: The value being decorated (the class constructor, method function, getter/setter function, or accessor object; `undefined` for fields).
-2. `context`: A strongly-typed metadata object (`DecoratorContext`) describing the member.
+### 3. Basic example
 
 ```typescript
-type ClassMethodDecorator = <This, Args extends any[], Return>(
-  target: (this: This, ...args: Args) => Return,
-  context: ClassMethodDecoratorContext<This, (this: This, ...args: Args) => Return>
-) => ((this: This, ...args: Args) => Return) | void;
-```
-
-#### The `context` Object Properties:
-- `kind`: The decorator target category (`'class'` | `'method'` | `'getter'` | `'setter'` | `'field'` | `'accessor'`).
-- `name`: The string or symbol name of the member.
-- `static`: Boolean indicating whether the member is static.
-- `private`: Boolean indicating whether the member is a `#private` field or method.
-- `access`: An object containing `get()` and optional `set()` closures providing direct access to the member.
-- `addInitializer(initializer: () => void)`: Schedules a callback to run after the class or instance is constructed.
-- `metadata`: An object shared across all decorators on the class and its prototype chain (`Symbol.metadata`).
-
----
-
-### 1.3 Auto-Accessors (`accessor prop: Type`)
-
-Standard class fields (`public name: string`) cannot be intercepted by getters or setters without completely rewriting the property into explicit `get name()` and `set name()` methods.
-
-TC39 Stage 3 introduced the `accessor` keyword (supported natively in TS 4.9+ and standardized with decorators in TS 5.0):
-
-```typescript
-class UserProfile {
-  // Auto-accessor generates a private internal backing storage slot:
-  accessor username: string = "anonymous";
-}
-```
-
-#### Desugaring of Auto-Accessors:
-Under the hood, `accessor username: string = "anonymous"` is equivalent to:
-```javascript
-class UserProfileDesugared {
-  #username = "anonymous";
-  get username() { return this.#username; }
-  set username(value) { this.#username = value; }
-}
-```
-
-#### Decorating Auto-Accessors:
-An auto-accessor decorator can intercept read, write, and initial value assignment:
-```typescript
-function loggedAccessor<This, Value>(
-  target: ClassAccessorDecoratorTarget<This, Value>,
-  context: ClassAccessorDecoratorContext<This, Value>
-): ClassAccessorDecoratorResult<This, Value> {
-  return {
-    get(this: This): Value {
-      console.log(`[GET] ${String(context.name)}`);
-      return target.get.call(this);
-    },
-    set(this: This, value: Value): void {
-      console.log(`[SET] ${String(context.name)} = ${value}`);
-      target.set.call(this, value);
-    },
-    init(this: This, value: Value): Value {
-      console.log(`[INIT] ${String(context.name)} initialized with ${value}`);
-      return value;
-    }
-  };
-}
-```
-
----
-
-### 1.4 Class Method Decorator: Interception & Wrapping
-
-A method decorator returns a replacement function that wraps the original method call:
-
-```typescript
-export function loggedMethod<This, Args extends any[], Return>(
+// Modern TC39 Stage 3 Method Decorator
+function loggedMethod<This, Args extends any[], Return>(
   target: (this: This, ...args: Args) => Return,
   context: ClassMethodDecoratorContext<This, (this: This, ...args: Args) => Return>
 ) {
   const methodName = String(context.name);
 
-  function replacementMethod(this: This, ...args: Args): Return {
-    console.log(`[ENTER] ${methodName} with args:`, args);
-    const start = performance.now();
-    try {
-      const result = target.call(this, ...args);
-      console.log(`[EXIT] ${methodName} took ${(performance.now() - start).toFixed(2)}ms`);
-      return result;
-    } catch (error) {
-      console.error(`[ERROR] ${methodName} threw:`, error);
-      throw error;
-    }
-  }
-
-  return replacementMethod;
+  return function (this: This, ...args: Args): Return {
+    console.log(`Entering method: ${methodName}`);
+    const result = target.call(this, ...args);
+    console.log(`Exiting method: ${methodName}`);
+    return result;
+  };
 }
 
-class PaymentService {
+class UserService {
   @loggedMethod
-  public processPayment(amount: number): string {
-    return `tx_success_${amount}`;
+  greet(name: string): string {
+    return `Hello, ${name}`;
   }
 }
+
+const service = new UserService();
+service.greet("Alice");
 ```
+
+**Line-by-line explanation:**
+- `function loggedMethod(target, context)`: A modern decorator takes two arguments: the entity being decorated (`target`) and a metadata `context` object.
+- `context: ClassMethodDecoratorContext`: Built-in TypeScript interface describing the method (its name, private status, and initializer hook).
+- `return function (this: This, ...args: Args)`: Returning a function replaces the original method on the class prototype.
+- `target.call(this, ...args)`: Invokes the original method while preserving the correct instance `this`.
+- `@loggedMethod greet(...)`: Applies the decorator without parenthesis because it does not require configuration arguments.
 
 ---
 
-### 1.5 Class Decorator: Constructor Wrapping & Mutation
+### 4. How it works inside TypeScript
+1. **No `experimentalDecorators` required**: Modern decorators run under standard TypeScript 5.0+ compilation with `experimentalDecorators` set to `false`.
+2. **Context Interface**: TypeScript provides built-in context types:
+   - `ClassDecoratorContext`
+   - `ClassMethodDecoratorContext`
+   - `ClassGetterDecoratorContext`
+   - `ClassSetterDecoratorContext`
+   - `ClassMemberDecoratorContext`
+   - `ClassAccessorDecoratorContext`
+   - `ClassFieldDecoratorContext`
+3. **Replacement Return Values**: Stage 3 decorators replace targets by returning a new function or class constructor. If a decorator returns `undefined`, the original definition remains unmodified.
 
-A class decorator can wrap the constructor function, add static properties, or instantiate mixin behavior:
+---
 
+### 5. More examples
+
+#### Example 1: Comparing Stage 2 vs Stage 3 signatures
 ```typescript
-export function sealedClass<TFunction extends abstract new (...args: any[]) => any>(
-  target: TFunction,
-  context: ClassDecoratorContext<TFunction>
+// Legacy Stage 2 (requires experimentalDecorators: true)
+function legacyLog(target: any, propertyKey: string, descriptor: PropertyDescriptor) {
+  const original = descriptor.value;
+  descriptor.value = function (...args: any[]) {
+    return original.apply(this, args);
+  };
+  return descriptor;
+}
+
+// Modern Stage 3 (standard TS 5.0+)
+function modernLog<T extends (...args: any[]) => any>(
+  target: T,
+  context: ClassMethodDecoratorContext
 ) {
-  context.addInitializer(function () {
-    console.log(`Class ${String(context.name)} initialized.`);
-  });
-
-  Object.seal(target);
-  Object.seal(target.prototype);
-}
-```
-
-
----
-
-## 2. Decorator Metadata (`Symbol.metadata`) & Inversion of Control (IoC) Containers
-
-### 2.1 The Modern Decorator Metadata Standard (`context.metadata`, TS 5.2+)
-
-In legacy TypeScript, storing metadata required the external third-party library `reflect-metadata` and the `"emitDecoratorMetadata": true` compiler flag.
-
-In **TypeScript 5.2+**, metadata is a **native language feature** via `context.metadata` and the well-known symbol `Symbol.metadata`. Every decorator invocation receives access to a shared plain JavaScript object via `context.metadata`:
-
-```typescript
-// Polyfill Symbol.metadata for runtimes where it is not yet defined globally:
-(Symbol as any).metadata ??= Symbol("Symbol.metadata");
-
-// Attaching metadata via modern decorators:
-export function tagged(tag: string) {
-  return function <This, Value>(
-    target: any,
-    context: ClassMemberDecoratorContext<This, Value> | ClassDecoratorContext
-  ) {
-    // context.metadata is a shared plain object across the class:
-    context.metadata[context.name] = tag;
+  return function (this: any, ...args: Parameters<T>): ReturnType<T> {
+    return target.apply(this, args);
   };
 }
-
-class InvoiceService {
-  @tagged("FINANCIAL_AUDIT")
-  public generateReport(): void {}
-}
-
-// Reading metadata without any reflection library:
-const metadata = (InvoiceService as any)[Symbol.metadata];
-console.log(metadata.generateReport); // "FINANCIAL_AUDIT"
 ```
 
-#### Metadata Inheritance Rules:
-When a class extends a base class, the derived class inherits its metadata object using standard prototype linkage:
-`DerivedClass[Symbol.metadata].__proto__ === BaseClass[Symbol.metadata]`
-
-This means child classes automatically inherit base class decorator annotations while allowing child decorators to override them without mutating the parent!
-
----
-
-### 2.2 Designing an Enterprise IoC/DI Container from Scratch
-
-Inversion of Control (IoC) decouples object creation and lifecycle management from consuming business classes. Below is the complete architecture for a native Stage 3 IoC Container:
-
-```
-+-------------------------------------------------------------------------+
-|                  TC39 Stage 3 Native IoC Container                     |
-+-------------------------------------------------------------------------+
-|  [@injectable()] ──► Tags class with Container Token & Scope Metadata   |
-|         │                                                               |
-|  [@inject(token)] ──► Auto-Accessor decorator injecting dependency     |
-|         │                                                               |
-|  [IoCContainer]                                                         |
-|    ├── bind<T>(token, constructor, scope: 'singleton' | 'transient')   |
-|    ├── resolve<T>(token): T                                             |
-|    └── Dependency Graph Cycle Detection (Circular Dependency Defense)   |
-+-------------------------------------------------------------------------+
-```
-
-#### Implementation Architecture:
+#### Example 2: Inspecting decorator context metadata
 ```typescript
-(Symbol as any).metadata ??= Symbol("Symbol.metadata");
-
-export type ServiceLifetime = "singleton" | "transient";
-export type ServiceToken<T = any> = string | symbol;
-
-export interface Registration<T = any> {
-  token: ServiceToken<T>;
-  target: new (...args: any[]) => T;
-  lifetime: ServiceLifetime;
-  instance?: T;
+function inspectContext(target: any, context: ClassMethodDecoratorContext) {
+  console.log(`Kind: ${context.kind}`);       // "method"
+  console.log(`Name: ${String(context.name)}`); // "save"
+  console.log(`Static: ${context.static}`);   // false
+  console.log(`Private: ${context.private}`); // false
 }
 
-const INJECTIONS_KEY = Symbol("IoC:Injections");
-
-// Decorator: @injectable
-export function injectable(lifetime: ServiceLifetime = "transient") {
-  return function <TFunction extends new (...args: any[]) => any>(
-    target: TFunction,
-    context: ClassDecoratorContext<TFunction>
-  ) {
-    context.metadata.lifetime = lifetime;
-  };
-}
-
-// Decorator: @inject on auto-accessors
-export function inject(token: ServiceToken) {
-  return function <This, Value>(
-    target: ClassAccessorDecoratorTarget<This, Value>,
-    context: ClassAccessorDecoratorContext<This, Value>
-  ): ClassAccessorDecoratorResult<This, Value> {
-    // Record injection token in metadata
-    if (!context.metadata[INJECTIONS_KEY]) {
-      context.metadata[INJECTIONS_KEY] = new Map<string | symbol, ServiceToken>();
-    }
-    (context.metadata[INJECTIONS_KEY] as Map<string | symbol, ServiceToken>).set(
-      context.name,
-      token
-    );
-
-    return target;
-  };
-}
-
-// The IoC Container Engine
-export class NativeIoCContainer {
-  private registrations: Map<ServiceToken, Registration> = new Map();
-  private resolvingTokens: Set<ServiceToken> = new Set();
-
-  public bind<T>(
-    token: ServiceToken<T>,
-    target: new (...args: any[]) => T,
-    lifetime: ServiceLifetime = "transient"
-  ): this {
-    this.registrations.set(token, { token, target, lifetime });
-    return this;
-  }
-
-  public resolve<T>(token: ServiceToken<T>): T {
-    const reg = this.registrations.get(token);
-    if (!reg) {
-      throw new Error(`IoCResolutionError: No binding found for token: ${String(token)}`);
-    }
-
-    if (reg.lifetime === "singleton" && reg.instance) {
-      return reg.instance as T;
-    }
-
-    // Circular Dependency Detection
-    if (this.resolvingTokens.has(token)) {
-      throw new Error(`CircularDependencyError: Cycle detected while resolving: ${String(token)}`);
-    }
-
-    this.resolvingTokens.add(token);
-
-    try {
-      // Instantiate target class
-      const instance = new reg.target();
-
-      // Read auto-accessor injections from Symbol.metadata
-      const metadata = (reg.target as any)[Symbol.metadata];
-      const injections = metadata?.[INJECTIONS_KEY] as Map<string | symbol, ServiceToken> | undefined;
-
-      if (injections) {
-        for (const [propName, depToken] of injections.entries()) {
-          const resolvedDep = this.resolve(depToken);
-          (instance as any)[propName] = resolvedDep;
-        }
-      }
-
-      if (reg.lifetime === "singleton") {
-        reg.instance = instance;
-      }
-
-      return instance as T;
-    } finally {
-      this.resolvingTokens.delete(token);
-    }
-  }
-}
-```
-
-
----
-
-## 3. 90 Real-World Technical Interview Q&As (Part 1: Q1–Q45)
-
----
-
-#### Q1: In what version of TypeScript were TC39 Stage 3 Decorators introduced?
-**Answer:**
-TypeScript 5.0 introduced support for TC39 Stage 3 Decorators. Decorator Metadata (`context.metadata` / `Symbol.metadata`) was subsequently added in TypeScript 5.2.
-
----
-
-#### Q2: What compiler flag in `tsconfig.json` is required for Stage 3 Decorators?
-**Answer:**
-**None.** Stage 3 decorators are part of standard JavaScript and require no experimental compiler flags. If you have `"experimentalDecorators": true` in your `tsconfig.json`, you must remove or set it to `false` to enable standard Stage 3 decorators.
-
----
-
-#### Q3: What are the fundamental differences between legacy (Stage 2) and modern (Stage 3) decorators?
-**Answer:**
-1. **Signature**: Legacy decorators receive `(target, propertyKey, descriptor)`. Stage 3 decorators receive `(target, context)`.
-2. **Context**: Stage 3 provides a strongly-typed `DecoratorContext` containing `kind`, `name`, `static`, `private`, `access`, and `addInitializer`.
-3. **Private Members**: Legacy decorators could not decorate `#private` members. Stage 3 decorators fully support `#private` methods and fields.
-4. **Auto-Accessors**: Stage 3 introduces `accessor` properties specifically to allow decorators to intercept property gets and sets cleanly.
-
----
-
-#### Q4: What are the 6 decorator target kinds supported in Stage 3?
-**Answer:**
-1. `class` (`ClassDecoratorContext`)
-2. `method` (`ClassMethodDecoratorContext`)
-3. `getter` (`ClassGetterDecoratorContext`)
-4. `setter` (`ClassSetterDecoratorContext`)
-5. `field` (`ClassFieldDecoratorContext`)
-6. `accessor` (`ClassAccessorDecoratorContext`)
-
----
-
-#### Q5: What properties does the `context` object expose in Stage 3 decorators?
-**Answer:**
-- `kind`: Member category (`'class'`, `'method'`, `'getter'`, `'setter'`, `'field'`, `'accessor'`).
-- `name`: String or Symbol name of the decorated member.
-- `static`: `true` if member is static, `false` otherwise.
-- `private`: `true` if member is a private identifier (`#member`).
-- `access`: Object with `get()` and optional `set()` closures.
-- `addInitializer(fn)`: Registers an initialization hook.
-- `metadata`: Shared plain object across all decorators on the class (`Symbol.metadata`).
-
----
-
-#### Q6: What are Auto-Accessors (`accessor prop: Type`) and why were they introduced?
-**Answer:**
-Auto-accessors introduce an internal private backing storage slot and automatically synthesize a public getter and setter. They were introduced because plain class fields (`public name = "Alice"`) cannot be intercepted on read and write without declaring boilerplate getter/setter pairs.
-
-```typescript
-class Account {
-  accessor balance: number = 0; // Backed by private slot with auto-generated getter/setter
+class OrderService {
+  @inspectContext
+  save(): void {}
 }
 ```
 
 ---
 
-#### Q7: How does an auto-accessor decorator intercept reads, writes, and initial values?
-**Answer:**
-By returning an object with `get`, `set`, and optional `init` methods:
+### 6. Common mistakes
 
+#### Mistake 1: Returning a property descriptor in Stage 3 decorators
 ```typescript
-function traceAccessor<This, Value>(
-  target: ClassAccessorDecoratorTarget<This, Value>,
-  context: ClassAccessorDecoratorContext<This, Value>
-): ClassAccessorDecoratorResult<This, Value> {
+// WRONG: Stage 2 syntax used in Stage 3 mode
+function badStage3MethodDecorator(target: any, context: ClassMethodDecoratorContext) {
   return {
-    get(this: This): Value {
-      return target.get.call(this);
-    },
-    set(this: This, value: Value): void {
-      target.set.call(this, value);
-    },
-    init(this: This, value: Value): Value {
-      return value;
-    }
+    value: function () {} // Error! Stage 3 expects a replacement method function, NOT a PropertyDescriptor!
   };
+}
+```
+**Why it fails:** In Stage 3, method decorators return the replacement function directly, not a `{ value: ... }` descriptor object.
+
+```typescript
+// CORRECT: Return the replacement function directly
+function goodStage3MethodDecorator(target: any, context: ClassMethodDecoratorContext) {
+  return function (this: any, ...args: any[]) {
+    return target.apply(this, args);
+  };
+}
+```
+
+#### Mistake 2: Mixing `experimentalDecorators` compiler options
+```json
+// tsconfig.json
+{
+  "compilerOptions": {
+    "experimentalDecorators": true // Forces compiler into legacy 2015 Stage 2 mode!
+  }
+}
+```
+**Why it fails:** Enabling `experimentalDecorators: true` disables TC39 Stage 3 syntax checking, preventing modern `context` typing from compiling. For modern decorators, omit `experimentalDecorators` or set it to `false`.
+
+---
+
+### 7. Rules to remember
+1. Modern TC39 Stage 3 decorators are the default in TypeScript 5.0+ when `"experimentalDecorators"` is `false` or omitted.
+2. A Stage 3 decorator function receives `(target, context)`.
+3. Method decorators return a replacement function (or `undefined` to keep the original).
+4. `context.kind` indicates what is being decorated (`"class"`, `"method"`, `"getter"`, `"setter"`, `"accessor"`, or `"field"`).
+
+---
+
+### Think first: Prediction puzzle
+What does `context.kind` print for the following code?
+
+```typescript
+function trace(target: any, context: ClassMethodDecoratorContext) {
+  console.log(context.kind);
+}
+
+class Account {
+  @trace
+  getBalance() { return 100; }
 }
 ```
 
 ---
 
-#### Q8: How do you write a method decorator that logs execution time?
 **Answer:**
+```
+method
+```
+**Explanation:** `context.kind` is an exact literal string representing the member type. For methods, it always evaluates to `"method"`.
+
+---
+
+### Practice exercises
+
+#### Exercise 1: Execution timer method decorator
+- **Task**: Write a modern Stage 3 method decorator `@timeExecution` that measures execution time using `performance.now()`.
+- **Hint 1**: Return a replacement function that stores `const t0 = performance.now()` before calling `target.call(this, ...args)`.
+
+#### Exercise 2: Static method logger
+- **Task**: Write a method decorator that checks `context.static`. If `true`, logs `"[STATIC]"`, otherwise logs `"[INSTANCE]"`.
+- **Hint 1**: Inspect `if (context.static)`.
+
+#### Exercise 3: Return value multiplier
+- **Task**: Write a decorator `@doubleReturn` that doubles numeric return values of methods.
+- **Hint 1**: `const val = target.call(this, ...args); return typeof val === "number" ? val * 2 : val;`.
+
+#### Exercise 4: Confirming Stage 3 context properties
+- **Task**: Create a method decorator that asserts that `context.name` matches the expected string identifier `"run"`.
+- **Hint 1**: `if (context.name !== "run") throw new Error("Invalid method name");`.
+
+---
+
+### Exercise solutions
+
+#### Solution 1: Execution timer method decorator
 ```typescript
-function timedMethod<This, Args extends any[], Return>(
+function timeExecution<This, Args extends any[], Return>(
   target: (this: This, ...args: Args) => Return,
   context: ClassMethodDecoratorContext<This, (this: This, ...args: Args) => Return>
 ) {
+  const name = String(context.name);
   return function (this: This, ...args: Args): Return {
     const start = performance.now();
     try {
       return target.call(this, ...args);
     } finally {
-      console.log(`${String(context.name)} took ${(performance.now() - start).toFixed(2)}ms`);
+      console.log(`${name} took ${(performance.now() - start).toFixed(2)}ms`);
+    }
+  };
+}
+```
+
+#### Solution 2: Static method logger
+```typescript
+function logScope(target: any, context: ClassMethodDecoratorContext) {
+  const prefix = context.static ? "[STATIC]" : "[INSTANCE]";
+  return function (this: any, ...args: any[]) {
+    console.log(`${prefix} ${String(context.name)} invoked`);
+    return target.apply(this, args);
+  };
+}
+```
+
+#### Solution 3: Return value multiplier
+```typescript
+function doubleReturn<This, Args extends any[]>(
+  target: (this: This, ...args: Args) => number,
+  context: ClassMethodDecoratorContext<This, (this: This, ...args: Args) => number>
+) {
+  return function (this: This, ...args: Args): number {
+    return target.call(this, ...args) * 2;
+  };
+}
+```
+
+#### Solution 4: Confirming Stage 3 context properties
+```typescript
+function mustBeRun(target: any, context: ClassMethodDecoratorContext) {
+  if (context.name !== "run") {
+    throw new Error(`Decorator must only be applied to 'run', found: ${String(context.name)}`);
+  }
+}
+```
+
+---
+
+### Recall
+1. Which compiler flag should be disabled (or omitted) to use modern TC39 Stage 3 decorators in TypeScript 5.x? `"experimentalDecorators": false`.
+2. What are the two parameters passed to a Stage 3 decorator function? `target` (the entity) and `context` (`ClassMemberDecoratorContext`).
+3. What does returning `undefined` from a method decorator do? It preserves the original method unchanged.
+
+> **If you remember only one thing:**  
+> Modern TC39 Stage 3 decorators receive `(target, context)` and return replacement functions directly without touching property descriptors.
+
+---
+
+# Topic 2: Class Method Decorators: Intercepting and Wrapping Invocations
+
+### 1. What is it?
+A **Class Method Decorator** wraps or replaces an instance or static method on a class. It intercepts arguments before the original method executes, inspects or mutates return values, or catches runtime errors.
+
+### 2. Why does it exist?
+Cross-cutting concerns like logging, input validation, transaction wrapping, and error alerting shouldn't clutter the core business logic of methods:
+```typescript
+// Anti-pattern: Repetitive boilerplate in every method
+class OrderService {
+  placeOrder(order: any) {
+    console.log("Starting order");
+    try {
+      // 5 lines of business logic
+    } catch (e) {
+      alertOps(e);
+      throw e;
+    }
+  }
+}
+```
+A Method Decorator encapsulates this behavior into a clean reusable annotation: `@logAndAlert`.
+
+### 3. Basic example
+
+```typescript
+function retry(maxAttempts: number) {
+  return function <This, Args extends any[], Return>(
+    target: (this: This, ...args: Args) => Promise<Return>,
+    context: ClassMethodDecoratorContext<This, (this: This, ...args: Args) => Promise<Return>>
+  ) {
+    const methodName = String(context.name);
+
+    return async function (this: This, ...args: Args): Promise<Return> {
+      let attempts = 0;
+      while (true) {
+        try {
+          attempts++;
+          return await target.call(this, ...args);
+        } catch (error) {
+          if (attempts >= maxAttempts) {
+            console.error(`Method ${methodName} failed after ${attempts} attempts`);
+            throw error;
+          }
+          console.warn(`Retrying ${methodName} (attempt ${attempts + 1})...`);
+        }
+      }
+    };
+  };
+}
+
+class RemoteApiClient {
+  private count = 0;
+
+  @retry(3)
+  async fetchData(): Promise<string> {
+    this.count++;
+    if (this.count < 3) {
+      throw new Error("Network glitch");
+    }
+    return "Success payload";
+  }
+}
+
+async function run() {
+  const client = new RemoteApiClient();
+  const res = await client.fetchData();
+  console.log("Result:", res);
+}
+run();
+```
+
+**Line-by-line explanation:**
+- `function retry(maxAttempts: number)`: A decorator factory that returns the actual decorator function.
+- `target: (this: This, ...args: Args) => Promise<Return>`: Captures the original async method.
+- `return async function (this: This, ...args: Args)`: Replaces the method with a retry loop.
+- `await target.call(this, ...args)`: Executes the original method on each attempt.
+- `if (attempts >= maxAttempts) throw error`: Rethrows if max attempts are exhausted.
+
+---
+
+### 4. How it works inside TypeScript
+1. **Prototype Attachment**: For instance methods, the decorator runs once when the class is defined, replacing the method on `ClassName.prototype`.
+2. **`this` Binding**: The replacement function must be a standard `function (this: This, ...args)` (not an arrow function) so that `this` points to the instance when called.
+3. **Type Preservation**: Using generics `<This, Args, Return>` ensures that calling `client.fetchData()` keeps its exact argument and return types.
+
+---
+
+### 5. More examples
+
+#### Example 1: Argument validation decorator
+```typescript
+function validatePositiveArg(
+  target: (this: any, amount: number) => void,
+  context: ClassMethodDecoratorContext
+) {
+  return function (this: any, amount: number): void {
+    if (amount <= 0) {
+      throw new Error(`Argument 'amount' must be positive, received: ${amount}`);
+    }
+    return target.call(this, amount);
+  };
+}
+
+class BankAccount {
+  private balance = 100;
+
+  @validatePositiveArg
+  deposit(amount: number): void {
+    this.balance += amount;
+  }
+}
+```
+
+#### Example 2: Read-only / Immutable result wrapper
+```typescript
+function freezeResult<This, Args extends any[], Return extends object>(
+  target: (this: This, ...args: Args) => Return,
+  context: ClassMethodDecoratorContext
+) {
+  return function (this: This, ...args: Args): Return {
+    const res = target.call(this, ...args);
+    return Object.freeze(res);
+  };
+}
+
+class ConfigService {
+  @freezeResult
+  loadConfig() {
+    return { host: "127.0.0.1", port: 5432 };
+  }
+}
+```
+
+---
+
+### 6. Common mistakes
+
+#### Mistake 1: Using an arrow function for the replacement implementation
+```typescript
+// WRONG: Arrow functions do not bind 'this' to the caller instance
+function badDecorator(target: any, context: ClassMethodDecoratorContext) {
+  return (...args: any[]) => {
+    return target.call(this, ...args); // 'this' is lexical (undefined or global)!
+  };
+}
+```
+**Why it fails:** Arrow functions capture lexical `this`. Inside a module, `this` is `undefined`. When the class instance calls the method, `this.propertyName` inside `target` crashes with `TypeError: Cannot read properties of undefined`. Always use standard `function (this: This, ...args: Args)`.
+
+#### Mistake 2: Losing the return value
+```typescript
+// WRONG: Not returning the target result
+function logOnly(target: any, context: ClassMethodDecoratorContext) {
+  return function (this: any, ...args: any[]) {
+    console.log("Called");
+    target.call(this, ...args); // Forgot 'return'! Returns undefined to caller!
+  };
+}
+```
+**Why it fails:** If the original method returns a value, forgetting `return` causes the caller to receive `undefined`.
+
+---
+
+### 7. Rules to remember
+1. Always declare replacement functions with standard `function (this: This, ...args: Args)` syntax to preserve `this`.
+2. Always return the value produced by `target.call(this, ...args)`.
+3. Use a decorator factory (`function myDec(opts) { return function(target, ctx) { ... } }`) when configuration arguments are needed.
+4. Generics `<This, Args, Return>` preserve complete end-to-end type safety.
+
+---
+
+### Think first: Prediction puzzle
+What does the following snippet print?
+
+```typescript
+function addSuffix(
+  target: (this: any, s: string) => string,
+  context: ClassMethodDecoratorContext
+) {
+  return function (this: any, s: string): string {
+    return target.call(this, s) + " [decorated]";
+  };
+}
+
+class Formatter {
+  @addSuffix
+  format(str: string): string {
+    return str.toUpperCase();
+  }
+}
+
+const f = new Formatter();
+console.log(f.format("test"));
+```
+
+---
+
+**Answer:**
+```
+TEST [decorated]
+```
+**Execution trace:**
+1. `f.format("test")` enters the decorator replacement function.
+2. `target.call(this, "test")` invokes `format`, returning `"TEST"`.
+3. The decorator appends `" [decorated]"` and returns `"TEST [decorated]"`.
+
+---
+
+### Practice exercises
+
+#### Exercise 1: Input sanitization decorator
+- **Task**: Create a decorator `@trimStringInput` that trims the first string argument before passing it to the original method.
+- **Hint 1**: `const sanitized = args.map(a => typeof a === "string" ? a.trim() : a) as Args;`.
+
+#### Exercise 2: Safe async error fallback
+- **Task**: Write a decorator `@catchError(fallbackValue)` that catches rejected promises and returns `fallbackValue`.
+- **Hint 1**: Wrap `await target.call(this, ...args)` in `try/catch`.
+
+#### Exercise 3: Invocation logger with parameter inspection
+- **Task**: Write a decorator that logs the method name and `JSON.stringify(args)`.
+- **Hint 1**: `console.log(`${String(context.name)} args:`, JSON.stringify(args))`.
+
+#### Exercise 4: Disallow execution when offline
+- **Task**: Decorate a method on a class with a boolean property `isOnline`. If `this.isOnline` is false, throw `new Error("Offline")`.
+- **Hint 1**: Cast `this as { isOnline: boolean }`.
+
+---
+
+### Exercise solutions
+
+#### Solution 1: Input sanitization decorator
+```typescript
+function trimStringInput<This, Return>(
+  target: (this: This, input: string) => Return,
+  context: ClassMethodDecoratorContext<This, (this: This, input: string) => Return>
+) {
+  return function (this: This, input: string): Return {
+    return target.call(this, input.trim());
+  };
+}
+```
+
+#### Solution 2: Safe async error fallback
+```typescript
+function catchError<TFallback>(fallback: TFallback) {
+  return function <This, Args extends any[], Return>(
+    target: (this: This, ...args: Args) => Promise<Return>,
+    context: ClassMethodDecoratorContext
+  ) {
+    return async function (this: This, ...args: Args): Promise<Return | TFallback> {
+      try {
+        return await target.call(this, ...args);
+      } catch {
+        return fallback;
+      }
+    };
+  };
+}
+```
+
+#### Solution 3: Invocation logger with parameter inspection
+```typescript
+function logParams<This, Args extends any[], Return>(
+  target: (this: This, ...args: Args) => Return,
+  context: ClassMethodDecoratorContext
+) {
+  const name = String(context.name);
+  return function (this: This, ...args: Args): Return {
+    console.log(`[Call] ${name}(${args.map((a) => JSON.stringify(a)).join(", ")})`);
+    return target.call(this, ...args);
+  };
+}
+```
+
+#### Solution 4: Disallow execution when offline
+```typescript
+function requireOnline<This extends { isOnline: boolean }, Args extends any[], Return>(
+  target: (this: This, ...args: Args) => Return,
+  context: ClassMethodDecoratorContext<This, (this: This, ...args: Args) => Return>
+) {
+  return function (this: This, ...args: Args): Return {
+    if (!this.isOnline) {
+      throw new Error("Network connection required");
+    }
+    return target.call(this, ...args);
+  };
+}
+```
+
+---
+
+### Recall
+1. Why must replacement functions never be written as arrow functions? Because arrow functions do not bind `this` dynamically to the class instance.
+2. Where is a decorated instance method installed in JavaScript memory? On the class prototype (`ClassName.prototype`).
+3. How do you create a decorator that takes arguments like `@retry(5)`? By using a decorator factory function that returns the decorator.
+
+> **If you remember only one thing:**  
+> Method decorators intercept method calls by replacing the prototype function with a wrapper that preserves `this` via `target.call(this, ...args)`.
+
+---
+
+# Topic 3: Class Accessor Decorators & Auto-Accessors (`accessor prop: Type`)
+
+### 1. What is it?
+TypeScript 5.0 introduced **Auto-Accessors**, declared using the `accessor` keyword:
+```typescript
+class Person {
+  accessor name: string;
+}
+```
+An auto-accessor automatically generates a private backing storage variable alongside a getter and a setter. An **Accessor Decorator** (`ClassAccessorDecorator`) intercepts this getter and setter, allowing you to validate assignments or transform reads.
+
+### 2. Why does it exist?
+Previously, to validate a property, you had to manually declare a private field and write boilerplate getter/setter pairs:
+```typescript
+// Legacy boilerplate:
+class Person {
+  private _name: string = "";
+  get name() { return this._name; }
+  set name(v: string) { this._name = v; }
+}
+```
+With `accessor name: string`, the compiler generates the backing field automatically. Decorating it with `@validate` allows attaching validation or reactivity in a single line.
+
+### 3. Basic example
+
+```typescript
+function minLength(min: number) {
+  return function <This, Value extends string>(
+    target: ClassAccessorDecoratorTarget<This, Value>,
+    context: ClassAccessorDecoratorContext<This, Value>
+  ): ClassAccessorDecoratorResult<This, Value> {
+    return {
+      get(this: This): Value {
+        return target.get.call(this);
+      },
+      set(this: This, value: Value): void {
+        if (value.length < min) {
+          throw new Error(`Property ${String(context.name)} must be at least ${min} chars`);
+        }
+        target.set.call(this, value);
+      },
+      init(this: This, initialValue: Value): Value {
+        if (initialValue.length < min) {
+          throw new Error(`Initial value for ${String(context.name)} too short`);
+        }
+        return initialValue;
+      },
+    };
+  };
+}
+
+class UserProfile {
+  @minLength(3)
+  accessor username: string = "admin";
+}
+
+const profile = new UserProfile();
+profile.username = "al"; // Throws runtime Error: Property username must be at least 3 chars
+```
+
+**Line-by-line explanation:**
+- `accessor username: string = "admin"`: Declares an auto-accessor. TypeScript creates an internal private storage slot and public `get username()` / `set username(val)`.
+- `target: ClassAccessorDecoratorTarget`: An object with `.get` and `.set` methods to access the internal storage slot.
+- `return { get, set, init }`: An accessor decorator can return custom `get`, `set`, and `init` functions.
+- `init`: Intercepts and transforms the initial value assigned during construction.
+- `set`: Intercepts every subsequent assignment.
+
+---
+
+### 4. How it works inside TypeScript
+1. **Desugaring**: TypeScript desugars `accessor x: string` into a private symbol or `#x` field, plus getter/setter functions on the prototype.
+2. **Decorator Target**: The target contains `{ get: () => Value, set: (val: Value) => void }`.
+3. **Decorator Return Object**: You can return any combination of `{ get, set, init }`. Any omitted property retains default behavior.
+
+---
+
+### 5. More examples
+
+#### Example 1: Numeric range clamping
+```typescript
+function clamp(min: number, max: number) {
+  return function <This>(
+    target: ClassAccessorDecoratorTarget<This, number>,
+    context: ClassAccessorDecoratorContext<This, number>
+  ): ClassAccessorDecoratorResult<This, number> {
+    return {
+      set(this: This, value: number) {
+        const clamped = Math.max(min, Math.min(max, value));
+        target.set.call(this, clamped);
+      },
+      init(this: This, value: number) {
+        return Math.max(min, Math.min(max, value));
+      },
+    };
+  };
+}
+
+class VolumeControl {
+  @clamp(0, 100)
+  accessor level: number = 50;
+}
+
+const vol = new VolumeControl();
+vol.level = 150;
+console.log(vol.level); // 100 (clamped!)
+```
+
+#### Example 2: Change-notification / Reactive trigger
+```typescript
+function observable<This, Value>(
+  target: ClassAccessorDecoratorTarget<This, Value>,
+  context: ClassAccessorDecoratorContext<This, Value>
+): ClassAccessorDecoratorResult<This, Value> {
+  const propName = String(context.name);
+
+  return {
+    set(this: This, newVal: Value) {
+      const oldVal = target.get.call(this);
+      target.set.call(this, newVal);
+      console.log(`[Observable] ${propName} changed from ${oldVal} -> ${newVal}`);
+    },
+  };
+}
+
+class Device {
+  @observable
+  accessor status: string = "idle";
+}
+```
+
+---
+
+### 6. Common mistakes
+
+#### Mistake 1: Applying accessor decorator to standard class fields
+```typescript
+// WRONG: Missing 'accessor' keyword
+class Settings {
+  @minLength(3)
+  username: string = "alice"; // Error: Cannot apply accessor decorator to plain field!
+}
+```
+**Why it fails:** Plain fields (`username: string`) are fields, not auto-accessors. You must add the `accessor` keyword (`accessor username: string`) to use `ClassAccessorDecorator`.
+
+#### Mistake 2: Forgetting to delegate to `target.set`
+```typescript
+// WRONG: Forgetting target.set leaves backing field unchanged
+return {
+  set(this: This, value: Value) {
+    console.log("Setting:", value);
+    // Forgot target.set.call(this, value); -> backing store is never updated!
+  }
+};
+```
+**Why it fails:** If you do not call `target.set.call(this, value)`, the private backing variable is never updated. The property will always return its old value.
+
+---
+
+### 7. Rules to remember
+1. Auto-accessors require the `accessor` keyword: `accessor propertyName: Type`.
+2. Accessor decorators receive `{ get, set }` in `target`.
+3. Return `{ get, set, init }` to customize read, write, and initialization behavior.
+4. Always invoke `target.set.call(this, value)` to update the underlying backing storage.
+
+---
+
+### Think first: Prediction puzzle
+What does the console log?
+
+```typescript
+function upper(
+  target: ClassAccessorDecoratorTarget<any, string>,
+  context: ClassAccessorDecoratorContext
+): ClassAccessorDecoratorResult<any, string> {
+  return {
+    set(this: any, val: string) {
+      target.set.call(this, val.toUpperCase());
+    },
+    init(this: any, val: string) {
+      return val.toUpperCase();
+    }
+  };
+}
+
+class Greeting {
+  @upper
+  accessor title: string = "hello";
+}
+
+const g = new Greeting();
+g.title = "world";
+console.log(g.title);
+```
+
+---
+
+**Answer:**
+```
+WORLD
+```
+**Execution trace:**
+1. During instantiation, `init` runs: `"hello".toUpperCase()` $\to$ `"HELLO"`.
+2. When `g.title = "world"` is assigned, `set` runs: `"world".toUpperCase()` $\to$ `"WORLD"`.
+3. `target.set.call(this, "WORLD")` updates the backing field.
+4. `console.log(g.title)` outputs `"WORLD"`.
+
+---
+
+### Practice exercises
+
+#### Exercise 1: Read-only auto-accessor
+- **Task**: Write an accessor decorator `@readOnlyAccessor` that allows `init` but throws an error if `set` is called.
+- **Hint 1**: In `set(val)`, throw `new Error("Read-only property")`.
+
+#### Exercise 2: Integer validator
+- **Task**: Write `@mustBeInteger` that ensures only whole numbers can be set.
+- **Hint 1**: Check `Number.isInteger(value)`.
+
+#### Exercise 3: Trim on assignment
+- **Task**: Write `@trimmed` that strips leading and trailing whitespace from string auto-accessors on both `init` and `set`.
+- **Hint 1**: Return `val.trim()` in both `init` and `set`.
+
+#### Exercise 4: Audit history tracker
+- **Task**: Build an accessor decorator that records every previous value in an array `this.__history = []`.
+- **Hint 1**: Before calling `target.set`, push `target.get.call(this)` to an internal or instance history array.
+
+---
+
+### Exercise solutions
+
+#### Solution 1: Read-only auto-accessor
+```typescript
+function readOnlyAccessor<This, Value>(
+  target: ClassAccessorDecoratorTarget<This, Value>,
+  context: ClassAccessorDecoratorContext<This, Value>
+): ClassAccessorDecoratorResult<This, Value> {
+  return {
+    set() {
+      throw new Error(`Cannot modify read-only property ${String(context.name)}`);
+    },
+  };
+}
+```
+
+#### Solution 2: Integer validator
+```typescript
+function mustBeInteger<This>(
+  target: ClassAccessorDecoratorTarget<This, number>,
+  context: ClassAccessorDecoratorContext<This, number>
+): ClassAccessorDecoratorResult<This, number> {
+  return {
+    set(this: This, val: number) {
+      if (!Number.isInteger(val)) throw new Error("Must be an integer");
+      target.set.call(this, val);
+    },
+    init(this: This, val: number) {
+      if (!Number.isInteger(val)) throw new Error("Initial value must be integer");
+      return val;
+    },
+  };
+}
+```
+
+#### Solution 3: Trim on assignment
+```typescript
+function trimmed<This>(
+  target: ClassAccessorDecoratorTarget<This, string>,
+  context: ClassAccessorDecoratorContext<This, string>
+): ClassAccessorDecoratorResult<This, string> {
+  return {
+    init(this: This, val: string) { return val.trim(); },
+    set(this: This, val: string) { target.set.call(this, val.trim()); },
+  };
+}
+```
+
+#### Solution 4: Audit history tracker
+```typescript
+function trackHistory<This extends { __history?: any[] }, Value>(
+  target: ClassAccessorDecoratorTarget<This, Value>,
+  context: ClassAccessorDecoratorContext<This, Value>
+): ClassAccessorDecoratorResult<This, Value> {
+  return {
+    set(this: This, val: Value) {
+      if (!this.__history) this.__history = [];
+      this.__history.push(target.get.call(this));
+      target.set.call(this, val);
+    },
+  };
+}
+```
+
+---
+
+### Recall
+1. What keyword introduces an auto-accessor in TypeScript 5.0? `accessor`.
+2. What three optional functions can a `ClassAccessorDecorator` return? `get`, `set`, and `init`.
+3. When does the `init` function of an accessor decorator execute? During class instantiation when the property's initial value is assigned.
+
+> **If you remember only one thing:**  
+> Auto-accessors (`accessor prop: Type`) provide compiler-generated backing storage that accessor decorators can intercept via `{ get, set, init }`.
+
+---
+
+# Topic 4: Class Field Decorators: Initializer Transformation
+
+### 1. What is it?
+A **Class Field Decorator** (`ClassFieldDecorator`) is applied to a regular instance or static property on a class. In Stage 3, a field decorator does not receive or modify the field's property descriptor; instead, it accepts `undefined` as its `target` and returns an **initializer function** that transforms the property's initial value.
+
+### 2. Why does it exist?
+In JavaScript, class fields are assigned directly on the created instance during constructor execution. Field decorators allow you to calculate default values, bind instance dependencies, or sanitize initial field state without manually writing constructor assignment statements.
+
+### 3. Basic example
+
+```typescript
+function defaultValue<T>(fallback: T) {
+  return function <This, Value>(
+    target: undefined,
+    context: ClassFieldDecoratorContext<This, Value>
+  ) {
+    return function (this: This, initialValue: Value): Value {
+      // If no initial value was provided (or undefined), return the fallback
+      return initialValue !== undefined ? initialValue : (fallback as unknown as Value);
+    };
+  };
+}
+
+class UserSettings {
+  @defaultValue("en_US")
+  locale?: string;
+
+  @defaultValue(50)
+  pageSize?: number;
+}
+
+const s1 = new UserSettings();
+console.log(s1.locale);   // "en_US"
+console.log(s1.pageSize); // 50
+
+const s2 = new UserSettings();
+s2.locale = "fr_FR";
+console.log(s2.locale);   // "fr_FR"
+```
+
+**Line-by-line explanation:**
+- `target: undefined`: In TC39 Stage 3, field decorators receive `undefined` for `target` because the field has not yet been assigned to any instance.
+- `context: ClassFieldDecoratorContext<This, Value>`: Provides metadata about the field.
+- `return function (this: This, initialValue: Value)`: Returns an initializer function that executes when an instance is instantiated.
+- `return initialValue !== undefined ? initialValue : fallback`: Sets the default value if the field is undefined.
+
+---
+
+### 4. How it works inside TypeScript
+1. **Target is `undefined`**: Because fields do not exist on the prototype, `target` is always `undefined`.
+2. **Initializer Hook**: Returning a function `(initialValue: Value) => Value` tells the JavaScript engine to pass the property's initial expression into your function and assign the returned value to the instance.
+3. **Execution Moment**: The initializer runs during constructor execution at the exact line where the field is declared.
+
+---
+
+### 5. More examples
+
+#### Example 1: Dependency injection marker using field initializers
+```typescript
+const container = new Map<string, any>();
+container.set("logger", { log: (msg: string) => console.log(`[LOG] ${msg}`) });
+
+function inject(serviceKey: string) {
+  return function (target: undefined, context: ClassFieldDecoratorContext) {
+    return function (this: any, initialValue: any) {
+      return container.get(serviceKey);
+    };
+  };
+}
+
+class TaskService {
+  @inject("logger")
+  logger: any;
+}
+
+const task = new TaskService();
+task.logger.log("Task executed"); // "[LOG] Task executed"
+```
+
+#### Example 2: UUID Auto-Generator Field Decorator
+```typescript
+function generateUuid() {
+  return function (target: undefined, context: ClassFieldDecoratorContext) {
+    return function (this: any, initialValue: string | undefined): string {
+      return initialValue ?? `uuid_${Math.random().toString(36).slice(2, 9)}`;
+    };
+  };
+}
+
+class Order {
+  @generateUuid()
+  orderId!: string;
+}
+
+const o1 = new Order();
+console.log(o1.orderId.startsWith("uuid_")); // true
+```
+
+---
+
+### 6. Common mistakes
+
+#### Mistake 1: Expecting `target` to be a property descriptor or prototype
+```typescript
+// WRONG: Attempting to inspect target in a field decorator
+function badFieldDecorator(target: any, context: ClassFieldDecoratorContext) {
+  console.log(target.name); // TypeError: Cannot read properties of undefined!
+}
+```
+**Why it fails:** In Stage 3, `target` is always `undefined` for field decorators.
+
+#### Mistake 2: Expecting field decorators to intercept future assignments
+```typescript
+// GOTCHA:
+class User {
+  @defaultValue("admin")
+  role: string = "admin";
+}
+
+const u = new User();
+u.role = ""; // Field decorator DOES NOT intercept this assignment!
+```
+**Why it matters:** Field decorators only run once during initialization. To intercept ongoing assignments (`u.role = ...`), you must use an Auto-Accessor (`accessor role: string`) with an Accessor Decorator!
+
+---
+
+### 7. Rules to remember
+1. `target` is always `undefined` for Stage 3 class field decorators.
+2. Field decorators return an initializer function: `(this: This, initialValue: Value) => Value`.
+3. Initializer functions execute during class constructor instantiation.
+4. Field decorators do NOT intercept future assignments; use `accessor` if ongoing assignment interception is needed.
+
+---
+
+### Think first: Prediction puzzle
+What does `item.count` evaluate to?
+
+```typescript
+function multiplyInitial(factor: number) {
+  return function (target: undefined, context: ClassFieldDecoratorContext) {
+    return function (this: any, initial: number) {
+      return initial * factor;
+    };
+  };
+}
+
+class CartItem {
+  @multiplyInitial(10)
+  count: number = 5;
+}
+
+const item = new CartItem();
+console.log(item.count);
+```
+
+---
+
+**Answer:**
+```
+50
+```
+**Execution trace:**
+1. Field `count` is initialized with expression `5`.
+2. The decorator initializer function receives `initial = 5`.
+3. `5 * 10` is calculated and returns `50`.
+4. Property `item.count` is assigned `50`.
+
+---
+
+### Practice exercises
+
+#### Exercise 1: Epoch timestamp initializer
+- **Task**: Create a field decorator `@createdAt` that initializes a `number` field to `Date.now()`.
+- **Hint 1**: Return `() => Date.now()`.
+
+#### Exercise 2: Array initialization safeguard
+- **Task**: Write a field decorator `@ensureArray` that initializes an array property to an empty array `[]` if no initial value is provided.
+- **Hint 1**: `return (init) => init ?? []`.
+
+#### Exercise 3: Uppercase initial string
+- **Task**: Write a field decorator that converts the initial string literal to uppercase.
+- **Hint 1**: `return (init: string) => init.toUpperCase()`.
+
+#### Exercise 4: Immutable copy initializer
+- **Task**: Write a field decorator that freezes any object passed as the initial value using `Object.freeze()`.
+- **Hint 1**: `return (init: object) => Object.freeze(init)`.
+
+---
+
+### Exercise solutions
+
+#### Solution 1: Epoch timestamp initializer
+```typescript
+function createdAt() {
+  return function (target: undefined, context: ClassFieldDecoratorContext) {
+    return function (): number {
+      return Date.now();
+    };
+  };
+}
+
+class Post {
+  @createdAt()
+  timestamp!: number;
+}
+```
+
+#### Solution 2: Array initialization safeguard
+```typescript
+function ensureArray<T>() {
+  return function (target: undefined, context: ClassFieldDecoratorContext) {
+    return function (this: any, initial: T[] | undefined): T[] {
+      return initial ?? [];
+    };
+  };
+}
+```
+
+#### Solution 3: Uppercase initial string
+```typescript
+function initialUpperCase() {
+  return function (target: undefined, context: ClassFieldDecoratorContext) {
+    return function (this: any, initial: string): string {
+      return initial.toUpperCase();
+    };
+  };
+}
+```
+
+#### Solution 4: Immutable copy initializer
+```typescript
+function frozenInitial<T extends object>() {
+  return function (target: undefined, context: ClassFieldDecoratorContext) {
+    return function (this: any, initial: T): T {
+      return Object.freeze({ ...initial });
+    };
+  };
+}
+```
+
+---
+
+### Recall
+1. What value is passed as `target` to a Stage 3 field decorator? `undefined`.
+2. What does a field decorator return to modify the field? An initializer function `(initialValue) => transformedValue`.
+3. Can a field decorator intercept property assignments that occur after instantiation? No; use `accessor` auto-accessors for ongoing assignment interception.
+
+> **If you remember only one thing:**  
+> Field decorators receive `undefined` as `target` and return an initializer function to transform or provide default values during construction.
+
+---
+
+# Topic 5: Class Decorators: Constructor Replacement and Subclass Augmentation
+
+### 1. What is it?
+A **Class Decorator** (`ClassDecorator`) is applied to a class declaration. It receives the constructor function as `target` and a `ClassDecoratorContext`. It can inspect the class, register it in an external table, or return a new constructor (typically extending the original) to replace or augment instances.
+
+### 2. Why does it exist?
+Certain architectural requirements apply to an entire class rather than individual methods:
+- Auto-registering entities or controllers in a router or IoC container.
+- Freezing the prototype to prevent runtime tampering.
+- Injecting tracking properties (such as creation timestamps or instance counters) into all instances.
+Class decorators satisfy these requirements without forcing the class author to extend a concrete base class.
+
+### 3. Basic example
+
+```typescript
+type Constructor<T = {}> = new (...args: any[]) => T;
+
+function entity(tableName: string) {
+  return function <T extends Constructor>(
+    target: T,
+    context: ClassDecoratorContext<T>
+  ) {
+    // Return a subclass that augments the original constructor
+    return class extends target {
+      readonly __tableName = tableName;
+      readonly __createdAt = new Date();
+
+      constructor(...args: any[]) {
+        super(...args);
+        console.log(`[Entity] Instantiated ${context.name} mapped to table: ${tableName}`);
+      }
+    };
+  };
+}
+
+@entity("users_table")
+class User {
+  constructor(public username: string) {}
+}
+
+const u = new User("Alice");
+console.log((u as any).__tableName); // "users_table"
+```
+
+**Line-by-line explanation:**
+- `target: T`: The original class constructor function.
+- `context: ClassDecoratorContext`: Contains metadata such as `context.name` (the class name).
+- `return class extends target { ... }`: Replaces the original constructor with an anonymous subclass extending `target`.
+- `super(...args)`: Invokes the original constructor to initialize fields.
+- Calling `new User("Alice")` executes the augmented constructor, adding `__tableName` and logging the instantiation.
+
+---
+
+### 4. How it works inside TypeScript
+1. **Replacement Constructor**: If a class decorator returns a constructor function, that constructor replaces the decorated class in the calling scope.
+2. **Prototype Preservation**: Subclassing `extends target` preserves the prototype chain so `u instanceof User` remains `true`.
+3. **Erased Type Narrowing**: TypeScript's type system currently does not add new properties introduced by class decorator subclasses to the static type of `User` without explicit interface declaration merging or casting.
+
+---
+
+### 5. More examples
+
+#### Example 1: Prototype freezing decorator
+```typescript
+function freezeClass<T extends Constructor>(
+  target: T,
+  context: ClassDecoratorContext<T>
+) {
+  Object.freeze(target);
+  Object.freeze(target.prototype);
+  // Return undefined: keeps the original constructor unchanged
+}
+
+@freezeClass
+class ImmutableModel {
+  sayHi() { return "hi"; }
+}
+
+// ImmutableModel.prototype.sayHi = () => "tampered"; // Throws TypeError in strict mode!
+```
+
+#### Example 2: Self-registering controller in a central registry
+```typescript
+const routeRegistry = new Map<string, Constructor>();
+
+function controller(routePrefix: string) {
+  return function <T extends Constructor>(target: T, context: ClassDecoratorContext<T>) {
+    routeRegistry.set(routePrefix, target);
+  };
+}
+
+@controller("/api/users")
+class UserController {}
+
+console.log(routeRegistry.has("/api/users")); // true
+```
+
+---
+
+### 6. Common mistakes
+
+#### Mistake 1: Expecting returned properties to exist on the TypeScript static type
+```typescript
+// GOTCHA:
+@entity("orders")
+class Order { id = "1"; }
+
+const o = new Order();
+// console.log(o.__tableName); // TS Error: Property '__tableName' does not exist on type 'Order'!
+```
+**Why it happens:** TypeScript does not currently mutate the type signature of a class declaration via decorators. To access augmented properties with static type checking, use interface merging:
+```typescript
+interface Order {
+  __tableName: string;
+}
+```
+
+#### Mistake 2: Forgetting to call `super(...args)` in constructor replacement
+```typescript
+// WRONG: Subclass constructor missing super()
+return class extends target {
+  constructor(...args: any[]) {
+    // Missing super(...args)! Throws ReferenceError: Must call super constructor in derived class!
+  }
+};
+```
+**Why it fails:** JavaScript requires derived classes to call `super(...args)` before accessing `this`.
+
+---
+
+### 7. Rules to remember
+1. A class decorator receives `(target: Constructor, context: ClassDecoratorContext)`.
+2. Returning a new class constructor replaces the original class.
+3. Subclassing `extends target` preserves `instanceof` checks.
+4. Returning `undefined` leaves the constructor unchanged (ideal for registration or freezing).
+
+---
+
+### Think first: Prediction puzzle
+Does `u instanceof User` evaluate to `true` when a class decorator returns a subclass?
+
+```typescript
+function augment<T extends new (...args: any[]) => any>(target: T, context: ClassDecoratorContext) {
+  return class extends target {
+    extra = true;
+  };
+}
+
+@augment
+class User {}
+
+const u = new User();
+console.log(u instanceof User);
+```
+
+---
+
+**Answer:**
+```
+true
+```
+**Explanation:** Because the replacement class `extends target`, its prototype chain inherits from `target.prototype`. The variable `User` points to the returned subclass constructor. Therefore, `u instanceof User` evaluates to `true`.
+
+---
+
+### Practice exercises
+
+#### Exercise 1: Instance counter decorator
+- **Task**: Write a class decorator `@counted` that tracks how many times instances of the class are instantiated via a static property `instanceCount`.
+- **Hint 1**: Subclass `target` and increment a static counter in the constructor.
+
+#### Exercise 2: Sealed class decorator
+- **Task**: Create a class decorator `@sealed` that calls `Object.seal(target)` and `Object.seal(target.prototype)`.
+- **Hint 1**: Return `undefined`.
+
+#### Exercise 3: Dependency tag decorator
+- **Task**: Create a class decorator `@tag(label)` that stores `label` on a static property `Symbol.for("class.tag")`.
+- **Hint 1**: `(target as any)[Symbol.for("class.tag")] = label`.
+
+#### Exercise 4: Mandatory `id` generator subclass
+- **Task**: Return a subclass that assigns `(this as any).id = Math.random().toString()` during construction if `id` is not present.
+- **Hint 1**: `super(...args); if (!this.id) this.id = ...`.
+
+---
+
+### Exercise solutions
+
+#### Solution 1: Instance counter decorator
+```typescript
+type Ctor = new (...args: any[]) => any;
+
+function counted<T extends Ctor>(target: T, context: ClassDecoratorContext) {
+  let count = 0;
+  return class extends target {
+    static get instanceCount() { return count; }
+    constructor(...args: any[]) {
+      super(...args);
+      count++;
+    }
+  };
+}
+```
+
+#### Solution 2: Sealed class decorator
+```typescript
+function sealed<T extends Ctor>(target: T, context: ClassDecoratorContext) {
+  Object.seal(target);
+  Object.seal(target.prototype);
+}
+```
+
+#### Solution 3: Dependency tag decorator
+```typescript
+const TAG_KEY = Symbol.for("class.tag");
+
+function tag(label: string) {
+  return function <T extends Ctor>(target: T, context: ClassDecoratorContext) {
+    (target as any)[TAG_KEY] = label;
+  };
+}
+```
+
+#### Solution 4: Mandatory `id` generator subclass
+```typescript
+function ensureId<T extends Ctor>(target: T, context: ClassDecoratorContext) {
+  return class extends target {
+    id: string;
+    constructor(...args: any[]) {
+      super(...args);
+      this.id = (this as any).id ?? `id_${Date.now()}`;
     }
   };
 }
@@ -435,9 +1353,385 @@ function timedMethod<This, Args extends any[], Return>(
 
 ---
 
-#### Q9: How do you write an auto-bind method decorator in Stage 3?
+### Recall
+1. What does a class decorator receive as its `target`? The class constructor function.
+2. How do you replace a class implementation using a decorator? By returning a new constructor function (usually subclassing `target`).
+3. Does returning `class extends target` break `instanceof`? No; prototype inheritance is preserved.
+
+> **If you remember only one thing:**  
+> Class decorators inspect or replace class constructors, preserving the prototype chain by returning derived classes.
+
+---
+
+# Checkpoint Challenge 1: TC39 Decorator Foundations (Topics 1-5)
+
+### Challenge Specification
+Build an Entity Framework setup utilizing all 4 decorator types:
+1. A **Class Decorator** (`@table(name)`) registering the class in an entity registry.
+2. A **Field Decorator** (`@generatedId()`) initializing a unique identifier.
+3. An **Auto-Accessor Decorator** (`@range(min, max)`) clamping a numeric property.
+4. A **Method Decorator** (`@auditLog`) logging method execution.
+
+### Solution
+
+```typescript
+// 1. Table Registry & Class Decorator
+type Ctor = new (...args: any[]) => any;
+const entityRegistry = new Map<string, Ctor>();
+
+function table(name: string) {
+  return function <T extends Ctor>(target: T, context: ClassDecoratorContext) {
+    entityRegistry.set(name, target);
+  };
+}
+
+// 2. Field Decorator
+function generatedId() {
+  return function (target: undefined, context: ClassFieldDecoratorContext) {
+    return function (this: any, initial: string | undefined): string {
+      return initial ?? `ent_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
+    };
+  };
+}
+
+// 3. Accessor Decorator
+function range(min: number, max: number) {
+  return function <This>(
+    target: ClassAccessorDecoratorTarget<This, number>,
+    context: ClassAccessorDecoratorContext<This, number>
+  ): ClassAccessorDecoratorResult<This, number> {
+    return {
+      set(this: This, value: number) {
+        const clamped = Math.max(min, Math.min(max, value));
+        target.set.call(this, clamped);
+      },
+      init(this: This, value: number) {
+        return Math.max(min, Math.min(max, value));
+      },
+    };
+  };
+}
+
+// 4. Method Decorator
+function auditLog<This, Args extends any[], Return>(
+  target: (this: This, ...args: Args) => Return,
+  context: ClassMethodDecoratorContext
+) {
+  const name = String(context.name);
+  return function (this: This, ...args: Args): Return {
+    console.log(`[AUDIT] Invoking ${name}`);
+    return target.call(this, ...args);
+  };
+}
+
+// 5. Applying all Decorators to an Account Entity
+@table("accounts")
+class AccountEntity {
+  @generatedId()
+  id!: string;
+
+  @range(0, 1000)
+  accessor riskScore: number = 50;
+
+  @auditLog
+  calculateHealth(): string {
+    return `Account ${this.id} has risk score ${this.riskScore}`;
+  }
+}
+
+// 6. Verification
+function verifyCheckpoint1() {
+  console.log("Registry has 'accounts':", entityRegistry.has("accounts"));
+
+  const account = new AccountEntity();
+  console.log("Generated ID:", account.id.startsWith("ent_"));
+
+  account.riskScore = 5000; // Clamped to 1000
+  console.log("Clamped Risk Score (max 1000):", account.riskScore === 1000);
+
+  const health = account.calculateHealth();
+  console.log("Health message:", health);
+}
+verifyCheckpoint1();
+```
+
+
+---
+
+# Topic 6: Decorator Execution and Evaluation Ordering
+
+### 1. What is it?
+When multiple decorators are applied to a class and its members, they evaluate and execute according to strict language specification rules:
+1. **Decorator Evaluation**: Expressions for decorator factories evaluate from **top-to-bottom**.
+2. **Decorator Execution**: The decorator functions themselves execute from **bottom-to-top** (reverse order, like mathematical function composition: $f(g(x))$).
+3. **Member Order**: Instance member decorators run before static member decorators, which run before class-level decorators.
+
+### 2. Why does it exist?
+Understanding execution order is critical when decorators depend on each other (e.g., an `@auth` decorator that must run before a `@log` decorator, or metadata decorators that must register data before a `@controller` decorator reads it).
+
+### 3. Basic example
+
+```typescript
+function first() {
+  console.log("first(): factory evaluated");
+  return function (target: any, context: ClassMethodDecoratorContext) {
+    console.log("first(): decorator executed");
+  };
+}
+
+function second() {
+  console.log("second(): factory evaluated");
+  return function (target: any, context: ClassMethodDecoratorContext) {
+    console.log("second(): decorator executed");
+  };
+}
+
+class Example {
+  @first()
+  @second()
+  method() {}
+}
+```
+
+**Output when this file is evaluated:**
+```
+first(): factory evaluated
+second(): factory evaluated
+second(): decorator executed
+first(): decorator executed
+```
+
+**Line-by-line explanation:**
+- `@first()`: The outer expression `first()` runs first, returning its decorator function.
+- `@second()`: The inner expression `second()` runs second, returning its decorator function.
+- Then, the JavaScript engine applies them in reverse order:
+  - `second`'s decorator executes first on the original method.
+  - `first`'s decorator executes second on the result of `second`.
+
+---
+
+### 4. How it works inside TypeScript
+1. **Phase 1: Outer Evaluation**: Outer decorator expressions are evaluated top-to-bottom to obtain the decorator functions.
+2. **Phase 2: Member Execution**:
+   - Member decorators (methods, getters/setters, accessors, fields) are executed in the order they appear in source code, with multiple decorators on the same member running bottom-to-top.
+3. **Phase 3: Class Execution**:
+   - After all class members are decorated and installed, the class-level decorators execute bottom-to-top.
+
+---
+
+### 5. More examples
+
+#### Example 1: Full Member vs Class Execution Trace
+```typescript
+function logStep(name: string) {
+  return function (target: any, context: any) {
+    console.log(`Executed: ${name} on ${String(context.name ?? "class")}`);
+  };
+}
+
+@logStep("Class Decorator 1")
+@logStep("Class Decorator 2")
+class Demo {
+  @logStep("Instance Field")
+  prop: string = "val";
+
+  @logStep("Instance Method")
+  fn() {}
+
+  @logStep("Static Method")
+  static staticFn() {}
+}
+```
+**Execution output:**
+1. Member decorators execute in declaration order:
+   - `Executed: Instance Field on prop`
+   - `Executed: Instance Method on fn`
+   - `Executed: Static Method on staticFn`
+2. Class decorators execute bottom-to-top:
+   - `Executed: Class Decorator 2 on class`
+   - `Executed: Class Decorator 1 on class`
+
+---
+
+### 6. Common mistakes
+
+#### Mistake 1: Expecting decorators to execute top-to-bottom
+```typescript
+// WRONG ASSUMPTION:
+@outerDecorator // Expecting this to wrap innerDecorator's output, but expecting outer to run first!
+@innerDecorator
+method() {}
+```
+**Why it fails:** Remember $f(g(x))$. `innerDecorator` runs first, receiving the raw method. `outerDecorator` runs second, receiving the wrapper created by `innerDecorator`.
+
+#### Mistake 2: Expecting decorators to execute during instance creation
+```typescript
+// WRONG: Expecting class/method decorators to run upon 'new MyClass()'
+```
+**Why it fails:** Decorators execute **once** when the class definition is first loaded and evaluated by the JavaScript engine, NOT when individual instances are created with `new`. (Initializer hooks `addInitializer` and field initializers run on `new`, but the decorator function itself runs at class definition time).
+
+---
+
+### 7. Rules to remember
+1. Decorator factory expressions evaluate top-to-bottom.
+2. Multiple decorators on the same member execute bottom-to-top.
+3. All member decorators execute before class decorators execute.
+4. Decorators execute once at class definition time, not on every `new` instantiation.
+
+---
+
+### Think first: Prediction puzzle
+What is the exact sequence of numbers printed?
+
+```typescript
+function track(n: number) {
+  console.log(`Eval ${n}`);
+  return function (target: any, ctx: any) {
+    console.log(`Exec ${n}`);
+  };
+}
+
+class Test {
+  @track(1)
+  @track(2)
+  run() {}
+}
+```
+
+---
+
 **Answer:**
-Use `context.addInitializer()` to bind the method instance in the constructor:
+```
+Eval 1
+Eval 2
+Exec 2
+Exec 1
+```
+**Execution trace:**
+1. `track(1)` is evaluated: prints `Eval 1`.
+2. `track(2)` is evaluated: prints `Eval 2`.
+3. Decorators execute in reverse:
+   - Decorator 2 executes: prints `Exec 2`.
+   - Decorator 1 executes: prints `Exec 1`.
+
+---
+
+### Practice exercises
+
+#### Exercise 1: Pipeline wrapper order verification
+- **Task**: Create two decorators `@addHeader` and `@addFooter`. Apply `@addHeader` then `@addFooter` on `render(): string[]`. Verify which one wraps the other.
+- **Hint 1**: The outer decorator wraps the inner decorator.
+
+#### Exercise 2: Tracing static vs instance ordering
+- **Task**: Write a class with a static field and an instance field, both decorated. Log `context.static` to confirm execution order.
+- **Hint 1**: Instance members evaluate before static members in standard declaration order.
+
+#### Exercise 3: Three-layer composition
+- **Task**: Apply three decorators `@dec(1)`, `@dec(2)`, `@dec(3)` to a class. Predict and verify execution order.
+- **Hint 1**: Execution order: 3, then 2, then 1.
+
+#### Exercise 4: Guarding against undefined inputs in composed decorators
+- **Task**: Write an outer decorator that handles the case where an inner decorator returned `undefined` (preserving original method).
+- **Hint 1**: `target` passed to outer will be whatever inner returned (or original if `undefined`).
+
+---
+
+### Exercise solutions
+
+#### Solution 1: Pipeline wrapper order verification
+```typescript
+function addHeader(target: any, ctx: ClassMethodDecoratorContext) {
+  return function (this: any): string[] {
+    return ["--- HEADER ---", ...target.call(this)];
+  };
+}
+
+function addFooter(target: any, ctx: ClassMethodDecoratorContext) {
+  return function (this: any): string[] {
+    return [...target.call(this), "--- FOOTER ---"];
+  };
+}
+
+class DocumentRenderer {
+  @addHeader
+  @addFooter
+  render(): string[] {
+    return ["Content body"];
+  }
+}
+
+const doc = new DocumentRenderer();
+console.log(doc.render());
+// [ '--- HEADER ---', 'Content body', '--- FOOTER ---' ]
+```
+
+#### Solution 2: Tracing static vs instance ordering
+```typescript
+function traceScope(target: any, ctx: ClassFieldDecoratorContext) {
+  console.log(`Field ${String(ctx.name)}, static: ${ctx.static}`);
+}
+
+class OrderingTest {
+  @traceScope
+  instanceVal = 1;
+
+  @traceScope
+  static staticVal = 2;
+}
+```
+
+#### Solution 3: Three-layer composition
+```typescript
+function dec(id: number) {
+  return function (target: any, ctx: ClassDecoratorContext) {
+    console.log(`Class dec: ${id}`);
+  };
+}
+
+@dec(1)
+@dec(2)
+@dec(3)
+class DemoClass {}
+// Output: Class dec: 3, Class dec: 2, Class dec: 1
+```
+
+#### Solution 4: Guarding against undefined inputs in composed decorators
+```typescript
+function safeWrapper(target: any, ctx: ClassMethodDecoratorContext) {
+  return function (this: any, ...args: any[]) {
+    return target ? target.apply(this, args) : undefined;
+  };
+}
+```
+
+---
+
+### Recall
+1. In what order do multiple decorator factories evaluate? Top-to-bottom.
+2. In what order do the resulting decorator functions execute? Bottom-to-top.
+3. Do member decorators execute before or after class decorators? Before.
+
+> **If you remember only one thing:**  
+> Decorator evaluation is top-to-bottom, while decorator execution is bottom-to-top ($f(g(x))$ composition).
+
+---
+
+# Topic 7: The `addInitializer` Lifecycle Hook (Instance vs Static Initializers)
+
+### 1. What is it?
+Every decorator `context` object in TC39 Stage 3 includes an **`addInitializer`** method:
+```typescript
+context.addInitializer(initializerFn: (this: This) => void): void
+```
+This hook schedules a callback function to run during object lifecycle initialization:
+- On **instance members** (methods, accessors, fields): The callback executes inside the constructor when a new instance is created.
+- On **static members**: The callback executes immediately after static class initialization.
+- On **classes**: The callback executes immediately after the class constructor has been defined and decorated.
+
+### 2. Why does it exist?
+Previously, to automatically bind an instance method to `this` (the "autobind" pattern), libraries had to replace methods with getters or mutate the prototype in complex ways. With `context.addInitializer`, a decorator can cleanly bind the method or register the instance inside the constructor automatically.
+
+### 3. Basic example
 
 ```typescript
 function autobind<This, Args extends any[], Return>(
@@ -445,1188 +1739,171 @@ function autobind<This, Args extends any[], Return>(
   context: ClassMethodDecoratorContext<This, (this: This, ...args: Args) => Return>
 ) {
   const methodName = context.name;
+
   context.addInitializer(function (this: This) {
+    // This runs inside the constructor for each new instance!
     (this as any)[methodName] = target.bind(this);
   });
 }
-```
 
----
+class ClickHandler {
+  private message = "Button clicked";
 
-#### Q10: What does a field decorator receive as its `target` argument in Stage 3?
-**Answer:**
-In Stage 3, the `target` argument passed to a field decorator is always `undefined`! This is because class fields do not exist on the prototype during class definition.
-
----
-
-#### Q11: What can a field decorator return in Stage 3?
-**Answer:**
-A field decorator can return an **initializer function** `(initialValue: Value) => Value` that modifies or transforms the initial field value when an instance is constructed:
-
-```typescript
-function toUpper<This, Value extends string>(
-  target: undefined,
-  context: ClassFieldDecoratorContext<This, Value>
-) {
-  return function (initialValue: Value): Value {
-    return initialValue.toUpperCase() as Value;
-  };
-}
-```
-
----
-
-#### Q12: Can a field decorator intercept subsequent property assignments after construction?
-**Answer:**
-No. A field decorator only intercepts the **initialization** value. To intercept subsequent assignments (`set`) and reads (`get`), you must use an **auto-accessor** decorator (`accessor prop: Type`).
-
----
-
-#### Q13: What is the execution order of decorators on a class?
-**Answer:**
-1. Member decorators execute in definition order from top to bottom inside the class body.
-2. If multiple decorators decorate a single member, they execute **inside-out / bottom-up** (closest to the member first).
-3. Class decorators execute last, after all member decorators have run.
-
----
-
-#### Q14: What is the evaluation order of decorator factory expressions vs decorator execution?
-**Answer:**
-Decorator factory expressions evaluate in order from top to bottom (like normal arguments). The resulting decorator functions execute in reverse order (bottom-up / inside-out).
-
-```typescript
-function dec(name: string) {
-  console.log(`Evaluated: ${name}`);
-  return (target: any, context: any) => { console.log(`Executed: ${name}`); };
-}
-
-class Test {
-  @dec("Outer")
-  @dec("Inner")
-  method() {}
-}
-// Output:
-// Evaluated: Outer
-// Evaluated: Inner
-// Executed: Inner
-// Executed: Outer
-```
-
----
-
-#### Q15: What is `Symbol.metadata` in TypeScript 5.2+?
-**Answer:**
-`Symbol.metadata` is a standard ECMAScript well-known symbol. The metadata attached to `context.metadata` during class definition is assigned to `Constructor[Symbol.metadata]`.
-
----
-
-#### Q16: How do subclasses inherit decorator metadata in TypeScript 5.2+?
-**Answer:**
-Through standard prototype inheritance:
-`SubClass[Symbol.metadata].__proto__ === SuperClass[Symbol.metadata]`.
-Subclasses inherit base class metadata automatically while isolating their own mutations.
-
----
-
-#### Q17: How do you polyfill `Symbol.metadata` in Node.js or browser environments?
-**Answer:**
-```typescript
-(Symbol as any).metadata ??= Symbol("Symbol.metadata");
-```
-
----
-
-#### Q18: Can TC39 Stage 3 decorate `#private` members?
-**Answer:**
-Yes. Stage 3 decorators fully support private identifiers (`#field`, `#method`). In the decorator context, `context.private` will be `true`.
-
----
-
-#### Q19: Why are parameter decorators not supported in TC39 Stage 3?
-**Answer:**
-The TC39 committee separated parameter decorators into a distinct follow-up proposal (Stage 1/2) to stabilize the core decorator proposal first.
-
----
-
-#### Q20: How do modern Stage 3 frameworks achieve dependency injection without parameter decorators?
-**Answer:**
-By injecting dependencies into **auto-accessors** using `@inject(token) accessor service: ServiceType;` or using class-level metadata maps.
-
----
-
-#### Q21: How do you write a `@retry(maxRetries, delayMs)` method decorator?
-**Answer:**
-```typescript
-function retry(maxRetries: number = 3, delayMs: number = 100) {
-  return function <This, Args extends any[], Return>(
-    target: (this: This, ...args: Args) => Promise<Return>,
-    context: ClassMethodDecoratorContext<This, (this: This, ...args: Args) => Promise<Return>>
-  ) {
-    return async function (this: This, ...args: Args): Promise<Return> {
-      let attempts = 0;
-      while (attempts < maxRetries) {
-        try {
-          return await target.call(this, ...args);
-        } catch (err) {
-          attempts++;
-          if (attempts >= maxRetries) throw err;
-          await new Promise((r) => setTimeout(r, delayMs));
-        }
-      }
-      throw new Error("Retry attempts exhausted");
-    };
-  };
-}
-```
-
----
-
-#### Q22: How do you write a `@memoize()` method decorator?
-**Answer:**
-```typescript
-function memoize<This, Args extends any[], Return>(
-  target: (this: This, ...args: Args) => Return,
-  context: ClassMethodDecoratorContext<This, (this: This, ...args: Args) => Return>
-) {
-  const cache = new Map<string, Return>();
-  return function (this: This, ...args: Args): Return {
-    const key = JSON.stringify(args);
-    if (cache.has(key)) return cache.get(key)!;
-    const res = target.call(this, ...args);
-    cache.set(key, res);
-    return res;
-  };
-}
-```
-
----
-
-#### Q23: How do you write a `@debounce(delayMs)` method decorator?
-**Answer:**
-```typescript
-function debounce(delayMs: number) {
-  return function <This, Args extends any[]>(
-    target: (this: This, ...args: Args) => void,
-    context: ClassMethodDecoratorContext<This, (this: This, ...args: Args) => void>
-  ) {
-    let timeout: any = null;
-    return function (this: This, ...args: Args): void {
-      clearTimeout(timeout);
-      timeout = setTimeout(() => target.call(this, ...args), delayMs);
-    };
-  };
-}
-```
-
----
-
-#### Q24: How do you write a `@deprecated(warningMessage)` method decorator?
-**Answer:**
-```typescript
-function deprecated(message: string = "This method is deprecated.") {
-  return function <This, Args extends any[], Return>(
-    target: (this: This, ...args: Args) => Return,
-    context: ClassMethodDecoratorContext<This, (this: This, ...args: Args) => Return>
-  ) {
-    let warned = false;
-    return function (this: This, ...args: Args): Return {
-      if (!warned) {
-        console.warn(`[DEPRECATION] ${String(context.name)}: ${message}`);
-        warned = true;
-      }
-      return target.call(this, ...args);
-    };
-  };
-}
-```
-
----
-
-#### Q25: Can a Stage 3 class decorator return a replacement constructor function?
-**Answer:**
-Yes. A class decorator can return a new constructor extending the target:
-
-```typescript
-function singleton<T extends new (...args: any[]) => any>(
-  target: T,
-  context: ClassDecoratorContext<T>
-) {
-  let instance: InstanceType<T>;
-  return class extends target {
-    constructor(...args: any[]) {
-      if (instance) return instance;
-      super(...args);
-      instance = this as any;
-    }
-  };
-}
-```
-
----
-
-#### Q26: What happens if a decorator throws an exception during class evaluation?
-**Answer:**
-Class evaluation immediately aborts with that exception, preventing the class constructor from being defined or registered in the environment.
-
----
-
-#### Q27: How does `context.addInitializer()` work on class static methods?
-**Answer:**
-The initializer callback executes immediately when the class declaration is being finalized, receiving the constructor function as `this`.
-
----
-
-#### Q28: How does `context.addInitializer()` work on instance methods?
-**Answer:**
-The initializer callback executes inside the instance constructor during `new ClassName()`, receiving the freshly created instance as `this`.
-
----
-
-#### Q29: How do you write a decorator that validates method argument types at runtime?
-**Answer:**
-Wrap the target function and evaluate arguments against validation rules before invoking the target:
-
-```typescript
-function assertPositive(index: number) {
-  return function <This, Args extends number[], Return>(
-    target: (this: This, ...args: Args) => Return,
-    context: ClassMethodDecoratorContext<This, (this: This, ...args: Args) => Return>
-  ) {
-    return function (this: This, ...args: Args): Return {
-      if (args[index] <= 0) throw new Error(`Argument at index ${index} must be positive`);
-      return target.call(this, ...args);
-    };
-  };
-}
-```
-
----
-
-#### Q30: How do getter decorators differ from setter decorators in Stage 3?
-**Answer:**
-- `getter`: `context.kind === 'getter'`. Receives `target: () => Return`.
-- `setter`: `context.kind === 'setter'`. Receives `target: (value: Value) => void`.
-
----
-
-#### Q31: How do you type a Stage 3 decorator that works on both getters and setters?
-**Answer:**
-Use a union of `ClassGetterDecoratorContext` and `ClassSetterDecoratorContext`.
-
----
-
-#### Q32: What is the `ClassAccessorDecoratorTarget` interface?
-**Answer:**
-The target passed to an auto-accessor decorator:
-```typescript
-interface ClassAccessorDecoratorTarget<This, Value> {
-  get: (this: This) => Value;
-  set: (this: This, value: Value) => void;
-}
-```
-
----
-
-#### Q33: What is the `ClassAccessorDecoratorResult` interface?
-**Answer:**
-The optional replacement object returned by an auto-accessor decorator:
-```typescript
-interface ClassAccessorDecoratorResult<This, Value> {
-  get?: (this: This) => Value;
-  set?: (this: This, value: Value) => void;
-  init?: (this: This, value: Value) => Value;
-}
-```
-
----
-
-#### Q34: How do you make an auto-accessor property readonly using a decorator?
-**Answer:**
-Return a replacement setter that throws an error:
-
-```typescript
-function readonlyAccessor<This, Value>(
-  target: ClassAccessorDecoratorTarget<This, Value>,
-  context: ClassAccessorDecoratorContext<This, Value>
-): ClassAccessorDecoratorResult<This, Value> {
-  return {
-    set(this: This, _val: Value) {
-      throw new Error(`Cannot modify readonly accessor: ${String(context.name)}`);
-    }
-  };
-}
-```
-
----
-
-#### Q35: How does `context.access.get` provide direct property access?
-**Answer:**
-`context.access.get(instance)` invokes the underlying getter for the decorated member, even if the member is private (`#field`)!
-
----
-
-#### Q36: Can `context.access` read private `#fields` from external code?
-**Answer:**
-Yes! If a decorator stores `context.access.get` in an external registry, that registry can read private fields on instances of that class without syntax errors.
-
----
-
-#### Q37: How do you write a decorator that marks a class as an OpenAPI Controller?
-**Answer:**
-Store route metadata on `context.metadata`:
-
-```typescript
-function controller(prefix: string) {
-  return function <T extends abstract new (...args: any[]) => any>(
-    target: T,
-    context: ClassDecoratorContext<T>
-  ) {
-    context.metadata.routePrefix = prefix;
-  };
-}
-```
-
----
-
-#### Q38: How do you write an HTTP `@get(path)` route decorator?
-**Answer:**
-```typescript
-function get(path: string) {
-  return function <This, Args extends any[], Return>(
-    target: (this: This, ...args: Args) => Return,
-    context: ClassMethodDecoratorContext<This, (this: This, ...args: Args) => Return>
-  ) {
-    if (!context.metadata.routes) context.metadata.routes = [];
-    (context.metadata.routes as any[]).push({ method: "GET", path, handler: context.name });
-  };
-}
-```
-
----
-
-#### Q39: What is the performance impact of Stage 3 decorators compared to legacy decorators?
-**Answer:**
-Stage 3 decorators execute faster because they integrate directly into native VM class evaluation instead of executing through external polyfill monkey-patching.
-
----
-
-#### Q40: Can you decorate static auto-accessors?
-**Answer:**
-Yes. In static auto-accessors, `context.static === true`, and `this` refers to the constructor rather than an instance.
-
----
-
-#### Q41: How do you enforce that a decorator is ONLY applied to methods, not fields or classes?
-**Answer:**
-By constraining the `context` parameter to `ClassMethodDecoratorContext`:
-```typescript
-function methodOnly(target: Function, context: ClassMethodDecoratorContext) {}
-```
-
----
-
-#### Q42: What happens if you apply `methodOnly` to a field in TypeScript?
-**Answer:**
-TypeScript flags compile error `TS1270: Decorator function return type is not assignable to type of target member`.
-
----
-
-#### Q43: How do you write a `@clamp(min, max)` auto-accessor decorator for numeric properties?
-**Answer:**
-```typescript
-function clamp(min: number, max: number) {
-  return function <This, Value extends number>(
-    target: ClassAccessorDecoratorTarget<This, Value>,
-    context: ClassAccessorDecoratorContext<This, Value>
-  ): ClassAccessorDecoratorResult<This, Value> {
-    return {
-      set(this: This, val: Value) {
-        const clamped = Math.max(min, Math.min(max, val)) as Value;
-        target.set.call(this, clamped);
-      },
-      init(this: This, val: Value) {
-        return Math.max(min, Math.min(max, val)) as Value;
-      }
-    };
-  };
-}
-```
-
----
-
-#### Q44: Can decorators modify the TypeScript type of the decorated target?
-**Answer:**
-No! Decorators cannot alter the compile-time type signature of the member they decorate. They can only return an implementation conforming to the existing type.
-
----
-
-#### Q45: How do you combine Stage 3 decorators with `Disposable` (`using`)?
-**Answer:**
-A class decorator can wrap the constructor to attach `[Symbol.dispose]` if not already implemented.
-
-
----
-
-## 3. 90 Real-World Technical Interview Q&As (Part 2: Q46–Q90)
-
----
-
-#### Q46: How do you design an IoC Container using native Stage 3 Decorator Metadata?
-**Answer:**
-1. Store dependency injection tokens on `context.metadata`.
-2. The container reads `Constructor[Symbol.metadata]` during `.resolve()`.
-3. Auto-accessors are populated with resolved dependencies:
-
-```typescript
-(Symbol as any).metadata ??= Symbol("Symbol.metadata");
-const INJECTIONS = Symbol("INJECTIONS");
-
-function inject(token: string) {
-  return function (target: any, context: ClassAccessorDecoratorContext) {
-    if (!context.metadata[INJECTIONS]) context.metadata[INJECTIONS] = new Map();
-    (context.metadata[INJECTIONS] as Map<any, any>).set(context.name, token);
-    return target;
-  };
-}
-```
-
----
-
-#### Q47: How does a Singleton lifecycle work in a custom IoC container?
-**Answer:**
-The container checks an internal `instances: Map<Token, any>` cache. If an instance already exists, it returns it; otherwise, it instantiates the target, caches it, and returns it.
-
----
-
-#### Q48: How does a Transient lifecycle work in an IoC container?
-**Answer:**
-The container instantiates a brand new instance every time `.resolve(token)` is invoked.
-
----
-
-#### Q49: How do you detect circular dependencies in an IoC Container?
-**Answer:**
-Maintain a `resolvingSet: Set<Token>` during recursive resolution. If `resolvingSet.has(token)` is true, throw `CircularDependencyError`:
-
-```typescript
-if (this.resolvingSet.has(token)) {
-  throw new Error(`Circular dependency detected on token: ${String(token)}`);
-}
-this.resolvingSet.add(token);
-try {
-  return this.instantiate(token);
-} finally {
-  this.resolvingSet.delete(token);
-}
-```
-
----
-
-#### Q50: How do you support Hierarchical / Scoped IoC Containers (Parent/Child containers)?
-**Answer:**
-A child container holds a reference to its `parent`. When resolving a token, if not found locally, it delegates up to `parent.resolve(token)`. Scoped services live in the child container and are garbage-collected when the child container is disposed.
-
----
-
-#### Q51: How do you automatically dispose Scoped services using `[Symbol.asyncDispose]`?
-**Answer:**
-Implement `AsyncDisposable` on the scoped container. When an HTTP request completes, `await using scope = rootContainer.createScope();` automatically tears down all database handles and open sockets in that scope.
-
----
-
-#### Q52: How do you write an `@auditLog` method decorator?
-**Answer:**
-Record invocation timestamps, actor IDs, and parameters before and after execution:
-
-```typescript
-function auditLog(actionName: string) {
-  return function <This, Args extends any[], Return>(
-    target: (this: This, ...args: Args) => Promise<Return>,
-    context: ClassMethodDecoratorContext<This, (this: This, ...args: Args) => Promise<Return>>
-  ) {
-    return async function (this: This, ...args: Args): Promise<Return> {
-      console.log(`[AUDIT START] Action: ${actionName}, Time: ${new Date().toISOString()}`);
-      try {
-        const result = await target.call(this, ...args);
-        console.log(`[AUDIT SUCCESS] Action: ${actionName}`);
-        return result;
-      } catch (err) {
-        console.error(`[AUDIT FAILURE] Action: ${actionName}, Error:`, err);
-        throw err;
-      }
-    };
-  };
-}
-```
-
----
-
-#### Q53: How do you write an `@authorized(roles)` security decorator?
-**Answer:**
-Check the caller's context permissions before allowing the target method to execute:
-
-```typescript
-function authorized(...requiredRoles: string[]) {
-  return function <This extends { currentUser?: { roles: string[] } }, Args extends any[], Return>(
-    target: (this: This, ...args: Args) => Return,
-    context: ClassMethodDecoratorContext<This, (this: This, ...args: Args) => Return>
-  ) {
-    return function (this: This, ...args: Args): Return {
-      const user = this.currentUser;
-      if (!user || !requiredRoles.some((r) => user.roles.includes(r))) {
-        throw new Error(`Unauthorized: Requires roles [${requiredRoles.join(", ")}]`);
-      }
-      return target.call(this, ...args);
-    };
-  };
-}
-```
-
----
-
-#### Q54: How do you write a `@transactional()` decorator for database operations?
-**Answer:**
-Wrap the method in a database transaction boundary, committing on success and rolling back on error:
-
-```typescript
-interface HasDbClient {
-  db: { begin(): Promise<any>; commit(): Promise<void>; rollback(): Promise<void> };
-}
-
-function transactional() {
-  return function <This extends HasDbClient, Args extends any[], Return>(
-    target: (this: This, ...args: Args) => Promise<Return>,
-    context: ClassMethodDecoratorContext<This, (this: This, ...args: Args) => Promise<Return>>
-  ) {
-    return async function (this: This, ...args: Args): Promise<Return> {
-      await this.db.begin();
-      try {
-        const result = await target.call(this, ...args);
-        await this.db.commit();
-        return result;
-      } catch (err) {
-        await this.db.rollback();
-        throw err;
-      }
-    };
-  };
-}
-```
-
----
-
-#### Q55: How do you write a `@cacheEvict(keys)` decorator?
-**Answer:**
-Clear specified cache entries whenever the target mutating method executes successfully:
-
-```typescript
-function cacheEvict(cacheMap: Map<string, any>, keyExtractor: (...args: any[]) => string) {
-  return function <This, Args extends any[], Return>(
-    target: (this: This, ...args: Args) => Promise<Return>,
-    context: ClassMethodDecoratorContext<This, (this: This, ...args: Args) => Promise<Return>>
-  ) {
-    return async function (this: This, ...args: Args): Promise<Return> {
-      const res = await target.call(this, ...args);
-      const cacheKey = keyExtractor(...args);
-      cacheMap.delete(cacheKey);
-      return res;
-    };
-  };
-}
-```
-
----
-
-#### Q56: How do you auto-register event handlers using `@onEvent(eventName)` and `context.addInitializer`?
-**Answer:**
-```typescript
-interface GlobalEventHub {
-  on(event: string, handler: Function): void;
-}
-declare const eventHub: GlobalEventHub;
-
-function onEvent(event: string) {
-  return function <This, Args extends any[], Return>(
-    target: (this: This, ...args: Args) => Return,
-    context: ClassMethodDecoratorContext<This, (this: This, ...args: Args) => Return>
-  ) {
-    context.addInitializer(function (this: This) {
-      eventHub.on(event, target.bind(this));
-    });
-  };
-}
-```
-
----
-
-#### Q57: How do you extract an OpenAPI route table from decorated controller classes?
-**Answer:**
-Read `Constructor[Symbol.metadata]` to inspect route prefixes and handler endpoint mappings:
-
-```typescript
-function extractOpenApiSpec(controllers: any[]) {
-  const spec: Record<string, any> = { paths: {} };
-  for (const ctor of controllers) {
-    const meta = ctor[Symbol.metadata];
-    if (meta?.routePrefix && meta?.routes) {
-      for (const route of meta.routes) {
-        const fullPath = `${meta.routePrefix}${route.path}`;
-        spec.paths[fullPath] = { [route.method.toLowerCase()]: { operationId: String(route.handler) } };
-      }
-    }
+  @autobind
+  handleClick(): void {
+    console.log(this.message);
   }
-  return spec;
 }
+
+const handler = new ClickHandler();
+// Extract method reference (tearing the method away from the object)
+const extracted = handler.handleClick;
+
+extracted(); // Logs "Button clicked" - does NOT throw undefined error!
 ```
 
+**Line-by-line explanation:**
+- `context.addInitializer(function (this: This) { ... })`: Registers a callback to be called during `new ClickHandler()` instantiation.
+- `target.bind(this)`: Creates an arrow/bound function locked to the specific instance.
+- `(this as any)[methodName] = ...`: Overrides the prototype method lookup on this specific instance.
+- `extracted()`: Calling `extracted` standalone retains the correct `this.message` because it was bound inside the constructor.
+
 ---
 
-#### Q58: Can a method decorator decorate an `async *` generator method?
-**Answer:**
-Yes. The decorator wraps the generator function and returns an asynchronous generator.
+### 4. How it works inside TypeScript
+1. **Engine Scheduling**: When the TypeScript compiler outputs JavaScript for a decorated class, it inserts calls to registered initializers at the end of the constructor body (for instance members) or after class definition (for static members).
+2. **Order of Execution**: If multiple initializers are registered across multiple members, they execute in declaration order.
+3. **No Prototype Pollution**: Initializers operate directly on the instance (`this`), keeping the prototype clean.
 
 ---
 
-#### Q59: How do you prevent double-initialization bugs in `context.addInitializer`?
-**Answer:**
-Use an internal `WeakSet` instance tracker to guarantee that instance initialization logic runs exactly once per instance:
+### 5. More examples
 
+#### Example 1: Instance tracking / Registry via `addInitializer`
 ```typescript
-const initializedInstances = new WeakSet();
+const liveInstances = new Set<any>();
 
-function onceInit(target: any, context: ClassMethodDecoratorContext) {
-  context.addInitializer(function () {
-    if (!initializedInstances.has(this)) {
-      initializedInstances.add(this);
-      // Run one-time setup
-    }
-  });
-}
-```
-
----
-
-#### Q60: How does `context.access.set` allow decorators to modify `#private` fields?
-**Answer:**
-`context.access.set(instance, newValue)` uses the engine's internal private name slot binding, allowing the decorator to update private fields without runtime syntax errors.
-
----
-
-#### Q61: What is the performance impact of auto-accessors compared to plain fields in V8?
-**Answer:**
-Auto-accessors require getter/setter invocations through function calls. In performance-critical loops running millions of operations, plain fields are faster unless V8's TurboFan inlines the auto-accessor.
-
----
-
-#### Q62: How do you write a `@rateLimited(maxRequests, intervalMs)` method decorator?
-**Answer:**
-Track timestamps in an array or sliding window inside the decorator closure:
-
-```typescript
-function rateLimited(maxRequests: number, intervalMs: number) {
-  return function <This, Args extends any[], Return>(
-    target: (this: This, ...args: Args) => Return,
-    context: ClassMethodDecoratorContext<This, (this: This, ...args: Args) => Return>
-  ) {
-    const timestamps: number[] = [];
-    return function (this: This, ...args: Args): Return {
-      const now = Date.now();
-      while (timestamps.length > 0 && timestamps[0] <= now - intervalMs) {
-        timestamps.shift();
-      }
-      if (timestamps.length >= maxRequests) {
-        throw new Error(`RateLimitExceeded on ${String(context.name)}`);
-      }
-      timestamps.push(now);
-      return target.call(this, ...args);
-    };
-  };
-}
-```
-
----
-
-#### Q63: How do modern bundlers (esbuild, SWC, Vite) compile Stage 3 decorators?
-**Answer:**
-If the build target is `ESNext` or `Node 22+`, they emit native decorator expressions. For older targets, they lower decorators into standard runtime helper functions (`__esDecorate`, `__runInitializers`).
-
----
-
-#### Q64: How do you write a decorator that wraps methods in an OpenTelemetry span?
-**Answer:**
-```typescript
-function traceSpan(spanName: string) {
-  return function <This, Args extends any[], Return>(
-    target: (this: This, ...args: Args) => Promise<Return>,
-    context: ClassMethodDecoratorContext<This, (this: This, ...args: Args) => Promise<Return>>
-  ) {
-    return async function (this: This, ...args: Args): Promise<Return> {
-      console.log(`[TRACE] Start Span: ${spanName}`);
-      try {
-        return await target.call(this, ...args);
-      } finally {
-        console.log(`[TRACE] End Span: ${spanName}`);
-      }
-    };
-  };
-}
-```
-
----
-
-#### Q65: How do you decorate a static method in Stage 3?
-**Answer:**
-The decorator checks `context.static === true`. The `this` parameter is typed as the constructor function:
-
-```typescript
-function staticMethodDec<This extends Function, Args extends any[], Return>(
-  target: (this: This, ...args: Args) => Return,
-  context: ClassMethodDecoratorContext<This, (this: This, ...args: Args) => Return>
-) {
-  if (!context.static) throw new Error("Must be static");
-  return target;
-}
-```
-
----
-
-#### Q66: Can a class decorator add new methods to a class instance that TypeScript recognizes at compile time?
-**Answer:**
-No! In TypeScript, decorators cannot mutate the compile-time type shape of a class. To add methods that are visible to TypeScript's type checker, you must use **Mixins** rather than decorators.
-
----
-
-#### Q67: How do you enforce Idempotency on payment endpoints using a decorator?
-**Answer:**
-```typescript
-const processedKeys = new Set<string>();
-
-function idempotent(keyArgIndex: number = 0) {
-  return function <This, Args extends any[], Return>(
-    target: (this: This, ...args: Args) => Promise<Return>,
-    context: ClassMethodDecoratorContext<This, (this: This, ...args: Args) => Promise<Return>>
-  ) {
-    return async function (this: This, ...args: Args): Promise<Return> {
-      const key = String(args[keyArgIndex]);
-      if (processedKeys.has(key)) {
-        throw new Error(`Duplicate request with idempotency key: ${key}`);
-      }
-      processedKeys.add(key);
-      return target.call(this, ...args);
-    };
-  };
-}
-```
-
----
-
-#### Q68: How do you write a decorator that catches errors and returns a `Result<T, E>` monad?
-**Answer:**
-```typescript
-function asResult() {
-  return function <This, Args extends any[], Return>(
-    target: (this: This, ...args: Args) => Promise<Return>,
-    context: ClassMethodDecoratorContext<This, (this: This, ...args: Args) => Promise<Return>>
-  ) {
-    return async function (this: This, ...args: Args): Promise<Result<Return, Error>> {
-      try {
-        const val = await target.call(this, ...args);
-        return ok(val);
-      } catch (err) {
-        return err(err instanceof Error ? err : new Error(String(err)));
-      }
-    };
-  };
-}
-```
-
----
-
-#### Q69: What is the difference between `@injectable()` and `@singleton()`?
-**Answer:**
-- `@injectable()`: Marks a class as eligible for IoC resolution. Defaults to transient lifecycle.
-- `@singleton()`: Marks a class to be instantiated once and reused for all subsequent resolutions.
-
----
-
-#### Q70: How do you write a field decorator that automatically initializes a property to an empty array?
-**Answer:**
-```typescript
-function defaultList<This, Value extends any[]>(
-  target: undefined,
-  context: ClassFieldDecoratorContext<This, Value>
-) {
-  return function (initialValue: Value): Value {
-    return (initialValue ?? []) as Value;
-  };
-}
-```
-
----
-
-#### Q71: How do you unit test a class decorated with `@retry`?
-**Answer:**
-Instantiate the class and invoke the method with a mock service that fails twice before succeeding, asserting that 3 total invocations occurred.
-
----
-
-#### Q72: How do you mock dependencies resolved by an IoC container in unit tests?
-**Answer:**
-Re-bind the token in the container to a mock implementation before calling `.resolve()`:
-`container.bind(DatabaseToken, MockDatabase);`
-
----
-
-#### Q73: What is the parameter decorator proposal status in TC39?
-**Answer:**
-Parameter decorators are currently an independent Stage 1/2 proposal. They will eventually allow decorating method parameters directly once standardized.
-
----
-
-#### Q74: How do you prevent prototype pollution when storing metadata on `context.metadata`?
-**Answer:**
-Use `Symbol` keys or namespaced objects rather than generic string keys on `context.metadata`.
-
----
-
-#### Q75: How do decorators interact with the `override` keyword?
-**Answer:**
-`override` works identically on decorated methods, verifying that the base class contains the member.
-
----
-
-#### Q76: Can you apply decorators to abstract classes and abstract methods?
-**Answer:**
-Abstract classes can be decorated with class decorators. Abstract methods cannot be decorated with method decorators because abstract methods have no runtime function implementation to wrap.
-
----
-
-#### Q77: How do you write a `@timeout(ms)` method decorator?
-**Answer:**
-```typescript
-function timeout(ms: number) {
-  return function <This, Args extends any[], Return>(
-    target: (this: This, ...args: Args) => Promise<Return>,
-    context: ClassMethodDecoratorContext<This, (this: This, ...args: Args) => Promise<Return>>
-  ) {
-    return async function (this: This, ...args: Args): Promise<Return> {
-      let timer: any;
-      const timeoutPromise = new Promise<never>((_, reject) => {
-        timer = setTimeout(() => reject(new Error(`Operation timed out after ${ms}ms`)), ms);
-      });
-      try {
-        return await Promise.race([target.call(this, ...args), timeoutPromise]);
-      } finally {
-        clearTimeout(timer);
-      }
-    };
-  };
-}
-```
-
----
-
-#### Q78: How do you write a `@clamp` decorator on an auto-accessor that enforces min/max bounds?
-**Answer:**
-Intercept `set` and `init` in `ClassAccessorDecoratorResult` and apply `Math.min`/`Math.max`.
-
----
-
-#### Q79: Can a decorator access other methods of the instance?
-**Answer:**
-Yes. Inside the replacement method, `this` refers to the instance, so `this.otherMethod()` can be invoked freely.
-
----
-
-#### Q80: How do you preserve method function names and arity in decorated methods?
-**Answer:**
-Assign `Object.defineProperty(replacement, 'name', { value: target.name })` and configure `length` to match `target.length`.
-
----
-
-#### Q81: How do you decorate a getter to automatically cache its return value on the instance?
-**Answer:**
-```typescript
-function lazyGetter<This extends object, Return>(
-  target: (this: This) => Return,
-  context: ClassGetterDecoratorContext<This, Return>
-) {
-  return function (this: This): Return {
-    const value = target.call(this);
-    Object.defineProperty(this, context.name, {
-      value,
-      writable: false,
-      configurable: true,
-    });
-    return value;
-  };
-}
-```
-
----
-
-#### Q82: How does `lazyGetter` optimize property access?
-**Answer:**
-The first read executes the getter and overwrites the getter on the instance with a plain data property (`Object.defineProperty`). All subsequent reads are direct property lookups with zero function overhead!
-
----
-
-#### Q83: What is the difference between decorating a class field vs an auto-accessor?
-**Answer:**
-- Field decorator: Runs once at property initialization; cannot intercept later writes or reads.
-- Auto-accessor: Synthesizes getters and setters; intercepts every read (`get`) and write (`set`) throughout the object's lifetime.
-
----
-
-#### Q84: How do you write an `@immutable` class decorator?
-**Answer:**
-```typescript
-function immutable<T extends new (...args: any[]) => any>(
+function trackInstances<T extends new (...args: any[]) => any>(
   target: T,
   context: ClassDecoratorContext<T>
 ) {
   context.addInitializer(function (this: any) {
-    Object.freeze(this);
+    console.log(`Class ${context.name} defined and initialized`);
   });
 }
 ```
 
----
-
-#### Q85: What happens if an auto-accessor setter throws during construction?
-**Answer:**
-The constructor terminates immediately, throwing that error, and instance construction fails.
-
----
-
-#### Q86: Can you compose multiple method decorators?
-**Answer:**
-Yes. `@timed @logged @retry(3) async method() {}`. They execute from bottom to top: `@retry` wraps `method`, `@logged` wraps that, and `@timed` wraps the outermost layer.
-
----
-
-#### Q87: How do you write a decorator that intercepts constructor arguments?
-**Answer:**
-Return a new subclass from a class decorator and intercept `...args` inside its constructor before calling `super(...args)`.
-
----
-
-#### Q88: How do you type an auto-accessor decorator that works with any property type?
-**Answer:**
-Use generics: `<This, Value>(target: ClassAccessorDecoratorTarget<This, Value>, context: ClassAccessorDecoratorContext<This, Value>)`.
-
----
-
-#### Q89: How do you verify that an IoC container does not leak memory in long-running services?
-**Answer:**
-Profile heap snapshots in Node.js to ensure Scoped child containers and transient instances are garbage-collected after requests finish.
-
----
-
-#### Q90: Why are TC39 Stage 3 Decorators the definitive future of TypeScript metaprogramming?
-**Answer:**
-They standardize decorators directly into the ECMAScript runtime specification, eliminate external polyfill libraries (`reflect-metadata`), provide native `Symbol.metadata` reflection, and deliver 100% type safety and private field compatibility.
-
-
----
-
-## 4. Output Prediction Puzzles (15 Puzzles with Step-by-Step Traces)
-
-Test your mental model of TC39 Stage 3 decorator evaluation and execution order, auto-accessor desugaring, `context.metadata` prototype linkage, and IoC resolution.
-
----
-
-### Puzzle 1: Evaluation vs Execution Order of Composed Decorators
-
+#### Example 2: Static member initializer
 ```typescript
-const trace: string[] = [];
-
-function decA() {
-  trace.push("Evaluate A");
-  return (target: any, context: any) => { trace.push("Execute A"); };
+function registerStaticCommand(
+  target: Function,
+  context: ClassMethodDecoratorContext
+) {
+  if (context.static) {
+    context.addInitializer(function () {
+      console.log(`Static command registered: ${String(context.name)}`);
+    });
+  }
 }
 
-function decB() {
-  trace.push("Evaluate B");
-  return (target: any, context: any) => { trace.push("Execute B"); };
+class CliCommands {
+  @registerStaticCommand
+  static help() { return "usage: cli <command>"; }
 }
-
-class Sample {
-  @decA()
-  @decB()
-  public run(): void {}
-}
-
-// Question: What is the sequence in 'trace'?
 ```
 
-**Step-by-Step Evaluation Trace:**
-1. Decorator expressions evaluate in top-to-bottom definition order:
-   - `decA()` evaluates -> pushes `"Evaluate A"`.
-   - `decB()` evaluates -> pushes `"Evaluate B"`.
-2. The resulting decorator functions execute in **reverse (inside-out / bottom-up)** order:
-   - Inner decorator (`decB` return) executes -> pushes `"Execute B"`.
-   - Outer decorator (`decA` return) executes -> pushes `"Execute A"`.
-3. **Output Sequence:**
-   ```javascript
-   [
-     "Evaluate A",
-     "Evaluate B",
-     "Execute B",
-     "Execute A"
-   ]
-   ```
-
 ---
 
-### Puzzle 2: Field Decorator Target Parameter
+### 6. Common mistakes
 
+#### Mistake 1: Using an arrow function inside `context.addInitializer`
 ```typescript
-let capturedTarget: any = "NOT_CAPTURED";
-
-function inspectField(target: any, context: ClassFieldDecoratorContext) {
-  capturedTarget = target;
-}
-
-class Example {
-  @inspectField
-  public count: number = 42;
-}
-
-// Question: What is the value of 'capturedTarget'?
+// WRONG: Arrow function has lexical 'this'
+context.addInitializer(() => {
+  this.value = 10; // 'this' is undefined or global, NOT the class instance!
+});
 ```
+**Why it fails:** An arrow function captures lexical `this`. You must use `function (this: This) { ... }` so the engine can pass the newly created instance as `this`.
 
-**Step-by-Step Evaluation Trace:**
-1. In TC39 Stage 3, class field properties do not exist on the prototype during class definition time.
-2. The specification explicitly dictates that for `kind: 'field'`, the first parameter (`target`) is always `undefined`.
-3. `capturedTarget` is assigned `undefined`.
-4. **Output Value:** `undefined`.
-
----
-
-### Puzzle 3: Auto-Accessor `init` vs `set` During Construction
-
+#### Mistake 2: Heavy computations in instance initializers
 ```typescript
-const operations: string[] = [];
-
-function trackAccessor<This, Value>(
-  target: ClassAccessorDecoratorTarget<This, Value>,
-  context: ClassAccessorDecoratorContext<This, Value>
-): ClassAccessorDecoratorResult<This, Value> {
-  return {
-    init(this: This, val: Value) {
-      operations.push(`Init: ${val}`);
-      return val;
-    },
-    set(this: This, val: Value) {
-      operations.push(`Set: ${val}`);
-      target.set.call(this, val);
-    }
-  };
-}
-
-class User {
-  @trackAccessor
-  accessor score: number = 100;
-}
-
-const u = new User();
-u.score = 200;
+// GOTCHA: Expensive synchronous work inside instance initializer
+context.addInitializer(function (this: any) {
+  syncDatabaseRead(); // Runs on EVERY single 'new MyClass()' invocation!
+});
 ```
-
-**Step-by-Step Evaluation Trace:**
-1. When `new User()` runs, the initial field assignment (`score: number = 100`) executes the `init` hook, NOT the `set` hook!
-2. Pushes `"Init: 100"`.
-3. Later, `u.score = 200` executes the `set` hook.
-4. Pushes `"Set: 200"`.
-5. **Output Sequence:**
-   ```javascript
-   [
-     "Init: 100",
-     "Set: 200"
-   ]
-   ```
+**Why it matters:** Instance initializers run on every object instantiation. Keep them lightweight (binding, subscription setup, registration).
 
 ---
 
-### Puzzle 4: `context.metadata` Inheritance Across Subclasses
-
-```typescript
-(Symbol as any).metadata ??= Symbol("Symbol.metadata");
-
-function markRole(role: string) {
-  return function (target: any, context: ClassDecoratorContext) {
-    context.metadata.role = role;
-  };
-}
-
-@markRole("BASE_ROLE")
-class ParentService {}
-
-class ChildService extends ParentService {}
-
-const parentMeta = (ParentService as any)[Symbol.metadata];
-const childMeta = (ChildService as any)[Symbol.metadata];
-
-// Case A: childMeta.role
-// Case B: childMeta === parentMeta
-```
-
-**Step-by-Step Evaluation Trace:**
-1. `ParentService` stores `role = "BASE_ROLE"` on its `Symbol.metadata` object.
-2. In TypeScript 5.2+, when `ChildService extends ParentService`, TypeScript links `ChildService[Symbol.metadata]` to `ParentService[Symbol.metadata]` via `Object.create(ParentService[Symbol.metadata])`.
-3. In Case A: `childMeta.role` resolves up the prototype chain to `"BASE_ROLE"`.
-4. In Case B: `childMeta` is a distinct object inheriting from `parentMeta` (`childMeta.__proto__ === parentMeta`). They are not reference equal (`!==`).
-5. **Output Values:** Case A = `"BASE_ROLE"`, Case B = `false`.
+### 7. Rules to remember
+1. `context.addInitializer` accepts a standard `function (this: This) { ... }`.
+2. For instance members, initializers run inside the constructor for each new instance.
+3. For static members, initializers run once after static class evaluation.
+4. Use `addInitializer` for autobinding, event listener attachment, or instance registration.
 
 ---
 
-### Puzzle 5: `addInitializer` Timing on Class vs Method Decorators
+### Think first: Prediction puzzle
+When does the initializer function execute?
 
 ```typescript
-const events: string[] = [];
-
-function classInit(target: any, context: ClassDecoratorContext) {
-  context.addInitializer(() => { events.push("Class Initializer"); });
+function onInit(target: any, context: ClassMethodDecoratorContext) {
+  console.log("A");
+  context.addInitializer(function () {
+    console.log("B");
+  });
 }
 
-function methodInit(target: any, context: ClassMethodDecoratorContext) {
-  context.addInitializer(function () { events.push("Method Initializer"); });
-}
-
-@classInit
 class Demo {
-  @methodInit
-  public test() {}
+  @onInit
+  test() {}
 }
 
-events.push("Before Instantiation");
+console.log("C");
 new Demo();
 ```
 
-**Step-by-Step Evaluation Trace:**
-1. Class definition phase:
-   - Method decorator runs; registers method initializer.
-   - Class decorator runs; registers class initializer.
-   - The class initializer runs **immediately** as the class definition finalizes -> pushes `"Class Initializer"`.
-2. `"Before Instantiation"` is pushed.
-3. `new Demo()` runs:
-   - Inside the instance constructor, method initializers execute -> pushes `"Method Initializer"`.
-4. **Output Sequence:**
-   ```javascript
-   [
-     "Class Initializer",
-     "Before Instantiation",
-     "Method Initializer"
-   ]
-   ```
+---
+
+**Answer:**
+```
+A
+C
+B
+```
+**Execution trace:**
+1. Class `Demo` definition evaluates: decorator runs and logs `"A"`.
+2. Script proceeds to `console.log("C")`: logs `"C"`.
+3. `new Demo()` runs constructor: executes registered initializer, logging `"B"`.
 
 ---
 
-### Puzzle 6: Autobind Method Extraction
+### Practice exercises
 
+#### Exercise 1: Autobind decorator implementation
+- **Task**: Write a `@bound` decorator that automatically binds any method to its instance using `context.addInitializer`.
+- **Hint 1**: `context.addInitializer(function (this: any) { this[context.name] = target.bind(this); });`.
+
+#### Exercise 2: Subscription cleanup registrar
+- **Task**: Use `context.addInitializer` to attach an empty array `this.cleanupFns = []` to each instance.
+- **Hint 1**: `(this as any).cleanupFns = [];`.
+
+#### Exercise 3: Static initialization logger
+- **Task**: Create a static method decorator that logs when static initialization completes.
+- **Hint 1**: Check `if (context.static)` and call `context.addInitializer`.
+
+#### Exercise 4: Disallow multiple autobindings on same method
+- **Task**: Prevent `@bound` from being added twice by checking a symbol tag on the method.
+- **Hint 1**: Check `if ((target as any).__isBound) return;`.
+
+---
+
+### Exercise solutions
+
+#### Solution 1: Autobind decorator implementation
 ```typescript
-function autobind<This, Args extends any[], Return>(
+function bound<This, Args extends any[], Return>(
   target: (this: This, ...args: Args) => Return,
   context: ClassMethodDecoratorContext<This, (this: This, ...args: Args) => Return>
 ) {
@@ -1636,1094 +1913,2174 @@ function autobind<This, Args extends any[], Return>(
   });
 }
 
-class Greeter {
-  public greeting: string = "Hello World";
-
-  @autobind
-  public greet(): string {
-    return this.greeting;
-  }
+class Counter {
+  count = 0;
+  @bound
+  increment() { this.count++; }
 }
 
-const g = new Greeter();
-const extractedFn = g.greet;
-const output = extractedFn();
-// Question: What is 'output'?
+const c = new Counter();
+const inc = c.increment;
+inc();
+console.log(c.count); // 1
 ```
 
-**Step-by-Step Evaluation Trace:**
-1. `context.addInitializer` executes when `new Greeter()` runs.
-2. It assigns an own property `greet` bound to `g` (`target.bind(this)`).
-3. `extractedFn` points to the bound method.
-4. When called unbound (`extractedFn()`), `this` remains permanently bound to `g`.
-5. Returns `"Hello World"`.
-6. **Output Value:** `"Hello World"`.
-
----
-
-### Puzzle 7: Lazy Getter Property Redefinition
-
+#### Solution 2: Subscription cleanup registrar
 ```typescript
-let computations = 0;
+function withCleanups(target: any, context: ClassDecoratorContext) {
+  context.addInitializer(function (this: any) {
+    this.cleanups = [];
+    this.destroy = () => {
+      this.cleanups.forEach((fn: Function) => fn());
+      this.cleanups = [];
+    };
+  });
+}
+```
 
-function lazy<This extends object, Return>(
-  target: (this: This) => Return,
-  context: ClassGetterDecoratorContext<This, Return>
-) {
-  return function (this: This): Return {
-    computations++;
-    const result = target.call(this);
-    Object.defineProperty(this, context.name, {
-      value: result,
-      writable: false,
+#### Solution 3: Static initialization logger
+```typescript
+function loggedStatic(target: any, context: ClassMethodDecoratorContext) {
+  if (context.static) {
+    context.addInitializer(function () {
+      console.log(`Static method ${String(context.name)} ready`);
     });
-    return result;
-  };
-}
-
-class HeavyCalculation {
-  @lazy
-  get factor(): number {
-    return 100 * 2;
   }
 }
-
-const calc = new HeavyCalculation();
-const a = calc.factor;
-const b = calc.factor;
-const c = calc.factor;
-// Question: What is computations and the value of c?
 ```
 
-**Step-by-Step Evaluation Trace:**
-1. First read `calc.factor`: executes decorated getter. Increments `computations = 1`. Evaluates `100 * 2 = 200`.
-2. `Object.defineProperty` overwrites `factor` on `calc` with data property `{ value: 200 }`. Returns `200`.
-3. Second and third reads: `calc.factor` directly reads the instance data property `200`. The getter function is never called again!
-4. **Output Values:** `computations = 1`, `c = 200`.
-
----
-
-### Puzzle 8: Circular Dependency Detection in IoC Container
-
+#### Solution 4: Disallow multiple autobindings on same method
 ```typescript
-const container = new NativeIoCContainer();
+const BOUND_FLAG = Symbol("bound.flag");
 
-class ServiceA {
-  accessor b: any;
-}
-class ServiceB {
-  accessor a: any;
-}
-
-container.bind("A", ServiceA);
-container.bind("B", ServiceB);
-
-// Simulate mutual circular resolution
-// container.resolve("A") -> resolves "B" -> resolves "A"
-```
-
-**Step-by-Step Evaluation Trace:**
-1. The container attempts to resolve `"A"`. Adds `"A"` to `resolvingTokens`.
-2. Instantiates `ServiceA`, finds dependency `"B"`.
-3. Resolves `"B"`. Adds `"B"` to `resolvingTokens`.
-4. Instantiates `ServiceB`, finds dependency `"A"`.
-5. Resolves `"A"`. Checks `resolvingTokens.has("A")` -> `true`!
-6. Throws `CircularDependencyError: Cycle detected while resolving: A`.
-7. **Result:** Fast-fails with descriptive circular dependency error.
-
----
-
-### Puzzle 9: Decorating Private `#methods`
-
-```typescript
-function spy(target: Function, context: ClassMethodDecoratorContext) {
-  return function (this: any, ...args: any[]) {
-    return `SPY_${target.call(this, ...args)}`;
-  };
-}
-
-class SecretEngine {
-  @spy
-  #computeCode(): number {
-    return 999;
-  }
-
-  public getCode(): string {
-    return this.#computeCode();
-  }
-}
-
-const engine = new SecretEngine();
-const code = engine.getCode();
-// Question: What is code?
-```
-
-**Step-by-Step Evaluation Trace:**
-1. Stage 3 decorators can decorate `#private` methods cleanly.
-2. `spy` wraps `#computeCode`.
-3. Inside `getCode()`, `this.#computeCode()` calls the wrapped method.
-4. The wrapper executes: `999` is computed, prepended with `"SPY_"`.
-5. Returns `"SPY_999"`.
-6. **Output Value:** `"SPY_999"`.
-
----
-
-### Puzzle 10: Auto-Accessor Range Clamping
-
-```typescript
-function clamp(min: number, max: number) {
-  return function <This, Value extends number>(
-    target: ClassAccessorDecoratorTarget<This, Value>,
-    context: ClassAccessorDecoratorContext<This, Value>
-  ): ClassAccessorDecoratorResult<This, Value> {
-    return {
-      init(this: This, val: Value) {
-        return Math.max(min, Math.min(max, val)) as Value;
-      },
-      set(this: This, val: Value) {
-        target.set.call(this, Math.max(min, Math.min(max, val)) as Value);
-      }
-    };
-  };
-}
-
-class Thermostat {
-  @clamp(15, 30)
-  accessor temperature: number = 10;
-}
-
-const t = new Thermostat();
-const initialTemp = t.temperature;
-t.temperature = 45;
-const highTemp = t.temperature;
-```
-
-**Step-by-Step Evaluation Trace:**
-1. `init` hook clamps initial `10` between `[15, 30]` -> `15`. `initialTemp = 15`.
-2. Setting `temperature = 45` triggers `set` hook. Clamps `45` between `[15, 30]` -> `30`.
-3. `highTemp = 30`.
-4. **Output Values:** `initialTemp = 15`, `highTemp = 30`.
-
----
-
-### Puzzle 11: Class Decorator Returning Replacement Subclass
-
-```typescript
-function withId<T extends new (...args: any[]) => any>(
-  target: T,
-  context: ClassDecoratorContext<T>
+function safeBound<This, Args extends any[], Return>(
+  target: (this: This, ...args: Args) => Return,
+  context: ClassMethodDecoratorContext<This, (this: This, ...args: Args) => Return>
 ) {
-  return class extends target {
-    public generatedId: string = "AUTO_ID_007";
-  };
-}
+  if ((target as any)[BOUND_FLAG]) return;
+  (target as any)[BOUND_FLAG] = true;
 
-@withId
-class Customer {
-  public name: string = "Alice";
+  const name = context.name;
+  context.addInitializer(function (this: This) {
+    (this as any)[name] = target.bind(this);
+  });
 }
-
-const c: any = new Customer();
-// Question: What properties exist on c?
 ```
-
-**Step-by-Step Evaluation Trace:**
-1. `withId` returns an anonymous subclass extending `Customer`.
-2. When `new Customer()` executes, the returned subclass constructor runs.
-3. Initializes `name = "Alice"` via `super()`, then initializes `generatedId = "AUTO_ID_007"`.
-4. **Output Properties:** `c.name = "Alice"`, `c.generatedId = "AUTO_ID_007"`.
 
 ---
 
-### Puzzle 12: Method Decorator Mutating Execution Arguments
+### Recall
+1. What does `context.addInitializer` do? Registers a callback to run during object initialization.
+2. For instance members, when does the initializer execute? Inside the constructor when `new ClassName()` runs.
+3. Why is `addInitializer` ideal for the `@autobind` decorator? Because it binds the method directly to the instance during constructor execution without messy prototype hacks.
+
+> **If you remember only one thing:**  
+> `context.addInitializer` hooks directly into instance construction or static class evaluation, executing callbacks with the proper `this`.
+
+---
+
+# Topic 8: Decorating Private `#fields` and `#methods`
+
+### 1. What is it?
+JavaScript hard private class elements (declared with a `#` prefix, such as `#privateField` or `#privateMethod()`) can be decorated using modern TC39 Stage 3 decorators. When a private member is decorated, `context.private` evaluates to `true`, and `context.access` provides private getter/setter accessor methods.
+
+### 2. Why does it exist?
+Legacy Stage 2 decorators could not decorate JavaScript `#private` fields because `#private` slots are internal engine references not accessible via strings on the prototype. Stage 3 decorators have first-class support for `#private` elements via the `context.access` interface.
+
+### 3. Basic example
 
 ```typescript
-function multiplyArgs(factor: number) {
-  return function <This, Args extends number[], Return>(
-    target: (this: This, ...args: Args) => Return,
-    context: ClassMethodDecoratorContext<This, (this: This, ...args: Args) => Return>
-  ) {
-    return function (this: This, ...args: Args): Return {
-      const transformed = args.map((x) => x * factor) as Args;
-      return target.call(this, ...transformed);
-    };
+function logPrivate<This, Args extends any[], Return>(
+  target: (this: This, ...args: Args) => Return,
+  context: ClassMethodDecoratorContext<This, (this: This, ...args: Args) => Return>
+) {
+  if (context.private) {
+    console.log(`Decorating private member: ${String(context.name)}`);
+  }
+
+  return function (this: This, ...args: Args): Return {
+    console.log(`[Private Call] Entering`);
+    return target.call(this, ...args);
   };
 }
 
-class Calculator {
-  @multiplyArgs(2)
-  public add(a: number, b: number): number {
-    return a + b;
+class Vault {
+  #secretKey = "super_secret_99";
+
+  @logPrivate
+  #getSecret(): string {
+    return this.#secretKey;
+  }
+
+  reveal(): string {
+    return this.#getSecret();
   }
 }
 
-const calc = new Calculator();
-const res = calc.add(3, 4);
+const v = new Vault();
+console.log(v.reveal());
 ```
 
-**Step-by-Step Evaluation Trace:**
-1. `calc.add(3, 4)` enters `multiplyArgs(2)`.
-2. `transformed` multiplies each argument by 2: `[3 * 2, 4 * 2] = [6, 8]`.
-3. Invokes original `add(6, 8)`.
-4. `6 + 8 = 14`.
-5. **Output Value:** `14`.
+**Line-by-line explanation:**
+- `#getSecret()`: A true JavaScript private method. Inaccessible outside the class body.
+- `@logPrivate`: Applied directly above the `#` private method.
+- `context.private`: Evaluates to `true`.
+- `target.call(this, ...args)`: Executes the private method implementation safely within the class scope.
+- Outside code can only call `v.reveal()`, which delegates to the decorated `#getSecret()`.
 
 ---
 
-### Puzzle 13: Static Method Decorator Context
-
-```typescript
-let isStaticTarget: boolean = false;
-
-function inspectStatic(target: any, context: ClassMethodDecoratorContext) {
-  isStaticTarget = context.static;
-}
-
-class Utils {
-  @inspectStatic
-  public static helper(): void {}
-}
-```
-
-**Step-by-Step Evaluation Trace:**
-1. `helper` is declared with `static`.
-2. The Stage 3 compiler sets `context.static = true`.
-3. `isStaticTarget` is assigned `true`.
-4. **Output Value:** `isStaticTarget = true`.
+### 4. How it works inside TypeScript
+1. **`context.private: true`**: Informs the decorator that the member is hard-private.
+2. **`context.access`**: Provides an object with:
+   - `get(instance: This): Value`: Reads the private member on the provided instance.
+   - `set(instance: This, val: Value): void`: Writes to the private member on the instance (if writable).
+3. **Engine Encapsulation**: Private brand checks remain fully enforced by the JavaScript engine; external code cannot forge or inspect `#` members.
 
 ---
 
-### Puzzle 14: Method Decorator Throw Catching and Recovery
+### 5. More examples
 
+#### Example 1: Reading private field via `context.access.get`
 ```typescript
-function recoverWith(fallback: string) {
-  return function <This, Args extends any[], Return>(
-    target: (this: This, ...args: Args) => Return,
-    context: ClassMethodDecoratorContext<This, (this: This, ...args: Args) => Return>
-  ) {
-    return function (this: This, ...args: Args): any {
-      try {
-        return target.call(this, ...args);
-      } catch (err) {
-        return fallback;
-      }
-    };
-  };
-}
+let privateReader: ((obj: any) => string) | null = null;
 
-class FlakyService {
-  @recoverWith("FALLBACK_VALUE")
-  public riskyOperation(): string {
-    throw new Error("Network timeout");
+function exposePrivate(target: undefined, context: ClassFieldDecoratorContext) {
+  if (context.private) {
+    privateReader = (obj: any) => context.access.get(obj);
   }
 }
 
-const service = new FlakyService();
-const result = service.riskyOperation();
+class SecretBox {
+  @exposePrivate
+  #secret = "hidden_treasure";
+}
+
+const box = new SecretBox();
+// External code using the authorized reader:
+console.log(privateReader!(box)); // "hidden_treasure"
 ```
 
-**Step-by-Step Evaluation Trace:**
-1. `riskyOperation()` throws `new Error("Network timeout")`.
-2. The decorator wrapper's `try...catch` catches the error.
-3. Instead of rethrowing, it returns `fallback` (`"FALLBACK_VALUE"`).
-4. **Output Value:** `"FALLBACK_VALUE"`.
-
----
-
-### Puzzle 15: Field Decorator Default Fallback Assignment
-
+#### Example 2: Private auto-accessor validation
 ```typescript
-function defaultTo<This, Value>(fallback: Value) {
-  return function (target: undefined, context: ClassFieldDecoratorContext<This, Value>) {
-    return function (initialValue: Value): Value {
-      return initialValue === undefined ? fallback : initialValue;
-    };
+function validatePositive(
+  target: ClassAccessorDecoratorTarget<any, number>,
+  context: ClassAccessorDecoratorContext
+) {
+  return {
+    set(this: any, val: number) {
+      if (val < 0) throw new Error("Must be positive");
+      target.set.call(this, val);
+    },
   };
 }
 
-class Profile {
-  @defaultTo("active")
-  public status!: string;
+class Account {
+  @validatePositive
+  accessor #balance: number = 0;
+
+  deposit(amount: number) {
+    this.#balance += amount;
+  }
+
+  get balance() {
+    return this.#balance;
+  }
+}
+```
+
+---
+
+### 6. Common mistakes
+
+#### Mistake 1: Attempting to access private members via string indexing
+```typescript
+// WRONG: Trying to access #field with string index
+(this as any)["#secret"]; // Returns undefined!
+```
+**Why it fails:** `#private` names are not string properties on the object. They are stored in private internal slots. You MUST use `context.access.get(this)` or direct `this.#secret` inside the class.
+
+#### Mistake 2: Confusing TypeScript `private` with `#private`
+```typescript
+class Mixed {
+  private tsPrivate = 1; // Soft private: context.private is FALSE!
+  #jsPrivate = 2;        // Hard private: context.private is TRUE!
+}
+```
+**Why it matters:** TypeScript's `private` keyword is purely a compile-time check and compiles to standard public properties. `#jsPrivate` is runtime private and sets `context.private: true`.
+
+---
+
+### 7. Rules to remember
+1. `context.private` is `true` for members declared with `#`.
+2. Use `context.access.get(instance)` and `context.access.set(instance, val)` to interact with private members.
+3. TypeScript's `private` keyword produces `context.private: false`; only `#names` produce `context.private: true`.
+4. Decorating `#private` members does not break the JavaScript runtime's hard privacy guarantees.
+
+---
+
+### Think first: Prediction puzzle
+What does `context.private` log for `propA` vs `propB`?
+
+```typescript
+function checkPrivate(target: any, ctx: any) {
+  console.log(`${String(ctx.name)}: ${ctx.private}`);
 }
 
-const p = new Profile();
-const statusVal = p.status;
+class Sample {
+  @checkPrivate
+  private propA: number = 1;
+
+  @checkPrivate
+  #propB: number = 2;
+}
 ```
-
-**Step-by-Step Evaluation Trace:**
-1. `status` has no inline assignment, so its uninitialized value is `undefined`.
-2. The field decorator's initializer function receives `undefined`.
-3. Checks `initialValue === undefined ? "active" : initialValue`.
-4. Returns `"active"`.
-5. **Output Value:** `"active"`.
-
 
 ---
 
-## 5. Four Complete Runnable Production Projects with Test Assertions
-
-Every project below is a fully functional, self-contained TypeScript engine demonstrating production TC39 Stage 3 decorators and metadata. All class properties are explicitly declared for strict Node.js compatibility (`--experimental-strip-types`).
+**Answer:**
+```
+propA: false
+#propB: true
+```
+**Explanation:** `private propA` is TypeScript compile-time visibility; at runtime it is a regular public property, so `ctx.private` is `false`. `#propB` is an ECMAScript private field, so `ctx.private` is `true`.
 
 ---
 
-### Project 1: Production TC39 Stage 3 Inversion of Control (IoC) Container
+### Practice exercises
 
-#### Architectural Overview
-```
-+-------------------------------------------------------------------------+
-|                  TC39 Stage 3 Native IoC Container                     |
-+-------------------------------------------------------------------------+
-|  [IoCContainer]                                                         |
-|    ├── bind(token, constructor, lifetime)                              |
-|    ├── resolve(token): T                                                |
-|    └── Detects cycles in dependency graph using resolvingTokens Set     |
-|         │                                                               |
-|  [@injectable(lifetime)] ──► Annotates class metadata                   |
-|  [@inject(token)] ──► Annotates auto-accessors with dependencies        |
-+-------------------------------------------------------------------------+
-```
+#### Exercise 1: Private method invocation counter
+- **Task**: Decorate a private method `#compute()` to count how many times it is called.
+- **Hint 1**: Wrap `target.call(this, ...args)` and increment an external counter.
 
-#### Complete Implementation & Verification Suite
+#### Exercise 2: Assert private member decorator
+- **Task**: Create a decorator `@onlyPrivate` that throws an error at class evaluation time if `!context.private`.
+- **Hint 1**: `if (!context.private) throw new Error("Must be private");`.
+
+#### Exercise 3: Private accessor clamping
+- **Task**: Apply a `@clamp` decorator to a private auto-accessor `accessor #pin: number`.
+- **Hint 1**: Use `ClassAccessorDecoratorTarget<This, number>`.
+
+#### Exercise 4: External testing bridge for private field
+- **Task**: Write a decorator that exposes a private field getter to a test map indexed by instance.
+- **Hint 1**: Store `context.access.get(instance)` in a `WeakMap`.
+
+---
+
+### Exercise solutions
+
+#### Solution 1: Private method invocation counter
 ```typescript
-import assert from "node:assert";
+let callCount = 0;
 
+function countPrivateCalls<This, Args extends any[], Return>(
+  target: (this: This, ...args: Args) => Return,
+  context: ClassMethodDecoratorContext
+) {
+  return function (this: This, ...args: Args): Return {
+    callCount++;
+    return target.call(this, ...args);
+  };
+}
+
+class InternalWorker {
+  @countPrivateCalls
+  #work() { return "done"; }
+  run() { return this.#work(); }
+}
+
+new InternalWorker().run();
+console.log("Calls:", callCount); // 1
+```
+
+#### Solution 2: Assert private member decorator
+```typescript
+function onlyPrivate(target: any, context: ClassMemberDecoratorContext) {
+  if (!context.private) {
+    throw new Error(`Decorator @onlyPrivate cannot be applied to public ${String(context.name)}`);
+  }
+}
+```
+
+#### Solution 3: Private accessor clamping
+```typescript
+function clampPin(target: ClassAccessorDecoratorTarget<any, number>, context: ClassAccessorDecoratorContext) {
+  return {
+    set(this: any, val: number) {
+      const clamped = Math.max(1000, Math.min(9999, val));
+      target.set.call(this, clamped);
+    },
+  };
+}
+
+class ATM {
+  @clampPin
+  accessor #pin: number = 1000;
+}
+```
+
+#### Solution 4: External testing bridge for private field
+```typescript
+const testBridge = new WeakMap<object, () => any>();
+
+function bridgeForTesting(target: undefined, context: ClassFieldDecoratorContext) {
+  context.addInitializer(function (this: any) {
+    testBridge.set(this, () => context.access.get(this));
+  });
+}
+```
+
+---
+
+### Recall
+1. How do you detect if a decorated member is a JavaScript private field? Check `context.private === true`.
+2. How can a decorator read or write a `#private` field without direct lexical access? Using `context.access.get(instance)` and `context.access.set(instance, val)`.
+3. What is the difference between `private x` and `#x` in modern TypeScript? `private x` is compile-time only (public at runtime); `#x` is enforced by the JavaScript engine at runtime.
+
+> **If you remember only one thing:**  
+> Stage 3 decorators natively support ECMAScript `#private` members through `context.private: true` and the `context.access` API.
+
+---
+
+# Topic 9: Decorator Metadata with `context.metadata` (TS 5.2+ and `Symbol.metadata`)
+
+### 1. What is it?
+In TypeScript 5.2+, every decorator `context` object contains a **`context.metadata`** object. This metadata dictionary is attached to the class constructor under the well-known symbol **`Symbol.metadata`**. Decorators can read and attach arbitrary typed metadata to this object at compile time and inspect it at runtime.
+
+### 2. Why does it exist?
+Historically, storing metadata required the third-party `reflect-metadata` polyfill (`Reflect.defineMetadata`, `Reflect.getMetadata`). The TC39 Decorator Metadata proposal standardized metadata storage directly into the JavaScript language, eliminating the need for heavy external polyfills.
+
+### 3. Basic example
+
+```typescript
+// Polyfill Symbol.metadata if not natively present in environment
 (Symbol as any).metadata ??= Symbol("Symbol.metadata");
 
-export type ServiceLifetime = "singleton" | "transient";
-export type ServiceToken<T = any> = string | symbol;
-
-interface Registration<T = any> {
-  token: ServiceToken<T>;
-  target: new (...args: any[]) => T;
-  lifetime: ServiceLifetime;
-  instance?: T;
+interface RouteMeta {
+  path: string;
+  method: "GET" | "POST";
 }
 
-const INJECTIONS_KEY = Symbol("IoC:Injections");
-
-export function injectable(lifetime: ServiceLifetime = "transient") {
-  return function <TFunction extends new (...args: any[]) => any>(
-    target: TFunction,
-    context: ClassDecoratorContext<TFunction>
+function get(path: string) {
+  return function <This, Args extends any[], Return>(
+    target: (this: This, ...args: Args) => Return,
+    context: ClassMethodDecoratorContext
   ) {
-    context.metadata.lifetime = lifetime;
-  };
-}
-
-export function inject(token: ServiceToken) {
-  return function <This, Value>(
-    target: ClassAccessorDecoratorTarget<This, Value>,
-    context: ClassAccessorDecoratorContext<This, Value>
-  ): ClassAccessorDecoratorResult<This, Value> {
-    if (!context.metadata[INJECTIONS_KEY]) {
-      context.metadata[INJECTIONS_KEY] = new Map<string | symbol, ServiceToken>();
-    }
-    (context.metadata[INJECTIONS_KEY] as Map<string | symbol, ServiceToken>).set(
-      context.name,
-      token
-    );
+    // context.metadata is a shared object for the entire class!
+    context.metadata[context.name] = { path, method: "GET" };
     return target;
   };
 }
 
-export class NativeIoCContainer {
-  private registrations: Map<ServiceToken, Registration>;
-  private resolvingTokens: Set<ServiceToken>;
-
-  constructor() {
-    this.registrations = new Map();
-    this.resolvingTokens = new Set();
-  }
-
-  public bind<T>(
-    token: ServiceToken<T>,
-    target: new (...args: any[]) => T,
-    lifetime: ServiceLifetime = "transient"
-  ): this {
-    this.registrations.set(token, { token, target, lifetime });
-    return this;
-  }
-
-  public resolve<T>(token: ServiceToken<T>): T {
-    const reg = this.registrations.get(token);
-    if (!reg) {
-      throw new Error(`IoCResolutionError: No binding found for token: ${String(token)}`);
-    }
-
-    if (reg.lifetime === "singleton" && reg.instance) {
-      return reg.instance as T;
-    }
-
-    if (this.resolvingTokens.has(token)) {
-      throw new Error(`CircularDependencyError: Cycle detected while resolving: ${String(token)}`);
-    }
-
-    this.resolvingTokens.add(token);
-
-    try {
-      const instance = new reg.target();
-      const metadata = (reg.target as any)[(Symbol as any).metadata];
-      const injections = metadata?.[INJECTIONS_KEY] as Map<string | symbol, ServiceToken> | undefined;
-
-      if (injections) {
-        for (const [propName, depToken] of injections.entries()) {
-          const resolvedDep = this.resolve(depToken);
-          (instance as any)[propName] = resolvedDep;
-        }
-      }
-
-      if (reg.lifetime === "singleton") {
-        reg.instance = instance;
-      }
-
-      return instance as T;
-    } finally {
-      this.resolvingTokens.delete(token);
-    }
+class UserController {
+  @get("/api/users")
+  listUsers() {
+    return ["Alice", "Bob"];
   }
 }
 
-// Verification Assertions
-@injectable("singleton")
-class LoggerService {
-  public logs: string[];
-  constructor() {
-    this.logs = [];
-  }
-  public log(msg: string): void {
-    this.logs.push(msg);
-  }
+// Inspecting metadata from the class constructor:
+const metadata = (UserController as any)[Symbol.metadata];
+console.log(metadata["listUsers"]); // { path: "/api/users", method: "GET" }
+```
+
+**Line-by-line explanation:**
+- `(Symbol as any).metadata ??= Symbol(...)`: Ensures `Symbol.metadata` exists in the runtime environment.
+- `context.metadata[context.name] = { path, method: "GET" }`: Reads the shared metadata dictionary provided on `context` and stores routing details indexed by method name.
+- `(UserController as any)[Symbol.metadata]`: At runtime, the JavaScript engine attaches the accumulated metadata object directly to the class constructor.
+- Web frameworks and IoC containers can inspect this metadata to automatically register HTTP endpoints.
+
+---
+
+### 4. How it works inside TypeScript
+1. **Shared Prototype Object**: `context.metadata` is identical across all member decorators applied to the same class.
+2. **Prototype Inheritance**: If `SubClass extends BaseClass`, `(SubClass as any)[Symbol.metadata]` inherits from `(BaseClass as any)[Symbol.metadata]` via standard prototype delegation (`Object.create(BaseClass[Symbol.metadata])`).
+3. **No Polyfill Required**: No `import "reflect-metadata"` is needed in TypeScript 5.2+ when `target` is configured for modern runtimes.
+
+---
+
+### 5. More examples
+
+#### Example 1: Accumulating parameter validation rules
+```typescript
+interface ValidationRules {
+  [propertyKey: string]: { required?: boolean; min?: number };
 }
 
-@injectable("transient")
-class DatabaseService {
-  public isConnected: boolean;
-  constructor() {
-    this.isConnected = true;
-  }
+function required(target: undefined, context: ClassFieldDecoratorContext) {
+  const meta = (context.metadata.validation ??= {}) as ValidationRules;
+  meta[String(context.name)] = { ...meta[String(context.name)], required: true };
 }
 
-@injectable("transient")
-class OrderProcessor {
-  @inject("Logger")
-  accessor logger!: LoggerService;
-
-  @inject("Database")
-  accessor db!: DatabaseService;
-
-  public process(orderId: string): string {
-    this.logger.log(`Processing order ${orderId}`);
-    return `Processed ${orderId} (DB connected: ${this.db.isConnected})`;
-  }
+function min(val: number) {
+  return function (target: undefined, context: ClassFieldDecoratorContext) {
+    const meta = (context.metadata.validation ??= {}) as ValidationRules;
+    meta[String(context.name)] = { ...meta[String(context.name)], min: val };
+  };
 }
 
-const container = new NativeIoCContainer()
-  .bind("Logger", LoggerService, "singleton")
-  .bind("Database", DatabaseService, "transient")
-  .bind("OrderProcessor", OrderProcessor, "transient");
+class Product {
+  @required
+  name!: string;
 
-const processor1 = container.resolve<OrderProcessor>("OrderProcessor");
-const processor2 = container.resolve<OrderProcessor>("OrderProcessor");
-
-// Verify dependency resolution
-const result = processor1.process("ORD-101");
-assert.strictEqual(result, "Processed ORD-101 (DB connected: true)");
-assert.deepStrictEqual(processor1.logger.logs, ["Processing order ORD-101"]);
-
-// Verify Singleton Logger identity across distinct processor instances
-assert.strictEqual(processor1.logger, processor2.logger);
-
-// Verify Transient Database creates distinct instances
-assert.notStrictEqual(processor1.db, processor2.db);
-
-// Verify Circular Dependency Detection
-class NodeA {
-  @inject("NodeB")
-  accessor b: any;
-}
-class NodeB {
-  @inject("NodeA")
-  accessor a: any;
+  @min(1)
+  price!: number;
 }
 
-const cycleContainer = new NativeIoCContainer()
-  .bind("NodeA", NodeA)
-  .bind("NodeB", NodeB);
+const prodMeta = (Product as any)[Symbol.metadata]?.validation;
+console.log(prodMeta);
+// { name: { required: true }, price: { min: 1 } }
+```
 
-assert.throws(() => {
-  cycleContainer.resolve("NodeA");
-}, /CircularDependencyError: Cycle detected while resolving: NodeA/);
+#### Example 2: Inspecting metadata across subclasses
+```typescript
+class BaseEntity {}
+class OrderEntity extends BaseEntity {}
 
-console.log("Project 1 (Production Stage 3 IoC Container) passed all assertions.");
+// OrderEntity[Symbol.metadata] inherits from BaseEntity[Symbol.metadata]
 ```
 
 ---
 
-### Project 2: Type-Safe Method Interceptor & Telemetry Pipeline Decorators
+### 6. Common mistakes
 
-#### Architectural Overview
-```
-+-------------------------------------------------------------------------+
-|                  Telemetry & Method Interceptor Pipeline                |
-+-------------------------------------------------------------------------+
-|  [@timed] ──► Measures execution duration                               |
-|  [@cached(ttlMs)] ──► In-memory caching layer                           |
-|  [@retry(max, delay)] ──► Handles transient exceptions                  |
-|         │                                                               |
-|  [Execution Flow]: @timed -> @cached -> @retry -> Target Method         |
-+-------------------------------------------------------------------------+
-```
-
-#### Complete Implementation & Verification Suite
+#### Mistake 1: Overwriting `context.metadata` completely
 ```typescript
-import assert from "node:assert";
+// WRONG: Replacing context.metadata replaces it for all other decorators!
+context.metadata = { myMeta: 123 }; // Destroys metadata stored by other decorators!
+```
+**Why it fails:** `context.metadata` is a shared object. Always mutate or namespace it (`context.metadata.myNamespace = ...`) instead of reassigning the reference.
 
-export interface TelemetrySpan {
-  method: string;
-  durationMs: number;
-}
+#### Mistake 2: Missing `Symbol.metadata` polyfill in older runtimes
+```typescript
+// GOTCHA: In Node 18 or older browsers, Symbol.metadata is undefined by default!
+```
+**Why it matters:** In environments that do not natively declare `Symbol.metadata`, include `(Symbol as any).metadata ??= Symbol("Symbol.metadata");` at application startup.
 
-export const telemetryLog: TelemetrySpan[] = [];
+---
 
-export function timed<This, Args extends any[], Return>(
-  target: (this: This, ...args: Args) => Promise<Return>,
-  context: ClassMethodDecoratorContext<This, (this: This, ...args: Args) => Promise<Return>>
-) {
-  const methodName = String(context.name);
-  return async function (this: This, ...args: Args): Promise<Return> {
-    const start = performance.now();
-    try {
-      return await target.call(this, ...args);
-    } finally {
-      telemetryLog.push({ method: methodName, durationMs: performance.now() - start });
-    }
+### 7. Rules to remember
+1. `context.metadata` is a plain JavaScript object shared across all decorators of a class.
+2. The engine attaches this object to `ClassConstructor[Symbol.metadata]`.
+3. Subclasses inherit parent class metadata through prototypical inheritance.
+4. Namespace your metadata keys to prevent collisions with other decorators.
+
+---
+
+### Think first: Prediction puzzle
+What does `Child[Symbol.metadata].role` output?
+
+```typescript
+(Symbol as any).metadata ??= Symbol("Symbol.metadata");
+
+function setRole(role: string) {
+  return function (target: any, context: ClassDecoratorContext) {
+    context.metadata.role = role;
   };
 }
 
-export function cached(ttlMs: number) {
-  const cacheMap = new Map<string, { val: any; exp: number }>();
+@setRole("parent_role")
+class Parent {}
 
+class Child extends Parent {}
+
+console.log((Child as any)[Symbol.metadata]?.role);
+```
+
+---
+
+**Answer:**
+```
+parent_role
+```
+**Explanation:** When `Child` extends `Parent`, JavaScript sets `Child[Symbol.metadata] = Object.create(Parent[Symbol.metadata])`. Accessing `.role` delegates through the prototype chain to `Parent`'s metadata.
+
+---
+
+### Practice exercises
+
+#### Exercise 1: Roles-allowed authorization metadata
+- **Task**: Create a method decorator `@roles("admin", "editor")` that stores the allowed roles in `context.metadata[context.name].roles`.
+- **Hint 1**: `context.metadata[context.name] = { roles };`.
+
+#### Exercise 2: OpenApi summary metadata
+- **Task**: Write `@summary(text: string)` that stores an endpoint summary string on the method's metadata.
+- **Hint 1**: Mutate `context.metadata[context.name]`.
+
+#### Exercise 3: Read class metadata helper
+- **Task**: Write a utility function `getClassMetadata(ctor: Function): Record<string, any>` that safely retrieves `[Symbol.metadata]`.
+- **Hint 1**: `return (ctor as any)[Symbol.metadata] ?? {};`.
+
+#### Exercise 4: Merge metadata from multiple decorators
+- **Task**: Apply both `@roles("admin")` and `@summary("Delete user")` to a method and assert both keys exist on the method's metadata.
+- **Hint 1**: Ensure neither decorator overwrites the other's object.
+
+---
+
+### Exercise solutions
+
+#### Solution 1: Roles-allowed authorization metadata
+```typescript
+function roles(...allowed: string[]) {
+  return function (target: any, context: ClassMethodDecoratorContext) {
+    const meta = (context.metadata[context.name] ??= {}) as any;
+    meta.roles = allowed;
+  };
+}
+```
+
+#### Solution 2: OpenApi summary metadata
+```typescript
+function summary(text: string) {
+  return function (target: any, context: ClassMethodDecoratorContext) {
+    const meta = (context.metadata[context.name] ??= {}) as any;
+    meta.summary = text;
+  };
+}
+```
+
+#### Solution 3: Read class metadata helper
+```typescript
+function getClassMetadata(ctor: Function): Record<string, any> {
+  return (ctor as any)[Symbol.metadata] ?? {};
+}
+```
+
+#### Solution 4: Merge metadata from multiple decorators
+```typescript
+class AdminController {
+  @roles("superadmin")
+  @summary("Permanently purge database records")
+  purge() {}
+}
+
+const purgeMeta = (AdminController as any)[Symbol.metadata]?.purge;
+console.log(purgeMeta?.roles);   // ["superadmin"]
+console.log(purgeMeta?.summary); // "Permanently purge database records"
+```
+
+---
+
+### Recall
+1. Where does the JavaScript engine attach the accumulated metadata? On `ClassConstructor[Symbol.metadata]`.
+2. How do subclasses interact with parent class metadata? Subclasses inherit parent metadata via prototype delegation (`Object.create`).
+3. Does modern decorator metadata require `reflect-metadata`? No; `Symbol.metadata` is part of standard TC39 Stage 3 (TS 5.2+).
+
+> **If you remember only one thing:**  
+> `context.metadata` provides a standardized, polyfill-free way to attach and read metadata via `ClassConstructor[Symbol.metadata]`.
+
+---
+
+# Topic 10: Designing a Parameterized Decorator Factory
+
+### 1. What is it?
+A **Decorator Factory** is a higher-order function that accepts configuration arguments and returns the actual decorator function. This allows decorators to be customized at the call site: `@throttle(500)`, `@log({ level: "debug" })`, or `@column({ nullable: false })`.
+
+### 2. Why does it exist?
+Standard decorator functions cannot accept custom arguments directly because the JavaScript engine always calls them with `(target, context)`. A decorator factory provides a closure over your custom arguments.
+
+### 3. Basic example
+
+```typescript
+interface CacheOptions {
+  ttlMs: number;
+}
+
+// The Decorator Factory takes custom parameters
+function cache(options: CacheOptions) {
+  const cacheMap = new Map<string, { value: any; expiry: number }>();
+
+  // Returns the actual Stage 3 decorator function
   return function <This, Args extends any[], Return>(
-    target: (this: This, ...args: Args) => Promise<Return>,
-    context: ClassMethodDecoratorContext<This, (this: This, ...args: Args) => Promise<Return>>
+    target: (this: This, ...args: Args) => Return,
+    context: ClassMethodDecoratorContext<This, (this: This, ...args: Args) => Return>
   ) {
-    return async function (this: This, ...args: Args): Promise<Return> {
+    return function (this: This, ...args: Args): Return {
       const key = JSON.stringify(args);
-      const entry = cacheMap.get(key);
-      if (entry && Date.now() < entry.exp) {
-        return entry.val as Return;
+      const cached = cacheMap.get(key);
+      const now = Date.now();
+
+      if (cached && cached.expiry > now) {
+        console.log(`[Cache Hit] TTL remaining: ${cached.expiry - now}ms`);
+        return cached.value;
       }
-      const fresh = await target.call(this, ...args);
-      cacheMap.set(key, { val: fresh, exp: Date.now() + ttlMs });
-      return fresh;
+
+      const result = target.call(this, ...args);
+      cacheMap.set(key, { value: result, expiry: now + options.ttlMs });
+      return result;
     };
   };
 }
 
-export function retry(maxRetries: number, delayMs: number = 10) {
+class WeatherService {
+  @cache({ ttlMs: 1000 })
+  getTemperature(city: string): number {
+    console.log(`Calculating temperature for ${city}...`);
+    return 22.5;
+  }
+}
+
+const weather = new WeatherService();
+weather.getTemperature("Berlin"); // Calculates
+weather.getTemperature("Berlin"); // Cache hit!
+```
+
+**Line-by-line explanation:**
+- `function cache(options: CacheOptions)`: The outer factory taking configuration arguments.
+- `return function <This, Args, Return>(target, context)`: Returns the decorator itself.
+- `const cacheMap = new Map(...)`: Scoped to the decorator instance via closure.
+- `@cache({ ttlMs: 1000 })`: Calling `cache(...)` evaluates the factory and attaches the returned decorator to `getTemperature`.
+
+---
+
+### 4. How it works inside TypeScript
+1. **Closure Scoping**: Variables declared inside the factory (like `cacheMap` or `options`) are retained in memory across method invocations.
+2. **Two-Stage Typing**: The outer function types the configuration options; the inner function types the target and context.
+3. **Syntax Requirement**: Decorator factories MUST be invoked with parentheses at the call site (`@myFactory()`). Omitting parentheses is a compile error.
+
+---
+
+### 5. More examples
+
+#### Example 1: Rate limiting / Throttle decorator factory
+```typescript
+function throttle(intervalMs: number) {
+  return function <This, Args extends any[], Return>(
+    target: (this: This, ...args: Args) => Return,
+    context: ClassMethodDecoratorContext
+  ) {
+    let lastTime = 0;
+
+    return function (this: This, ...args: Args): Return | undefined {
+      const now = Date.now();
+      if (now - lastTime < intervalMs) {
+        console.warn(`Throttled: call ignored (interval: ${intervalMs}ms)`);
+        return undefined;
+      }
+      lastTime = now;
+      return target.call(this, ...args);
+    };
+  };
+}
+```
+
+#### Example 2: Configurable HTTP Route decorator factory
+```typescript
+interface RouteConfig {
+  path: string;
+  statusCode?: number;
+}
+
+function post(config: RouteConfig) {
+  return function (target: any, context: ClassMethodDecoratorContext) {
+    (context.metadata[context.name] ??= {}) = {
+      httpMethod: "POST",
+      path: config.path,
+      statusCode: config.statusCode ?? 200,
+    };
+  };
+}
+```
+
+---
+
+### 6. Common mistakes
+
+#### Mistake 1: Forgetting parentheses when applying a factory
+```typescript
+// WRONG: Applying factory without invoking it
+class BadService {
+  @cache // Error! Passes target to cache instead of the returned decorator!
+  fetch() {}
+}
+```
+**Why it fails:** If `cache` is a factory, writing `@cache` passes `fetch` as `options`, which causes a runtime type error. Always write `@cache({ ttlMs: 500 })`.
+
+#### Mistake 2: Re-instantiating shared state inside the replacement function
+```typescript
+// WRONG: Re-creating state on every invocation
+function badCache(ttl: number) {
+  return function (target: any, ctx: any) {
+    return function (this: any, ...args: any[]) {
+      const cacheMap = new Map(); // Re-created on every single call! Never caches anything!
+    };
+  };
+}
+```
+**Why it fails:** State meant to be shared across calls must live in the factory or decorator closure, not inside the returned replacement function.
+
+---
+
+### 7. Rules to remember
+1. A decorator factory wraps the decorator in an outer function that returns the decorator.
+2. Always apply decorator factories with parentheses: `@factory(arg)`.
+3. Persistent state (caches, timers) must live in the factory closure, not inside the inner replacement function.
+4. Strongly type the factory options interface for complete IDE auto-completion.
+
+---
+
+### Think first: Prediction puzzle
+What happens when this snippet runs?
+
+```typescript
+function prefix(tag: string) {
+  return function (target: any, ctx: any) {
+    return function (this: any, msg: string) {
+      return `[${tag}] ${target.call(this, msg)}`;
+    };
+  };
+}
+
+class Logger {
+  @prefix("INFO")
+  log(msg: string) { return msg; }
+}
+
+const l = new Logger();
+console.log(l.log("System started"));
+```
+
+---
+
+**Answer:**
+```
+[INFO] System started
+```
+**Execution trace:**
+1. `@prefix("INFO")` evaluates, capturing `tag = "INFO"`.
+2. `l.log("System started")` runs the decorator replacement function.
+3. `target.call(this, msg)` returns `"System started"`.
+4. Returns `"[INFO] System started"`.
+
+---
+
+### Practice exercises
+
+#### Exercise 1: Retry decorator factory with exponential backoff
+- **Task**: Write a decorator factory `@retryWithBackoff({ maxRetries: number, delayMs: number })`.
+- **Hint 1**: `await new Promise(r => setTimeout(r, delayMs * Math.pow(2, attempt)))`.
+
+#### Exercise 2: Prefix decorator factory
+- **Task**: Create `@prepend(prefixStr: string)` that prefixes the string return value of a method.
+- **Hint 1**: `return `${prefixStr}${target.call(this, ...args)}``.
+
+#### Exercise 3: Parameterized timeout decorator factory
+- **Task**: Write `@timeout(ms: number)` that rejects a Promise if the method doesn't resolve within `ms` milliseconds.
+- **Hint 1**: Use `Promise.race([target.call(this, ...args), new Promise((_, rej) => setTimeout(rej, ms))])`.
+
+#### Exercise 4: Configurable deprecation warning factory
+- **Task**: Create `@deprecated({ message: string, sinceVersion: string })` that logs a warning on the first invocation only.
+- **Hint 1**: Store a `let warned = false` flag in the decorator closure.
+
+---
+
+### Exercise solutions
+
+#### Solution 1: Retry decorator factory with exponential backoff
+```typescript
+interface RetryOptions {
+  maxRetries: number;
+  delayMs: number;
+}
+
+function retryWithBackoff(opts: RetryOptions) {
   return function <This, Args extends any[], Return>(
     target: (this: This, ...args: Args) => Promise<Return>,
-    context: ClassMethodDecoratorContext<This, (this: This, ...args: Args) => Promise<Return>>
+    context: ClassMethodDecoratorContext
   ) {
     return async function (this: This, ...args: Args): Promise<Return> {
-      let attempts = 0;
-      while (attempts < maxRetries) {
+      let attempt = 0;
+      while (true) {
         try {
           return await target.call(this, ...args);
         } catch (err) {
-          attempts++;
-          if (attempts >= maxRetries) throw err;
-          await new Promise((r) => setTimeout(r, delayMs));
+          attempt++;
+          if (attempt >= opts.maxRetries) throw err;
+          await new Promise((r) => setTimeout(r, opts.delayMs * Math.pow(2, attempt - 1)));
         }
       }
-      throw new Error("Retry attempts exhausted");
     };
   };
 }
+```
 
-// Verification Assertions
-class WeatherServiceClient {
-  public apiCallCount: number;
+#### Solution 2: Prefix decorator factory
+```typescript
+function prepend(prefixStr: string) {
+  return function <This, Args extends any[]>(
+    target: (this: This, ...args: Args) => string,
+    context: ClassMethodDecoratorContext
+  ) {
+    return function (this: This, ...args: Args): string {
+      return `${prefixStr} ${target.call(this, ...args)}`;
+    };
+  };
+}
+```
 
-  constructor() {
-    this.apiCallCount = 0;
-  }
+#### Solution 3: Parameterized timeout decorator factory
+```typescript
+function timeout(ms: number) {
+  return function <This, Args extends any[], Return>(
+    target: (this: This, ...args: Args) => Promise<Return>,
+    context: ClassMethodDecoratorContext
+  ) {
+    return async function (this: This, ...args: Args): Promise<Return> {
+      const timer = new Promise<never>((_, reject) =>
+        setTimeout(() => reject(new Error(`Timeout after ${ms}ms`)), ms)
+      );
+      return Promise.race([target.call(this, ...args), timer]);
+    };
+  };
+}
+```
 
-  @timed
-  @cached(5000)
-  public async getTemperature(city: string): Promise<number> {
-    this.apiCallCount++;
-    return city === "Tokyo" ? 18 : 22;
-  }
-
-  @retry(3, 5)
-  public async flakyExternalCall(shouldFailTimes: number): Promise<string> {
-    this.apiCallCount++;
-    if (this.apiCallCount <= shouldFailTimes) {
-      throw new Error("Temporary network glitch");
-    }
-    return "SUCCESS";
-  }
+#### Solution 4: Configurable deprecation warning factory
+```typescript
+interface DeprecateConfig {
+  message: string;
+  sinceVersion: string;
 }
 
-const client = new WeatherServiceClient();
-
-// Test caching
-const temp1 = await client.getTemperature("Tokyo");
-const temp2 = await client.getTemperature("Tokyo");
-
-assert.strictEqual(temp1, 18);
-assert.strictEqual(temp2, 18);
-assert.strictEqual(client.apiCallCount, 1); // Second call served from cache!
-assert.strictEqual(telemetryLog.length, 2);
-
-// Test retry
-client.apiCallCount = 0;
-const retryRes = await client.flakyExternalCall(2); // Fails 2 times, succeeds on 3rd
-assert.strictEqual(retryRes, "SUCCESS");
-assert.strictEqual(client.apiCallCount, 3);
-
-console.log("Project 2 (Method Interceptor & Telemetry Pipeline) passed all assertions.");
+function deprecated(cfg: DeprecateConfig) {
+  return function <This, Args extends any[], Return>(
+    target: (this: This, ...args: Args) => Return,
+    context: ClassMethodDecoratorContext
+  ) {
+    let hasWarned = false;
+    const name = String(context.name);
+    return function (this: This, ...args: Args): Return {
+      if (!hasWarned) {
+        console.warn(`[DEPRECATION] ${name} is deprecated since v${cfg.sinceVersion}: ${cfg.message}`);
+        hasWarned = true;
+      }
+      return target.call(this, ...args);
+    };
+  };
+}
 ```
 
 ---
 
-### Project 3: Type-Safe Enterprise Validation & Auto-Accessor Sanitation Engine
+### Recall
+1. What is a decorator factory? A function that takes arguments and returns a decorator function.
+2. Where should persistent state (such as caches or timers) be stored? In the factory or decorator closure.
+3. What happens if you omit the invocation parentheses on a decorator factory? The factory itself is passed as the decorator, causing a runtime crash.
 
-#### Architectural Overview
-```
-+-------------------------------------------------------------------------+
-|                  Auto-Accessor Validation & Sanitation Engine           |
-+-------------------------------------------------------------------------+
-|  [UserRegistrationDTO]                                                  |
-|    ├── @trim() accessor username                                        |
-|    ├── @range(18, 120) accessor age                                     |
-|    └── @matches(/^[a-z]+@[a-z]+\.[a-z]+$/) accessor email               |
-|         │                                                               |
-|    (Validates and sanitizes values on both initialization and set)      |
-+-------------------------------------------------------------------------+
-```
-
-#### Complete Implementation & Verification Suite
-```typescript
-import assert from "node:assert";
-
-export function trim() {
-  return function <This, Value extends string>(
-    target: ClassAccessorDecoratorTarget<This, Value>,
-    context: ClassAccessorDecoratorContext<This, Value>
-  ): ClassAccessorDecoratorResult<This, Value> {
-    return {
-      init(this: This, val: Value): Value {
-        return (val ? val.trim() : val) as Value;
-      },
-      set(this: This, val: Value): void {
-        target.set.call(this, (val ? val.trim() : val) as Value);
-      }
-    };
-  };
-}
-
-export function range(min: number, max: number) {
-  return function <This, Value extends number>(
-    target: ClassAccessorDecoratorTarget<This, Value>,
-    context: ClassAccessorDecoratorContext<This, Value>
-  ): ClassAccessorDecoratorResult<This, Value> {
-    const validate = (val: number) => {
-      if (val < min || val > max) {
-        throw new Error(`ValidationError: ${String(context.name)} must be between ${min} and ${max}, received ${val}`);
-      }
-    };
-
-    return {
-      init(this: This, val: Value): Value {
-        if (val !== undefined) validate(val);
-        return val;
-      },
-      set(this: This, val: Value): void {
-        validate(val);
-        target.set.call(this, val);
-      }
-    };
-  };
-}
-
-export function matches(pattern: RegExp) {
-  return function <This, Value extends string>(
-    target: ClassAccessorDecoratorTarget<This, Value>,
-    context: ClassAccessorDecoratorContext<This, Value>
-  ): ClassAccessorDecoratorResult<This, Value> {
-    const validate = (val: string) => {
-      if (!pattern.test(val)) {
-        throw new Error(`ValidationError: ${String(context.name)} does not match pattern ${pattern}`);
-      }
-    };
-
-    return {
-      init(this: This, val: Value): Value {
-        if (val !== undefined) validate(val);
-        return val;
-      },
-      set(this: This, val: Value): void {
-        validate(val);
-        target.set.call(this, val);
-      }
-    };
-  };
-}
-
-// Verification Assertions
-class UserRegistrationDto {
-  @trim()
-  accessor username: string;
-
-  @range(18, 99)
-  accessor age: number;
-
-  @matches(/^[^\s@]+@[^\s@]+\.[^\s@]+$/)
-  accessor email: string;
-
-  constructor(username: string, age: number, email: string) {
-    this.username = username;
-    this.age = age;
-    this.email = email;
-  }
-}
-
-// Valid instantiation with whitespace trimming
-const dto = new UserRegistrationDto("   alice_dev   ", 28, "alice@enterprise.com");
-assert.strictEqual(dto.username, "alice_dev");
-assert.strictEqual(dto.age, 28);
-assert.strictEqual(dto.email, "alice@enterprise.com");
-
-// Dynamic set trimming
-dto.username = "   alice_updated   ";
-assert.strictEqual(dto.username, "alice_updated");
-
-// Range validation rejection
-assert.throws(() => {
-  dto.age = 15;
-}, /ValidationError: age must be between 18 and 99/);
-
-// Email regex rejection
-assert.throws(() => {
-  dto.email = "not-an-email";
-}, /ValidationError: email does not match pattern/);
-
-console.log("Project 3 (Auto-Accessor Validation Engine) passed all assertions.");
-```
+> **If you remember only one thing:**  
+> A decorator factory is a function that returns a decorator, allowing custom parameters to be passed via closures.
 
 ---
 
-### Project 4: API Controller Router & OpenAPI Route Metadata Generator
+# Checkpoint Challenge 2: Decorator Metadata & Auto-Accessors (Topics 6-10)
 
-#### Architectural Overview
-```
-+-------------------------------------------------------------------------+
-|                  API Controller Router & OpenAPI Generator              |
-+-------------------------------------------------------------------------+
-|  [@controller('/api/v1/users')]                                         |
-|    ├── @get('/') listUsers()                                            |
-|    ├── @get('/:id') getUserById()                                       |
-|    └── @post('/') createUser()                                          |
-|         │                                                               |
-|  [RouterRegistry]                                                       |
-|    └── generateOpenApiSpec(): OpenAPI 3.0 Document                      |
-+-------------------------------------------------------------------------+
-```
+### Challenge Specification
+Construct an API Controller Router Generator that:
+1. Uses a **Decorator Factory** `@route("GET" | "POST", path)` to attach HTTP routing metadata to methods using `context.metadata`.
+2. Uses an **Auto-Accessor Decorator** `@secured` that asserts the caller has an active auth token.
+3. Employs `context.addInitializer` to automatically bind route methods.
+4. Generates an executable route manifest from a class constructor.
 
-#### Complete Implementation & Verification Suite
+### Solution
+
 ```typescript
-import assert from "node:assert";
-
+// Polyfill Symbol.metadata
 (Symbol as any).metadata ??= Symbol("Symbol.metadata");
 
-const ROUTES_KEY = Symbol("Controller:Routes");
+// 1. Route Metadata Types & Decorator Factory
+type HttpMethod = "GET" | "POST" | "PUT" | "DELETE";
 
-export interface RouteDefinition {
-  method: "GET" | "POST" | "PUT" | "DELETE";
+interface RouteInfo {
+  method: HttpMethod;
   path: string;
-  handlerName: string | symbol;
+  handlerName: string;
 }
 
-export function controller(prefix: string) {
-  return function <T extends abstract new (...args: any[]) => any>(
+function route(method: HttpMethod, path: string) {
+  return function <This, Args extends any[], Return>(
+    target: (this: This, ...args: Args) => Return,
+    context: ClassMethodDecoratorContext<This, (this: This, ...args: Args) => Return>
+  ) {
+    // 1. Store metadata
+    const routes = ((context.metadata.routes ??= []) as RouteInfo[]);
+    routes.push({ method, path, handlerName: String(context.name) });
+
+    // 2. Autobind handler via addInitializer
+    const name = context.name;
+    context.addInitializer(function (this: This) {
+      (this as any)[name] = target.bind(this);
+    });
+
+    return target;
+  };
+}
+
+// 2. Secured Auto-Accessor
+function secured<This>(
+  target: ClassAccessorDecoratorTarget<This, boolean>,
+  context: ClassAccessorDecoratorContext<This, boolean>
+): ClassAccessorDecoratorResult<This, boolean> {
+  return {
+    set(this: This, val: boolean) {
+      console.log(`[Security] Auth status updated to: ${val}`);
+      target.set.call(this, val);
+    },
+  };
+}
+
+// 3. Controller Implementation
+class ApiOrderController {
+  @secured
+  accessor isAuthenticated: boolean = true;
+
+  @route("GET", "/orders")
+  getOrders(): string[] {
+    return ["order_1", "order_2"];
+  }
+
+  @route("POST", "/orders")
+  createOrder(): string {
+    return "created_order_3";
+  }
+}
+
+// 4. Manifest Generator inspecting Symbol.metadata
+function generateRouteManifest(controllerCtor: Function): RouteInfo[] {
+  const meta = (controllerCtor as any)[Symbol.metadata];
+  return meta?.routes ?? [];
+}
+
+// 5. Verification Execution
+function runCheckpoint2() {
+  const manifest = generateRouteManifest(ApiOrderController);
+  console.log("Extracted Routes:", manifest);
+
+  const ctrl = new ApiOrderController();
+  // Verify autobind
+  const getOrdersFn = ctrl.getOrders;
+  console.log("Invoking torn-off getOrders():", getOrdersFn());
+
+  // Verify accessor decorator
+  ctrl.isAuthenticated = false;
+}
+runCheckpoint2();
+```
+
+
+---
+
+# Topic 11: Inversion of Control (IoC) and Dependency Injection Fundamentals
+
+### 1. What is it?
+**Inversion of Control (IoC)** is a software architecture principle in which the control of object creation and lifecycle management is transferred from the individual class to a centralized container or framework. **Dependency Injection (DI)** is the primary mechanism used to achieve IoC: instead of a class instantiating its own dependencies using `new`, the dependencies are passed (injected) into its constructor or properties.
+
+### 2. Why does it exist?
+When classes instantiate their own dependencies, they become tightly coupled to specific implementations:
+```typescript
+// Anti-pattern: Hard-coded instantiation (Tightly coupled)
+class OrderProcessor {
+  private repo = new PostgresOrderRepository(); // Cannot be unit tested without a live Postgres DB!
+  private emailer = new SendGridEmailClient();  // Will send real emails during unit tests!
+}
+```
+With Dependency Injection, `OrderProcessor` depends on abstract interfaces (`OrderRepository`, `EmailClient`). At runtime in production, the IoC container supplies real database clients; in unit tests, test suites supply in-memory fakes.
+
+### 3. Basic example
+
+```typescript
+// 1. Service Abstractions (Interfaces)
+interface DatabaseClient {
+  query(sql: string): any[];
+}
+
+interface NotificationClient {
+  send(to: string, msg: string): void;
+}
+
+// 2. Concrete Production Implementations
+class SqlDatabase implements DatabaseClient {
+  query(sql: string): any[] {
+    return [{ id: 1, name: "Order #1" }];
+  }
+}
+
+class EmailNotifier implements NotificationClient {
+  send(to: string, msg: string): void {
+    console.log(`Email to ${to}: ${msg}`);
+  }
+}
+
+// 3. Dependent Domain Class with Constructor Injection
+class OrderService {
+  constructor(
+    private db: DatabaseClient,
+    private notifier: NotificationClient
+  ) {}
+
+  processOrder(userId: string): void {
+    const orders = this.db.query("SELECT * FROM orders");
+    this.notifier.send(userId, `Processed ${orders.length} orders`);
+  }
+}
+
+// 4. Manual Dependency Injection
+const productionDb = new SqlDatabase();
+const productionNotifier = new EmailNotifier();
+
+const orderService = new OrderService(productionDb, productionNotifier);
+orderService.processOrder("user_101");
+```
+
+**Line-by-line explanation:**
+- `interface DatabaseClient`, `NotificationClient`: Abstract contracts that define capabilities without binding to concrete classes.
+- `constructor(private db: DatabaseClient, private notifier: NotificationClient)`: The constructor requests its dependencies. It does not instantiate them.
+- `new OrderService(productionDb, productionNotifier)`: Dependencies are created externally and injected into the constructor.
+- In a unit test, you can pass mock objects (`{ query: () => [] }`) without touching the filesystem or network.
+
+---
+
+### 4. How it works inside TypeScript
+1. **Interface Polymorphism**: Any class satisfying `DatabaseClient` can be injected without changing `OrderService`.
+2. **Structural Subtyping**: Mocks and fakes do not need to inherit from concrete classes—they only need to match the interface shape.
+3. **Inversion of Creation**: The caller (or IoC container) dictates which implementations are provided, enabling painless reconfiguration across environments.
+
+---
+
+### 5. More examples
+
+#### Example 1: Unit testing with lightweight mocks
+```typescript
+class MockDatabase implements DatabaseClient {
+  queryCount = 0;
+  query(sql: string): any[] {
+    this.queryCount++;
+    return [{ id: 99, name: "Mock Order" }];
+  }
+}
+
+class MockNotifier implements NotificationClient {
+  messages: string[] = [];
+  send(to: string, msg: string): void {
+    this.messages.push(msg);
+  }
+}
+
+// Fast in-memory unit test:
+const mockDb = new MockDatabase();
+const mockNotifier = new MockNotifier();
+const testService = new OrderService(mockDb, mockNotifier);
+
+testService.processOrder("test_user");
+console.log(mockDb.queryCount === 1);               // true
+console.log(mockNotifier.messages[0].includes("1")); // true
+```
+
+#### Example 2: Property (Field) Injection vs Constructor Injection
+```typescript
+// Constructor Injection (RECOMMENDED: guarantees dependencies exist before any method runs)
+class ReportGenerator {
+  constructor(private db: DatabaseClient) {}
+}
+
+// Property Injection (Acceptable for optional dependencies or plugin architectures)
+class PluginHost {
+  public logger?: NotificationClient;
+}
+```
+
+---
+
+### 6. Common mistakes
+
+#### Mistake 1: Service Locator Anti-Pattern
+```typescript
+// ANTI-PATTERN: Service Locator
+class BadOrderService {
+  private db: DatabaseClient;
+  constructor() {
+    this.db = GlobalServiceLocator.get<DatabaseClient>("db"); // Hidden dependency!
+  }
+}
+```
+**Why it fails:** The Service Locator hides class dependencies inside the constructor body. Anyone reading `new BadOrderService()` assumes it requires no arguments, only to suffer runtime crashes if `GlobalServiceLocator` hasn't been pre-configured. Constructor injection makes dependencies explicit.
+
+#### Mistake 2: Depending on concrete classes instead of interfaces
+```typescript
+// WRONG: Constructor typed with concrete Postgres class
+constructor(private db: PostgresDatabase) {} // Coupled directly to Postgres!
+```
+**Why it fails:** You cannot pass a `MockDatabase` or `MySqlDatabase` because TypeScript checks compatibility against the specific `PostgresDatabase` class. Always type parameters against generic interfaces.
+
+---
+
+### 7. Rules to remember
+1. Always prefer Constructor Injection over Property Injection.
+2. Type constructor dependencies against interfaces or abstract classes, never concrete vendor classes.
+3. Do not instantiate dependencies with `new` inside domain business services.
+4. Avoid the Service Locator anti-pattern (`Container.get()` inside domain classes).
+
+---
+
+### Think first: Prediction puzzle
+Does the following code allow swapping implementations without modifying `Calculator`?
+
+```typescript
+interface MathOp {
+  execute(a: number, b: number): number;
+}
+
+class Calculator {
+  constructor(private op: MathOp) {}
+  compute(x: number, y: number) { return this.op.execute(x, y); }
+}
+
+const add: MathOp = { execute: (a, b) => a + b };
+const mul: MathOp = { execute: (a, b) => a * b };
+
+console.log(new Calculator(add).compute(3, 4));
+console.log(new Calculator(mul).compute(3, 4));
+```
+
+---
+
+**Answer:**
+```
+7
+12
+```
+**Explanation:** `Calculator` is completely decoupled from the arithmetic implementation. Passing `add` computes $3+4=7$; passing `mul` computes $3 \times 4=12$.
+
+---
+
+### Practice exercises
+
+#### Exercise 1: Logger interface injection
+- **Task**: Create an interface `Logger { log(msg: string): void }`. Write a `PaymentService` that requires `Logger` in its constructor and logs when payments occur.
+- **Hint 1**: `constructor(private logger: Logger) {}`.
+
+#### Exercise 2: Mock dependency test
+- **Task**: Write a unit test for `PaymentService` using an object literal `{ log: (m) => logs.push(m) }`.
+- **Hint 1**: Verify `logs.length === 1`.
+
+#### Exercise 3: Default fallback injection
+- **Task**: Allow `Logger` to be optional in the constructor, defaulting to `new ConsoleLogger()` if omitted.
+- **Hint 1**: `constructor(private logger: Logger = new ConsoleLogger()) {}`.
+
+#### Exercise 4: Multi-dependency constructor
+- **Task**: Write a service `UserProfileService` that accepts `UserRepository`, `AuditService`, and `EmailClient`.
+- **Hint 1**: Declare all three in constructor parameter properties.
+
+---
+
+### Exercise solutions
+
+#### Solution 1: Logger interface injection
+```typescript
+interface Logger {
+  log(msg: string): void;
+}
+
+class PaymentService {
+  constructor(private logger: Logger) {}
+
+  pay(amount: number): void {
+    this.logger.log(`Processing payment of $${amount}`);
+  }
+}
+```
+
+#### Solution 2: Mock dependency test
+```typescript
+const logs: string[] = [];
+const mockLogger: Logger = {
+  log(msg: string) { logs.push(msg); }
+};
+
+const service = new PaymentService(mockLogger);
+service.pay(100);
+console.log(logs.length === 1 && logs[0].includes("100")); // true
+```
+
+#### Solution 3: Default fallback injection
+```typescript
+class ConsoleLogger implements Logger {
+  log(msg: string): void { console.log(`[LOG] ${msg}`); }
+}
+
+class FlexiblePaymentService {
+  constructor(private logger: Logger = new ConsoleLogger()) {}
+  pay(amt: number) { this.logger.log(`Paid ${amt}`); }
+}
+```
+
+#### Solution 4: Multi-dependency constructor
+```typescript
+interface UserRepository { getUser(id: string): any; }
+interface AuditService { record(action: string): void; }
+interface EmailClient { send(to: string): void; }
+
+class UserProfileService {
+  constructor(
+    private users: UserRepository,
+    private audit: AuditService,
+    private emails: EmailClient
+  ) {}
+}
+```
+
+---
+
+### Recall
+1. What is the difference between Inversion of Control and Dependency Injection? IoC is the architectural principle; Dependency Injection is the practical technique of passing dependencies from the outside.
+2. Why is Constructor Injection preferred over Property Injection? It guarantees that the object is fully formed and ready to use immediately after construction.
+3. Why should dependencies be typed with interfaces? To enable swapping implementations and injecting test doubles without code changes.
+
+> **If you remember only one thing:**  
+> Inversion of Control means classes receive their dependencies from the outside via constructor parameters rather than creating them with `new`.
+
+---
+
+# Topic 12: Building a Custom IoC Container: Token-Based and Service Registration
+
+### 1. What is it?
+An **IoC Container** is a central registry that stores service recipes (factories, classes, or values) and resolves entire dependency graphs recursively. In TypeScript, because interfaces are erased at runtime, dependencies are identified using **Tokens** (unique `Symbol` or string identifiers).
+
+### 2. Why does it exist?
+While manual dependency injection works for small apps, in enterprise architectures with dozens of nested services:
+```typescript
+const service = new OrderService(
+  new PostgresRepo(new ConnectionPool(new ConfigLoader())),
+  new SendGridNotifier(new HttpClient(new RetryPolicy()))
+);
+```
+Manual instantiation becomes deeply tedious. An IoC container automates resolution: `container.resolve(OrderService)`.
+
+### 3. Basic example
+
+```typescript
+// 1. Injection Token Definition
+type InjectionToken<T> = string | symbol | (new (...args: any[]) => T);
+
+// 2. The IoC Container
+class Container {
+  private registry = new Map<InjectionToken<any>, () => any>();
+
+  // Register a factory function
+  registerFactory<T>(token: InjectionToken<T>, factory: (c: Container) => T): void {
+    this.registry.set(token, () => factory(this));
+  }
+
+  // Register a fixed value or instance
+  registerInstance<T>(token: InjectionToken<T>, instance: T): void {
+    this.registry.set(token, () => instance);
+  }
+
+  // Resolve a token recursively
+  resolve<T>(token: InjectionToken<T>): T {
+    const factory = this.registry.get(token);
+    if (!factory) {
+      // If token is a class constructor that has no registered factory, try instantiating directly
+      if (typeof token === "function") {
+        return new (token as new () => T)();
+      }
+      throw new Error(`No provider registered for token: ${String(token)}`);
+    }
+    return factory();
+  }
+}
+
+// 3. Usage
+const TOKENS = {
+  Config: Symbol.for("app.config"),
+  Database: Symbol.for("app.database"),
+};
+
+interface AppConfig {
+  dbUrl: string;
+}
+
+class Database {
+  constructor(public config: AppConfig) {}
+}
+
+const container = new Container();
+
+// Register dependencies
+container.registerInstance<AppConfig>(TOKENS.Config, { dbUrl: "postgres://localhost" });
+container.registerFactory(TOKENS.Database, (c) => new Database(c.resolve<AppConfig>(TOKENS.Config)));
+
+// Resolve full graph automatically!
+const db = container.resolve<Database>(TOKENS.Database);
+console.log(db.config.dbUrl); // "postgres://localhost"
+```
+
+**Line-by-line explanation:**
+- `type InjectionToken<T>`: Represents a key used to locate a provider. It preserves the expected return type `T`.
+- `this.registry = new Map<...>`: Maps tokens to zero-argument factory functions.
+- `registerFactory(token, factory)`: Passes the container `(c: Container)` to the factory so it can resolve sub-dependencies recursively.
+- `c.resolve<AppConfig>(TOKENS.Config)`: Dynamically fetches nested dependencies during resolution.
+
+---
+
+### 4. How it works inside TypeScript
+1. **Type Erasure Problem**: In TypeScript, `interface Config` does not exist in the compiled JavaScript. Therefore, `container.resolve(Config)` is invalid JavaScript.
+2. **Tokens as Runtime Proxies**: `Symbol.for("token")` exists at runtime and bridges the gap.
+3. **Generic Return Typing**: `resolve<T>(token: InjectionToken<T>): T` tells the compiler what type to return at the call site.
+
+---
+
+### 5. More examples
+
+#### Example 1: Strongly typed Token helper
+```typescript
+class Token<T> {
+  readonly _type!: T; // Phantom type to tie token to its service type
+  constructor(public readonly description: string) {}
+}
+
+const USER_SERVICE_TOKEN = new Token<UserService>("UserService");
+
+class TypedContainer {
+  private map = new Map<Token<any>, any>();
+
+  register<T>(token: Token<T>, value: T): void {
+    this.map.set(token, value);
+  }
+
+  resolve<T>(token: Token<T>): T {
+    const res = this.map.get(token);
+    if (!res) throw new Error(`Missing: ${token.description}`);
+    return res;
+  }
+}
+```
+
+#### Example 2: Class constructor self-registration
+```typescript
+class LoggerService {
+  log(msg: string) { console.log(msg); }
+}
+
+const c = new Container();
+// Resolving an unregistered class constructor instantiates it directly
+const logger = c.resolve(LoggerService);
+logger.log("Hello from auto-instantiated class");
+```
+
+---
+
+### 6. Common mistakes
+
+#### Mistake 1: Trying to use TypeScript interfaces as tokens
+```typescript
+// WRONG: Attempting to resolve an interface
+container.resolve<IUserService>(IUserService); // 'IUserService' only refers to a type, but is being used as a value here!
+```
+**Why it fails:** Interfaces are erased during compilation. They do not exist at runtime. You must use a `Symbol`, a `string`, or a class constructor as the token.
+
+#### Mistake 2: Missing error handling on unregistered tokens
+```typescript
+// WRONG: Returning undefined without throwing
+resolve(token: any) {
+  return this.registry.get(token)?.(); // Caller crashes later with mysterious 'cannot read properties of undefined'!
+}
+```
+**Why it fails:** Always throw an informative error specifying the token name immediately when resolution fails.
+
+---
+
+### 7. Rules to remember
+1. TypeScript interfaces cannot be used as runtime tokens (they are erased).
+2. Use `Symbol.for("name")`, string identifiers, or class constructors as tokens.
+3. Use phantom types (`class Token<T>`) to bind tokens to their expected types automatically.
+4. Pass the container instance to factory registrations to enable recursive sub-dependency resolution.
+
+---
+
+### Think first: Prediction puzzle
+What does the following snippet log?
+
+```typescript
+const container = new Container();
+const TOKEN_A = Symbol("A");
+
+container.registerFactory(TOKEN_A, () => ({ id: Math.random() }));
+
+const a1 = container.resolve<{ id: number }>(TOKEN_A);
+const a2 = container.resolve<{ id: number }>(TOKEN_A);
+
+console.log(a1.id === a2.id);
+```
+
+---
+
+**Answer:**
+```
+false
+```
+**Explanation:** `registerFactory` executes the factory function on every call to `resolve`. Because each call evaluates `Math.random()`, `a1` and `a2` receive different random numbers. (To share the same instance, it must be registered as a Singleton!).
+
+---
+
+### Practice exercises
+
+#### Exercise 1: Register class with auto-instantiation
+- **Task**: Extend `Container` with a method `registerClass<T>(token: InjectionToken<T>, ctor: new (...args: any[]) => T)` that instantiates the class on resolve.
+- **Hint 1**: `this.registerFactory(token, () => new ctor());`.
+
+#### Exercise 2: Type-safe Token class implementation
+- **Task**: Create `Token<T>` and verify that `container.resolve(token)` returns `T` without requiring manual `<T>` at the call site.
+- **Hint 1**: Signature: `resolve<T>(token: Token<T>): T`.
+
+#### Exercise 3: Container child scopes / hierarchy
+- **Task**: Add a `createChild()` method to `Container` that checks its own registry first, and delegates to the parent if not found.
+- **Hint 1**: Store `private parent?: Container`.
+
+#### Exercise 4: Multi-provider collection
+- **Task**: Allow registering multiple handlers under a single array token `registerMulti(token, provider)`.
+- **Hint 1**: Store an array of factories for multi-tokens.
+
+---
+
+### Exercise solutions
+
+#### Solution 1: Register class with auto-instantiation
+```typescript
+class ExtendedContainer extends Container {
+  registerClass<T>(token: InjectionToken<T>, ctor: new () => T): void {
+    this.registerFactory(token, () => new ctor());
+  }
+}
+```
+
+#### Solution 2: Type-safe Token class implementation
+```typescript
+class TypedToken<T> {
+  readonly __typeBrand!: T;
+  constructor(public name: string) {}
+}
+
+class StronglyTypedContainer {
+  private store = new Map<TypedToken<any>, () => any>();
+
+  register<T>(token: TypedToken<T>, factory: () => T): void {
+    this.store.set(token, factory);
+  }
+
+  resolve<T>(token: TypedToken<T>): T {
+    const fn = this.store.get(token);
+    if (!fn) throw new Error(`Missing ${token.name}`);
+    return fn();
+  }
+}
+```
+
+#### Solution 3: Container child scopes / hierarchy
+```typescript
+class HierarchicalContainer extends Container {
+  constructor(private parent?: HierarchicalContainer) {
+    super();
+  }
+
+  createChild(): HierarchicalContainer {
+    return new HierarchicalContainer(this);
+  }
+
+  override resolve<T>(token: InjectionToken<T>): T {
+    try {
+      return super.resolve(token);
+    } catch (err) {
+      if (this.parent) return this.parent.resolve(token);
+      throw err;
+    }
+  }
+}
+```
+
+#### Solution 4: Multi-provider collection
+```typescript
+class MultiContainer {
+  private multiRegistry = new Map<string, Array<() => any>>();
+
+  registerMulti<T>(key: string, factory: () => T): void {
+    const list = this.multiRegistry.get(key) ?? [];
+    list.push(factory);
+    this.multiRegistry.set(key, list);
+  }
+
+  resolveAll<T>(key: string): T[] {
+    const list = this.multiRegistry.get(key) ?? [];
+    return list.map((fn) => fn());
+  }
+}
+```
+
+---
+
+### Recall
+1. Why do IoC containers in TypeScript use tokens instead of interfaces? Because TypeScript interfaces are completely erased at compile time.
+2. How does an IoC container resolve nested dependencies? By passing the container instance into registered factory functions (`(c) => new Service(c.resolve(...))`).
+3. What is the benefit of a `Token<T>` class with a phantom property? It provides automatic return-type inference when calling `container.resolve(token)` without manual type arguments.
+
+> **If you remember only one thing:**  
+> IoC containers use runtime tokens (Symbols or strings) to locate service factories and recursively assemble dependency graphs.
+
+---
+
+# Topic 13: Service Lifecycles in IoC: Singleton, Transient, and Scoped
+
+### 1. What is it?
+In an IoC container, the **Service Lifecycle** (or lifetime) determines how long an instantiated service is retained and how many instances are created:
+1. **Transient**: A brand-new instance is created every single time the dependency is requested.
+2. **Singleton**: Exactly one instance is created on first request and cached for the entire lifespan of the application process.
+3. **Scoped**: An instance is created once per execution context (such as a single incoming HTTP request) and shared among all dependencies resolved within that scope.
+
+### 2. Why does it exist?
+Different services have different memory and concurrency requirements:
+- A database connection pool should be a **Singleton** (shared globally).
+- An authenticated user session or transaction context must be **Scoped** (isolated to one HTTP request; never leaked to another user).
+- A lightweight formatting utility or stateful request parser should be **Transient** (fresh every time to avoid shared state mutations).
+
+### 3. Basic example
+
+```typescript
+type Lifecycle = "transient" | "singleton" | "scoped";
+
+interface ServiceDefinition<T> {
+  factory: (c: LifecycleContainer) => T;
+  lifecycle: Lifecycle;
+}
+
+class LifecycleContainer {
+  private definitions = new Map<string, ServiceDefinition<any>>();
+  private singletons = new Map<string, any>();
+  private scopedInstances = new Map<string, any>();
+
+  constructor(private parentScope?: LifecycleContainer) {}
+
+  register<T>(key: string, factory: (c: LifecycleContainer) => T, lifecycle: Lifecycle): void {
+    this.definitions.set(key, { factory, lifecycle });
+  }
+
+  // Create an isolated sub-container for an HTTP request
+  createScope(): LifecycleContainer {
+    const child = new LifecycleContainer(this);
+    child.definitions = this.definitions;
+    child.singletons = this.singletons; // Share global singletons!
+    return child;
+  }
+
+  resolve<T>(key: string): T {
+    const def = this.definitions.get(key);
+    if (!def) {
+      if (this.parentScope) return this.parentScope.resolve(key);
+      throw new Error(`Service not registered: ${key}`);
+    }
+
+    // 1. Singleton: Cached at root
+    if (def.lifecycle === "singleton") {
+      if (!this.singletons.has(key)) {
+        this.singletons.set(key, def.factory(this));
+      }
+      return this.singletons.get(key);
+    }
+
+    // 2. Scoped: Cached per scope instance
+    if (def.lifecycle === "scoped") {
+      if (!this.scopedInstances.has(key)) {
+        this.scopedInstances.set(key, def.factory(this));
+      }
+      return this.scopedInstances.get(key);
+    }
+
+    // 3. Transient: Always create fresh
+    return def.factory(this);
+  }
+}
+
+// Verification
+const root = new LifecycleContainer();
+root.register("transient", () => ({ id: Math.random() }), "transient");
+root.register("singleton", () => ({ id: Math.random() }), "singleton");
+root.register("scoped", () => ({ id: Math.random() }), "scoped");
+
+// Scope 1 (HTTP Request 1)
+const req1 = root.createScope();
+const s1_req1 = req1.resolve<{ id: number }>("scoped");
+const s2_req1 = req1.resolve<{ id: number }>("scoped");
+console.log(s1_req1 === s2_req1); // true: same instance within scope!
+
+// Scope 2 (HTTP Request 2)
+const req2 = root.createScope();
+const s1_req2 = req2.resolve<{ id: number }>("scoped");
+console.log(s1_req1 === s1_req2); // false: isolated between different scopes!
+
+// Singleton across both scopes
+console.log(req1.resolve("singleton") === req2.resolve("singleton")); // true!
+```
+
+**Line-by-line explanation:**
+- `definitions`: Holds the recipe and lifecycle rule for each token.
+- `singletons`: Root cache shared across all child scopes.
+- `scopedInstances`: Local cache created on each child scope (cleared when the scope is garbage collected).
+- `def.lifecycle === "transient"`: Always calls `def.factory(this)` without caching.
+
+---
+
+### 4. How it works inside TypeScript
+1. **Scope Tree**: Scopes form a parent-child hierarchy. Singletons delegate to the root; scoped instances stay in the local child container.
+2. **Memory Cleanup**: When an HTTP request completes, dropping the reference to `req1` allows V8 to garbage collect all scoped instances automatically.
+3. **Captive Dependency Prevention**: In production frameworks, resolving a scoped service into a root singleton is prevented to avoid memory leaks.
+
+---
+
+### 5. More examples
+
+#### Example 1: Web Request Middleware Scoping
+```typescript
+function handleHttpRequest(rootContainer: LifecycleContainer, incomingUser: string) {
+  const requestScope = rootContainer.createScope();
+
+  // Register request-specific state in the child scope
+  requestScope.register("currentUser", () => incomingUser, "scoped");
+
+  const handler = requestScope.resolve<any>("orderHandler");
+  handler.execute();
+  // Request ends: requestScope and currentUser are eligible for GC!
+}
+```
+
+#### Example 2: Captive Dependency Detection Guard
+```typescript
+// If a Singleton depends on a Scoped service, the scoped instance is held forever (Captive Dependency bug!)
+```
+
+---
+
+### 6. Common mistakes
+
+#### Mistake 1: The Captive Dependency Anti-Pattern
+```typescript
+// DANGER:
+// Service A is SINGLETON
+// Service B is SCOPED (e.g., UserSession)
+// If Service A injects Service B in constructor, Service B is captured forever in the singleton!
+```
+**Why it fails:** The singleton lives for the lifetime of the process. If it holds a reference to a scoped instance (like Request 1's user), all subsequent requests will inadvertently access Request 1's user data! Always ensure singletons only depend on other singletons or transients.
+
+#### Mistake 2: Forgetting to clean up child scopes
+```typescript
+// WRONG: Storing child scopes in a global array
+const allScopes: any[] = [];
+function onRequest() {
+  const scope = root.createScope();
+  allScopes.push(scope); // Memory leak! Scopes are never garbage collected!
+}
+```
+**Why it fails:** Child scopes hold all resolved scoped instances in memory. If you retain references to child scopes, your server will eventually crash with an Out of Memory (OOM) error.
+
+---
+
+### 7. Rules to remember
+1. **Transient**: No caching; fresh instance on every resolution.
+2. **Singleton**: Exactly one instance cached globally at the root.
+3. **Scoped**: One instance cached per child scope (e.g., per HTTP request).
+4. **Never inject a Scoped service into a Singleton** (Captive Dependency bug).
+
+---
+
+### Think first: Prediction puzzle
+What does the code log?
+
+```typescript
+const container = new LifecycleContainer();
+let count = 0;
+container.register("counter", () => ++count, "transient");
+
+console.log(container.resolve("counter"));
+console.log(container.resolve("counter"));
+```
+
+---
+
+**Answer:**
+```
+1
+2
+```
+**Explanation:** Because the lifecycle is `"transient"`, the factory executes each time `resolve` is called, incrementing `count` from 1 to 2.
+
+---
+
+### Practice exercises
+
+#### Exercise 1: Register singleton helper
+- **Task**: Add `registerSingleton(key, factory)` to `LifecycleContainer` as a shortcut for `register(key, factory, "singleton")`.
+- **Hint 1**: `this.register(key, factory, "singleton");`.
+
+#### Exercise 2: Transient timestamp resolution
+- **Task**: Register a transient service that returns `Date.now()`. Verify two subsequent resolutions produce values.
+- **Hint 1**: Use `"transient"` lifecycle.
+
+#### Exercise 3: Scoped context disposal hook
+- **Task**: Add a `dispose()` method to `LifecycleContainer` that calls `.dispose()` on any scoped instance that implements `{ dispose(): void }`.
+- **Hint 1**: Iterate over `this.scopedInstances.values()`.
+
+#### Exercise 4: Captive dependency guard
+- **Task**: In `register`, throw an error if a `"singleton"` tries to resolve a `"scoped"` dependency.
+- **Hint 1**: Inspect the lifecycle of dependencies during factory resolution.
+
+---
+
+### Exercise solutions
+
+#### Solution 1: Register singleton helper
+```typescript
+class BetterContainer extends LifecycleContainer {
+  registerSingleton<T>(key: string, factory: (c: LifecycleContainer) => T): void {
+    this.register(key, factory, "singleton");
+  }
+
+  registerTransient<T>(key: string, factory: (c: LifecycleContainer) => T): void {
+    this.register(key, factory, "transient");
+  }
+}
+```
+
+#### Solution 2: Transient timestamp resolution
+```typescript
+const c = new BetterContainer();
+c.registerTransient("time", () => Date.now());
+const t1 = c.resolve<number>("time");
+const t2 = c.resolve<number>("time");
+console.log(typeof t1 === "number" && typeof t2 === "number"); // true
+```
+
+#### Solution 3: Scoped context disposal hook
+```typescript
+class DisposableContainer extends LifecycleContainer {
+  dispose(): void {
+    for (const instance of (this as any).scopedInstances.values()) {
+      if (typeof instance?.dispose === "function") {
+        instance.dispose();
+      }
+    }
+    (this as any).scopedInstances.clear();
+  }
+}
+```
+
+#### Solution 4: Captive dependency guard
+```typescript
+function assertNoCaptiveDependency(parentLifecycle: Lifecycle, childLifecycle: Lifecycle): void {
+  if (parentLifecycle === "singleton" && childLifecycle === "scoped") {
+    throw new Error("Captive Dependency Error: A Singleton cannot inject a Scoped service!");
+  }
+}
+```
+
+---
+
+### Recall
+1. What is the difference between Transient and Scoped lifetimes? Transient creates a fresh instance on every call; Scoped shares one instance within the current scope.
+2. What is a "Captive Dependency"? When a long-lived service (Singleton) holds onto a short-lived service (Scoped), preventing it from being garbage collected and causing state leaks.
+3. When should a child scope be created? At the start of a request, transaction, or unit of work.
+
+> **If you remember only one thing:**  
+> Singletons live forever at the root, Scoped services live for one request scope, and Transient services are recreated on every call.
+
+---
+
+# Topic 14: Circular Dependency Detection in IoC Containers
+
+### 1. What is it?
+A **Circular Dependency** occurs when Service A depends on Service B, and Service B depends (directly or indirectly) on Service A:
+$$A \longrightarrow B \longrightarrow A$$
+Without protection, an IoC container attempting to resolve Service A will recursively attempt to resolve Service B, which will attempt to resolve Service A, causing an infinite loop and crashing the process with `RangeError: Maximum call stack size exceeded`.
+
+### 2. Why does it exist?
+Circular dependencies happen frequently in complex architectures as systems grow. A production IoC container must detect cycles dynamically during graph resolution and throw a descriptive error detailing the exact dependency chain (`A -> B -> C -> A`).
+
+### 3. Basic example
+
+```typescript
+class CycleSafeContainer {
+  private factories = new Map<string, (c: CycleSafeContainer) => any>();
+  // Resolution stack tracking currently resolving tokens
+  private resolutionStack = new Set<string>();
+
+  register(token: string, factory: (c: CycleSafeContainer) => any): void {
+    this.factories.set(token, factory);
+  }
+
+  resolve<T>(token: string): T {
+    // 1. Check if token is already in active resolution stack!
+    if (this.resolutionStack.has(token)) {
+      const cyclePath = [...Array.from(this.resolutionStack), token].join(" -> ");
+      throw new Error(`Circular dependency detected: ${cyclePath}`);
+    }
+
+    const factory = this.factories.get(token);
+    if (!factory) {
+      throw new Error(`No provider registered for: ${token}`);
+    }
+
+    // 2. Push to stack
+    this.resolutionStack.add(token);
+
+    try {
+      // 3. Resolve
+      return factory(this);
+    } finally {
+      // 4. Pop from stack when resolution of this branch completes
+      this.resolutionStack.delete(token);
+    }
+  }
+}
+
+// Verification with a circular graph: A -> B -> A
+const container = new CycleSafeContainer();
+
+container.register("ServiceA", (c) => ({ b: c.resolve("ServiceB") }));
+container.register("ServiceB", (c) => ({ a: c.resolve("ServiceA") }));
+
+try {
+  container.resolve("ServiceA");
+} catch (err: any) {
+  console.log(err.message);
+  // Logs: "Circular dependency detected: ServiceA -> ServiceB -> ServiceA"
+}
+```
+
+**Line-by-line explanation:**
+- `private resolutionStack = new Set<string>()`: Maintains the active path of tokens currently being constructed.
+- `if (this.resolutionStack.has(token))`: If we encounter a token that is already on the active call stack, we have detected a cycle.
+- `const cyclePath = [...Array.from(this.resolutionStack), token].join(" -> ")`: Builds a readable breadcrumb path showing exactly how the cycle occurred.
+- `this.resolutionStack.add(token)`: Marks the token as in-progress.
+- `finally { this.resolutionStack.delete(token); }`: Guarantees the token is removed from the active stack even if factory resolution throws.
+
+---
+
+### 4. How it works inside TypeScript
+1. **Call Stack Tracking**: The resolution stack mirrors the recursion stack of the resolution algorithm.
+2. **Deterministic Cleanup**: The `try ... finally` block ensures that if an error occurs, the stack does not remain polluted for future resolutions.
+3. **Graph Directionality**: Diamond dependencies ($A \to B, A \to C, B \to D, C \to D$) are NOT cycles; because $D$ finishes resolving before $C$ resolves, $D$ is removed from the stack and does not trigger an error.
+
+---
+
+### 5. More examples
+
+#### Example 1: Solving Circular Dependencies via Lazy Proxy / Property Injection
+```typescript
+class LazyProxyContainer extends CycleSafeContainer {
+  resolveLazy<T extends object>(token: string): T {
+    let resolvedInstance: T | null = null;
+
+    // Return a Proxy that defers resolution until first property access
+    return new Proxy({} as T, {
+      get(target, prop, receiver) {
+        if (!resolvedInstance) {
+          resolvedInstance = this.resolve(token);
+        }
+        return Reflect.get(resolvedInstance as any, prop, receiver);
+      },
+    });
+  }
+}
+```
+
+#### Example 2: Three-node cycle trace ($A \to B \to C \to A$)
+```typescript
+const c3 = new CycleSafeContainer();
+c3.register("A", (c) => c.resolve("B"));
+c3.register("B", (c) => c.resolve("C"));
+c3.register("C", (c) => c.resolve("A"));
+
+// Resolving A throws: "Circular dependency detected: A -> B -> C -> A"
+```
+
+---
+
+### 6. Common mistakes
+
+#### Mistake 1: Forgetting `finally` block cleanup
+```typescript
+// WRONG: Removing token only on success
+this.resolutionStack.add(token);
+const res = factory(this); // If this throws, token is NEVER deleted from stack!
+this.resolutionStack.delete(token);
+```
+**Why it fails:** If a factory throws an ordinary error (e.g. database connection failed), the token remains permanently stuck in `this.resolutionStack`. Any future resolution of that token will falsely report a Circular Dependency!
+
+#### Mistake 2: Confusing shared dependencies with circular dependencies
+```typescript
+// NOT a cycle: Diamond dependency
+// A -> B -> D
+// A -> C -> D
+```
+**Why it matters:** In a diamond dependency, `D` is resolved twice. A naive check that simply tracks "already seen" nodes without popping them from the stack will falsely report a cycle. You MUST push on entry and pop on exit (`Set.delete`).
+
+---
+
+### 7. Rules to remember
+1. Track the active resolution path using a `Set<string>`.
+2. Push the token before resolving dependencies; pop it in a `finally` block.
+3. If `resolutionStack.has(token)` is true, abort immediately with the full path.
+4. Diamond dependencies are valid DAGs (Directed Acyclic Graphs) and must not be flagged as cycles.
+
+---
+
+### Think first: Prediction puzzle
+Does the following graph trigger a circular dependency error?
+
+```typescript
+const c = new CycleSafeContainer();
+c.register("D", () => "leaf");
+c.register("B", (c) => ({ d: c.resolve("D") }));
+c.register("C", (c) => ({ d: c.resolve("D") }));
+c.register("A", (c) => ({ b: c.resolve("B"), c: c.resolve("C") }));
+
+c.resolve("A");
+console.log("Success");
+```
+
+---
+
+**Answer:**
+```
+Success
+```
+**Explanation:** This is a diamond dependency. When resolving `B`, `D` is pushed, resolved, and popped. When resolving `C`, `D` is pushed, resolved, and popped again. At no point is `D` on the active resolution stack twice simultaneously.
+
+---
+
+### Practice exercises
+
+#### Exercise 1: Custom circular error type
+- **Task**: Create a custom error class `CircularDependencyError` that stores `cyclePath: string[]`.
+- **Hint 1**: Subclass `Error` and attach `public readonly path: string[]`.
+
+#### Exercise 2: Depth limiter guard
+- **Task**: Add a `maxDepth` limit to `CycleSafeContainer` that throws if resolution depth exceeds 20 levels.
+- **Hint 1**: Check `if (this.resolutionStack.size > 20) throw new Error("Max depth exceeded");`.
+
+#### Exercise 3: Self-dependency cycle
+- **Task**: Register `container.register("Self", c => c.resolve("Self"))`. Verify it produces `"Circular dependency detected: Self -> Self"`.
+- **Hint 1**: The stack has `"Self"` and sees `"Self"` immediately.
+
+#### Exercise 4: Refactor circular dependency to event bus
+- **Task**: Decouple `OrderService` (needs `NotificationService`) and `NotificationService` (needs `OrderService`) by introducing an event emitter so neither depends on the other.
+- **Hint 1**: `OrderService` emits `"orderPlaced"`; `NotificationService` listens to the event bus.
+
+---
+
+### Exercise solutions
+
+#### Solution 1: Custom circular error type
+```typescript
+class CircularDependencyError extends Error {
+  constructor(public readonly path: string[]) {
+    super(`Circular dependency detected: ${path.join(" -> ")}`);
+    this.name = "CircularDependencyError";
+  }
+}
+```
+
+#### Solution 2: Depth limiter guard
+```typescript
+class DepthLimitedContainer extends CycleSafeContainer {
+  private readonly MAX_DEPTH = 15;
+
+  override resolve<T>(token: string): T {
+    if ((this as any).resolutionStack.size > this.MAX_DEPTH) {
+      throw new Error(`Resolution depth exceeded limit of ${this.MAX_DEPTH}`);
+    }
+    return super.resolve(token);
+  }
+}
+```
+
+#### Solution 3: Self-dependency cycle
+```typescript
+const container = new CycleSafeContainer();
+container.register("Self", (c) => c.resolve("Self"));
+
+try {
+  container.resolve("Self");
+} catch (err: any) {
+  console.log(err.message.includes("Self -> Self")); // true
+}
+```
+
+#### Solution 4: Refactor circular dependency to event bus
+```typescript
+interface EventHub {
+  on(event: string, fn: Function): void;
+  emit(event: string, data: any): void;
+}
+
+class DecoupledOrderService {
+  constructor(private events: EventHub) {}
+  createOrder(id: string) {
+    this.events.emit("orderCreated", { id });
+  }
+}
+
+class DecoupledNotificationService {
+  constructor(events: EventHub) {
+    events.on("orderCreated", (order: any) => {
+      console.log(`Alert: Order ${order.id} was created`);
+    });
+  }
+}
+```
+
+---
+
+### Recall
+1. Why must resolution stack cleanup happen in a `finally` block? To ensure failed resolutions do not leave tokens stuck in the stack, corrupting future resolutions.
+2. What is the difference between a diamond dependency and a circular dependency? A diamond dependency is a valid DAG where a node is resolved along two distinct sequential branches; a circular dependency contains a loop on the same active call branch.
+3. How can circular dependencies between two services be resolved architecturally? By introducing an intermediary event bus or by using lazy proxy injection.
+
+> **If you remember only one thing:**  
+> Tracking active tokens in a `Set` during recursive resolution enables immediate detection and reporting of circular dependency loops.
+
+---
+
+# Checkpoint Challenge 3: Enterprise IoC & Decorator Architecture (Topics 11-14)
+
+### Challenge Specification
+Construct a full Inversion of Control Container featuring:
+1. **Token-based Registration** with Lifecycle Support (`singleton`, `transient`, `scoped`).
+2. **Circular Dependency Detection** throwing a detailed cycle path.
+3. **Child Scope Creation** for isolated request contexts.
+4. **TC39 Stage 3 Decorator Integration** (`@injectable(token)`) to auto-register classes into the container.
+
+### Solution
+
+```typescript
+// 1. Types & Tokens
+type Lifetime = "singleton" | "transient" | "scoped";
+
+type ProviderFactory<T> = (container: EnterpriseContainer) => T;
+
+interface ServiceRecipe<T> {
+  factory: ProviderFactory<T>;
+  lifetime: Lifetime;
+}
+
+// 2. Enterprise IoC Container
+class EnterpriseContainer {
+  private recipes = new Map<string, ServiceRecipe<any>>();
+  private singletons = new Map<string, any>();
+  private scopedInstances = new Map<string, any>();
+  private resolutionStack = new Set<string>();
+
+  constructor(private parentScope?: EnterpriseContainer) {}
+
+  register<T>(token: string, factory: ProviderFactory<T>, lifetime: Lifetime = "transient"): void {
+    this.recipes.set(token, { factory, lifetime });
+  }
+
+  createScope(): EnterpriseContainer {
+    const scope = new EnterpriseContainer(this);
+    scope.recipes = this.recipes;
+    scope.singletons = this.singletons;
+    return scope;
+  }
+
+  resolve<T>(token: string): T {
+    // Circular dependency detection
+    if (this.resolutionStack.has(token)) {
+      const path = [...Array.from(this.resolutionStack), token].join(" -> ");
+      throw new Error(`Circular dependency detected: ${path}`);
+    }
+
+    const recipe = this.recipes.get(token);
+    if (!recipe) {
+      if (this.parentScope) return this.parentScope.resolve(token);
+      throw new Error(`Unregistered token: ${token}`);
+    }
+
+    // Singleton check
+    if (recipe.lifetime === "singleton") {
+      if (!this.singletons.has(token)) {
+        this.singletons.set(token, this.executeFactory(token, recipe.factory));
+      }
+      return this.singletons.get(token);
+    }
+
+    // Scoped check
+    if (recipe.lifetime === "scoped") {
+      if (!this.scopedInstances.has(token)) {
+        this.scopedInstances.set(token, this.executeFactory(token, recipe.factory));
+      }
+      return this.scopedInstances.get(token);
+    }
+
+    // Transient
+    return this.executeFactory(token, recipe.factory);
+  }
+
+  private executeFactory<T>(token: string, factory: ProviderFactory<T>): T {
+    this.resolutionStack.add(token);
+    try {
+      return factory(this);
+    } finally {
+      this.resolutionStack.delete(token);
+    }
+  }
+}
+
+// 3. Global Container Instance & @injectable Decorator
+const globalContainer = new EnterpriseContainer();
+
+function injectable(token: string, lifetime: Lifetime = "transient") {
+  return function <T extends new (...args: any[]) => any>(
     target: T,
     context: ClassDecoratorContext<T>
   ) {
-    context.metadata.prefix = prefix.replace(/\/$/, "");
+    globalContainer.register(token, () => new target(), lifetime);
   };
 }
 
-function createMethodDecorator(method: "GET" | "POST" | "PUT" | "DELETE") {
-  return function (path: string) {
-    return function <This, Args extends any[], Return>(
-      target: (this: This, ...args: Args) => Return,
-      context: ClassMethodDecoratorContext<This, (this: This, ...args: Args) => Return>
-    ) {
-      if (!context.metadata[ROUTES_KEY]) {
-        context.metadata[ROUTES_KEY] = [];
-      }
-      (context.metadata[ROUTES_KEY] as RouteDefinition[]).push({
-        method,
-        path: path.startsWith("/") ? path : `/${path}`,
-        handlerName: context.name,
-      });
-    };
-  };
+// 4. Sample Domain Architecture
+@injectable("DatabaseService", "singleton")
+class DatabaseService {
+  readonly connectionId = Math.random();
 }
 
-export const get = createMethodDecorator("GET");
-export const post = createMethodDecorator("POST");
-export const put = createMethodDecorator("PUT");
-export const del = createMethodDecorator("DELETE");
-
-export class OpenApiRouter {
-  public static generateSpec(controllers: (new (...args: any[]) => any)[]): Record<string, any> {
-    const spec: Record<string, any> = {
-      openapi: "3.0.0",
-      paths: {},
-    };
-
-    for (const Ctrl of controllers) {
-      const metadata = (Ctrl as any)[(Symbol as any).metadata];
-      const prefix = (metadata?.prefix as string) ?? "";
-      const routes = (metadata?.[ROUTES_KEY] as RouteDefinition[]) ?? [];
-
-      for (const route of routes) {
-        const fullPath = `${prefix}${route.path}`;
-        if (!spec.paths[fullPath]) {
-          spec.paths[fullPath] = {};
-        }
-
-        spec.paths[fullPath][route.method.toLowerCase()] = {
-          operationId: `${Ctrl.name}_${String(route.handlerName)}`,
-          responses: {
-            "200": { description: "Successful response" },
-          },
-        };
-      }
-    }
-
-    return spec;
-  }
+@injectable("RequestLogger", "scoped")
+class RequestLogger {
+  readonly requestId = Math.random();
 }
 
-// Verification Assertions
-@controller("/api/v1/orders")
-class OrderController {
-  @get("/")
-  public listOrders(): string[] {
-    return ["ord_1", "ord_2"];
-  }
+// 5. Verification Execution
+function runCheckpoint3() {
+  console.log("--- 1. Singleton Verification ---");
+  const db1 = globalContainer.resolve<DatabaseService>("DatabaseService");
+  const db2 = globalContainer.resolve<DatabaseService>("DatabaseService");
+  console.log("Singletons match:", db1.connectionId === db2.connectionId); // true
 
-  @get("/:id")
-  public getOrder(): { id: string } {
-    return { id: "ord_1" };
-  }
+  console.log("\n--- 2. Scoped Verification ---");
+  const reqScope1 = globalContainer.createScope();
+  const logger1a = reqScope1.resolve<RequestLogger>("RequestLogger");
+  const logger1b = reqScope1.resolve<RequestLogger>("RequestLogger");
+  console.log("Same scope loggers match:", logger1a.requestId === logger1b.requestId); // true
 
-  @post("/")
-  public createOrder(): { status: string } {
-    return { status: "created" };
+  const reqScope2 = globalContainer.createScope();
+  const logger2 = reqScope2.resolve<RequestLogger>("RequestLogger");
+  console.log("Different scope loggers differ:", logger1a.requestId !== logger2.requestId); // true
+
+  console.log("\n--- 3. Circular Dependency Detection ---");
+  globalContainer.register("NodeA", (c) => ({ b: c.resolve("NodeB") }));
+  globalContainer.register("NodeB", (c) => ({ a: c.resolve("NodeA") }));
+
+  try {
+    globalContainer.resolve("NodeA");
+  } catch (err: any) {
+    console.log("Caught expected cycle:", err.message);
   }
 }
-
-@controller("/health")
-class HealthController {
-  @get("/")
-  public check(): { ok: boolean } {
-    return { ok: true };
-  }
-}
-
-const openApiDoc = OpenApiRouter.generateSpec([OrderController, HealthController]);
-
-assert.strictEqual(openApiDoc.openapi, "3.0.0");
-
-// Verify Order paths
-assert.ok(openApiDoc.paths["/api/v1/orders/"]);
-assert.strictEqual(
-  openApiDoc.paths["/api/v1/orders/"]["get"].operationId,
-  "OrderController_listOrders"
-);
-assert.strictEqual(
-  openApiDoc.paths["/api/v1/orders/"]["post"].operationId,
-  "OrderController_createOrder"
-);
-
-assert.ok(openApiDoc.paths["/api/v1/orders/:id"]);
-assert.strictEqual(
-  openApiDoc.paths["/api/v1/orders/:id"]["get"].operationId,
-  "OrderController_getOrder"
-);
-
-// Verify Health path
-assert.ok(openApiDoc.paths["/health/"]);
-assert.strictEqual(
-  openApiDoc.paths["/health/"]["get"].operationId,
-  "HealthController_check"
-);
-
-console.log("Project 4 (API Controller & OpenAPI Generator) passed all assertions.");
+runCheckpoint3();
 ```
-
-
----
-
-## 6. Enterprise Best Practices: 20 DOs and DON'Ts
-
-| # | Rule | Bad Practice (DON'T) | Best Practice (DO) | Architectural Impact |
-|---|------|----------------------|--------------------|----------------------|
-| 1 | **Modern Standard Decorators** | Keeping `"experimentalDecorators": true` in new TS 5.x projects | Remove `experimentalDecorators` and use standard TC39 Stage 3 | Ensures future-proof compatibility with native JavaScript engines and avoids legacy deprecation. |
-| 2 | **Native Decorator Metadata** | Importing `reflect-metadata` and enabling `emitDecoratorMetadata` | Use `context.metadata` and standard `Symbol.metadata` | Eliminates external polyfill bundles and provides native engine-level metadata performance. |
-| 3 | **Field vs Auto-Accessor Interception** | Decorating a plain field expecting to intercept property writes | Use `accessor prop: Type` for get/set interception | Plain field decorators only intercept the initial value; auto-accessors intercept every read and write. |
-| 4 | **Auto-Accessor Initializer Safety** | Assuming `init` hook always receives a defined value | Guard `if (val !== undefined)` in `init` hooks | Uninitialized auto-accessors pass `undefined` to `init` during constructor setup. |
-| 5 | **Decorator Side Effect Isolation** | Mutating global state directly in decorator factory functions | Perform mutations inside the returned decorator or `addInitializer` | Decorator factories run during file evaluation, causing unexpected side effects on import. |
-| 6 | **Explicit Class Properties** | Using parameter properties `constructor(public x: string)` with decorators | Declare explicit properties on class bodies | Guarantees compatibility with Node.js `--experimental-strip-types` and modern tooling. |
-| 7 | **Autobind Instance Scope** | Binding methods on `target.prototype` | Bind methods inside `context.addInitializer` using instance `this` | Preserves instance identity and prevents cross-instance method reference leaks. |
-| 8 | **Preserve Method Arity & Name** | Returning anonymous functions with empty argument names | Copy `Object.defineProperty(fn, 'name', { value: target.name })` | Preserves debugging stack traces, error messages, and framework reflection. |
-| 9 | **Avoid Swallowing Errors in Wrappers** | Catching errors in method decorators without rethrowing | Rethrow errors or return explicit `Result<T, E>` monads | Silently swallowing exceptions corrupts downstream application state. |
-| 10 | **Circular Dependency Defense** | Resolving IoC tokens without an active resolution set | Track active tokens in a `resolvingTokens` Set and throw on duplicates | Prevents infinite call stack exhaustion crashes in cyclic graphs. |
-| 11 | **Hierarchical Metadata Safety** | Mutating `context.metadata` using un-namespaced string keys | Use unique Symbols or namespaced keys on metadata | Prevents collisions when multiple third-party libraries attach metadata. |
-| 12 | **Idempotent Instance Initializers** | Re-running expensive initialization logic on every constructor | Track initialized instances in a `WeakSet` | Prevents duplicate event subscriptions and memory leaks. |
-| 13 | **Private Identifier Decorators** | Trying to inspect private `#field` names using string matching | Check `context.private === true` and use `context.access` | Directly respects native ECMAScript lexical privacy rules. |
-| 14 | **Avoid Type Alteration Assumptions** | Expecting a decorator to change a method's TypeScript return type | Use higher-order functions or mixins if type mutation is required | Stage 3 decorators cannot alter compile-time type signatures. |
-| 15 | **Asynchronous Disposal Integration** | Writing manual cleanup methods that callers must remember to call | Implement `[Symbol.asyncDispose]` and consume via `await using` | Guarantees automatic, leak-free teardown of container scopes and database pools. |
-| 16 | **Method Decorator Generic Preservation** | Typing decorator target as `Function` | Use `<This, Args extends any[], Return>` generics | Maintains complete type inference and parameter checking. |
-| 17 | **Scoped Container Cleanup** | Leaving request-scoped dependencies in a singleton root container | Create child containers per request and dispose upon completion | Eliminates memory leaks in long-running HTTP microservices. |
-| 18 | **Retry Decorator Jitter** | Retrying immediately or with static delays | Add randomized jitter: `delayMs + Math.random() * 50` | Prevents the "thundering herd" problem on recovering downstream APIs. |
-| 19 | **OpenAPI Spec Deduplication** | Emitting duplicate path entries when multiple methods exist on a route | Index paths in a dictionary `paths[fullPath][method]` | Generates strictly valid OpenAPI 3.0 documents without schema validation errors. |
-| 20 | **Avoid Over-Decoration** | Stacking 10+ decorators on a single method | Consolidate cross-cutting concerns into a composable pipeline | Reduces runtime closure overhead and simplifies debugging. |
-
----
-
-## 7. Real-World Case Study: Enterprise Microservice DI & Telemetry Architecture
-
-### Problem Context
-An enterprise financial microservice requires:
-1. Complete inversion of control where database connections, audit loggers, and HTTP clients are injected without tight coupling.
-2. Production telemetry measuring latency on every database operation.
-3. Automated route registration generating both runtime HTTP routing tables and OpenAPI 3.0 Swagger specifications from the exact same class annotations.
-4. Zero third-party reflection libraries (`reflect-metadata` forbidden due to strict security auditing).
-
-### Architectural Solution
-Using native TC39 Stage 3 Decorators and `Symbol.metadata`:
-- `@controller('/api/v1/accounts')`: Registers API route prefix.
-- `@get('/:id')`: Registers HTTP endpoints and populates OpenAPI metadata.
-- `@inject('AccountRepository')`: Injects repository dependency into auto-accessors.
-- `@timed`: Captures latency metrics and logs to OpenTelemetry spans.
-- All metadata is stored natively on `Constructor[Symbol.metadata]`, allowing the application bootstrapper to generate Swagger docs and wire IoC bindings with zero external dependencies.
-
-```typescript
-// Core Microservice Implementation Sketch
-(Symbol as any).metadata ??= Symbol("Symbol.metadata");
-
-export interface Account { id: string; balance: number; }
-
-@controller("/api/v1/accounts")
-export class AccountApiController {
-  @inject("AccountRepository")
-  accessor accountRepo!: { findById(id: string): Promise<Account | null> };
-
-  @get("/:id")
-  @timed
-  public async getAccount(id: string): Promise<Account> {
-    const account = await this.accountRepo.findById(id);
-    if (!account) throw new Error("Account not found");
-    return account;
-  }
-}
-```
-
----
-
-## 8. Practice Drills (75 Drills across 5 Progression Tiers)
-
-### Tier 1: Stage 3 Decorator Syntax & Execution Order (Drills 1–15)
-1. Write a no-op method decorator and inspect all fields of `context`.
-2. Write a class decorator that freezes the constructor using `Object.freeze(target)`.
-3. Demonstrate that decorator factories evaluate top-to-bottom while decorators execute bottom-to-top.
-4. Write a field decorator that logs the initial field value.
-5. Prove that `target` is `undefined` when decorating a class field.
-6. Write a getter decorator that logs when a property is read.
-7. Write a setter decorator that logs the new value being assigned.
-8. Decorate a `#private` method and verify `context.private === true`.
-9. Decorate a static method and verify `context.static === true`.
-10. Use `context.addInitializer` in a class decorator to log when the class definition finishes.
-11. Use `context.addInitializer` in a method decorator to log when a new instance is created.
-12. Write a decorator that is constrained to only accept method targets.
-13. Write a decorator that throws an error if applied to a static member.
-14. Compose three method decorators (`@a @b @c`) and trace their execution order.
-15. Polyfill `Symbol.metadata` on global `Symbol` if not present.
-
-### Tier 2: Auto-Accessors & Property Interception (Drills 16–30)
-16. Declare an auto-accessor `accessor name: string` and trace its desugared behavior.
-17. Write an auto-accessor decorator that trims leading and trailing whitespace on set.
-18. Write an auto-accessor decorator `@clamp(min, max)` enforcing numeric bounds.
-19. Write an auto-accessor decorator `@readonly` throwing an error on any `set` call.
-20. Demonstrate that the `init` hook runs during construction, while `set` runs on subsequent assignments.
-21. Write an auto-accessor decorator that normalizes strings to lowercase on assignment.
-22. Write an auto-accessor decorator that validates values against a regex pattern.
-23. Decorate a static auto-accessor and verify `this` points to the constructor.
-24. Decorate a private auto-accessor (`accessor #balance: number`) and verify encapsulation.
-25. Write an auto-accessor decorator that tracks mutation counts in an internal counter.
-26. Use `context.access.get` inside an auto-accessor decorator to read instance values.
-27. Use `context.access.set` to mutate instance values from an external function.
-28. Write an auto-accessor decorator that prevents setting `null` or `undefined`.
-29. Write an auto-accessor decorator that rounds numbers to 2 decimal places.
-30. Write an auto-accessor decorator that emits a `'change'` event whenever the value changes.
-
-### Tier 3: Method Interceptors, Timing & Resilience (Drills 31–45)
-31. Write a `@timed` decorator measuring method execution time using `performance.now()`.
-32. Write an `@autobind` decorator ensuring `this` is permanently bound to the instance.
-33. Write a `@retry(max, delayMs)` decorator retrying rejected async promises.
-34. Write a `@memoize()` decorator caching method results based on JSON-serialized arguments.
-35. Write a `@debounce(delayMs)` decorator delaying execution until idle.
-36. Write a `@throttle(delayMs)` decorator limiting execution frequency.
-37. Write a `@deprecated(message)` decorator emitting a console warning once per runtime.
-38. Write an `@auditLog(action)` decorator logging start, success, and failure timestamps.
-39. Write an `@authorized(roles)` decorator verifying caller permissions before execution.
-40. Write a `@timeout(ms)` decorator rejecting if an async method takes longer than $N$ milliseconds.
-41. Write a `@rateLimited(max, intervalMs)` decorator throwing when request limits are exceeded.
-42. Write an `@idempotent()` decorator rejecting duplicate requests with identical idempotency keys.
-43. Write a `@validateArgs(validatorFn)` decorator validating method arguments before execution.
-44. Write a `@traceSpan(name)` decorator wrapping execution in an OpenTelemetry span.
-45. Write a `@recoverWith(fallbackValue)` decorator catching exceptions and returning fallback data.
-
-### Tier 4: Decorator Metadata & OpenAPI Generation (Drills 46–60)
-46. Store metadata on `context.metadata` and read it from `Constructor[Symbol.metadata]`.
-47. Verify that derived classes inherit metadata via prototype linkage (`Object.create`).
-48. Write a `@tag(name)` decorator attaching custom tags to a class.
-49. Write a `@controller(path)` decorator recording route prefixes in metadata.
-50. Write a `@get(path)` decorator recording HTTP GET route definitions in metadata.
-51. Write a `@post(path)` decorator recording HTTP POST route definitions in metadata.
-52. Write a `@put(path)` decorator recording HTTP PUT route definitions in metadata.
-53. Write a `@del(path)` decorator recording HTTP DELETE route definitions in metadata.
-54. Build an OpenAPI 3.0 specification generator parsing routes from controller metadata.
-55. Write a `@summary(text)` decorator adding endpoint descriptions to route metadata.
-56. Write a `@response(statusCode, schema)` decorator adding OpenAPI response models.
-57. Extract all registered route endpoints into an Express/Fastify compatible route table.
-58. Prevent metadata pollution by using a unique Symbol key for route collections.
-59. Write an `@injectable(lifetime)` decorator recording dependency injection lifetimes.
-60. Read class metadata without importing any third-party reflection libraries.
-
-### Tier 5: Enterprise IoC Containers & Dynamic Dependency Graphs (Drills 61–75)
-61. Build an IoC Container from scratch supporting `bind()` and `resolve()`.
-62. Implement the `@injectable()` decorator configuring Transient vs Singleton lifecycles.
-63. Implement the `@inject(token)` decorator on auto-accessors.
-64. Implement Circular Dependency Detection throwing a descriptive error upon cycle detection.
-65. Build a Singleton cache inside the container returning identical references on resolution.
-66. Build a Transient resolution engine instantiating fresh objects on every call.
-67. Implement Scoped container resolution where instances are shared only within a request scope.
-68. Implement automatic cleanup of Scoped containers using `[Symbol.asyncDispose]`.
-69. Implement parent-to-child container delegation for hierarchical IoC containers.
-70. Build an event-driven architecture using `@onEvent(name)` auto-registering handlers on boot.
-71. Construct a unit test double overriding container bindings for isolated service testing.
-72. Implement dynamic factory provider binding inside the IoC container.
-73. Build a Transactional decorator `@transactional()` managing database begin, commit, and rollback.
-74. Implement a full microservice controller integrating `@controller`, `@get`, `@inject`, and `@timed`.
-75. Design a complete, framework-independent Dependency Injection architecture using TC39 Stage 3.
-
-
----
-
