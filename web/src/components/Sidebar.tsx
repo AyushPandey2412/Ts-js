@@ -7,7 +7,7 @@ import SearchModal from './SearchModal';
 import Logo from './Logo';
 import type { SearchItem } from '@/lib/search-index';
 import { TECHNOLOGY_TRACKS } from '@/lib/tracks';
-import { JS_MODULES, TS_MODULES, REACT_MODULES } from '@/lib/modules-meta';
+import { JS_MODULES, TS_MODULES, REACT_MODULES, SEQ_MODULES } from '@/lib/modules-meta';
 
 interface SidebarProps {
   searchIndex?: SearchItem[];
@@ -16,22 +16,25 @@ interface SidebarProps {
 export default function Sidebar({ searchIndex = [] }: SidebarProps) {
   const pathname = usePathname();
 
+  const isSeqRoute = pathname.startsWith('/modules/seq-') || pathname.startsWith('/modules/sequelize-') || pathname === '/tracks/postgres';
   const isReactRoute = pathname.startsWith('/modules/react-') || pathname === '/tracks/react';
   const isTsRoute = pathname.startsWith('/modules/ts-') || pathname === '/tracks/typescript';
-  const isJsRoute = (pathname.startsWith('/modules/') && !pathname.startsWith('/modules/ts-') && !pathname.startsWith('/modules/react-')) || pathname === '/tracks/javascript';
+  const isJsRoute = (pathname.startsWith('/modules/') && !pathname.startsWith('/modules/ts-') && !pathname.startsWith('/modules/react-') && !pathname.startsWith('/modules/seq-') && !pathname.startsWith('/modules/sequelize-')) || pathname === '/tracks/javascript';
 
   const [isCollapsed, setIsCollapsed] = useState(false);
   const [isMobileOpen, setIsMobileOpen] = useState(false);
   const [isSearchOpen, setIsSearchOpen] = useState(false);
+  const [isSeqOpen, setIsSeqOpen] = useState(isSeqRoute);
   const [isReactOpen, setIsReactOpen] = useState(isReactRoute);
   const [isTsOpen, setIsTsOpen] = useState(isTsRoute);
   const [isJsOpen, setIsJsOpen] = useState(isJsRoute);
 
   useEffect(() => {
+    if (isSeqRoute) setIsSeqOpen(true);
     if (isReactRoute) setIsReactOpen(true);
     if (isTsRoute) setIsTsOpen(true);
     if (isJsRoute) setIsJsOpen(true);
-  }, [pathname, isReactRoute, isTsRoute, isJsRoute]);
+  }, [pathname, isSeqRoute, isReactRoute, isTsRoute, isJsRoute]);
 
   // Global Ctrl+K / Cmd+K listener
   useEffect(() => {
@@ -207,7 +210,9 @@ export default function Sidebar({ searchIndex = [] }: SidebarProps) {
                 const isActive =
                   pathname === `/tracks/${t.id}` ||
                   (t.id === 'javascript' && isJsRoute) ||
-                  (t.id === 'typescript' && isTsRoute);
+                  (t.id === 'typescript' && isTsRoute) ||
+                  (t.id === 'react' && isReactRoute) ||
+                  (t.id === 'postgres' && isSeqRoute);
 
                 return (
                   <Link
@@ -349,6 +354,60 @@ export default function Sidebar({ searchIndex = [] }: SidebarProps) {
                 title="React Track (7 Modules)"
               >
                 RE
+              </Link>
+            </div>
+          )}
+
+          {/* Collapsible PostgreSQL & Sequelize Database Track Modules */}
+          {!isCollapsed ? (
+            <div className="pt-3 border-t border-slate-800/60">
+              <button
+                onClick={() => setIsSeqOpen(!isSeqOpen)}
+                className="w-full flex items-center justify-between px-2 py-1 text-[10px] font-semibold uppercase tracking-wider text-slate-400 hover:text-slate-200 transition-colors"
+              >
+                <div className="flex items-center space-x-1.5">
+                  <span className="w-1.5 h-1.5 rounded-full bg-indigo-400"></span>
+                  <span>Database Track ({SEQ_MODULES.length})</span>
+                </div>
+                <span className="text-slate-500 font-mono text-xs font-bold">{isSeqOpen ? '−' : '+'}</span>
+              </button>
+
+              {isSeqOpen && (
+                <div className="mt-1 space-y-0.5 max-h-48 overflow-y-auto pr-1">
+                  {SEQ_MODULES.map((m) => {
+                    const isCurrent = pathname === `/modules/${m.slug}`;
+                    return (
+                      <Link
+                        key={m.slug}
+                        href={`/modules/${m.slug}`}
+                        onClick={() => setIsMobileOpen(false)}
+                        className={`flex items-center justify-between px-2 py-1.5 rounded text-[11px] transition-all active:scale-[0.98] ${
+                          isCurrent
+                            ? 'bg-indigo-600/20 text-indigo-300 font-semibold border-l-2 border-indigo-400'
+                            : 'text-slate-400 hover:bg-slate-800/60 hover:text-slate-200'
+                        }`}
+                        title={m.title}
+                      >
+                        <span className="font-mono text-[9.5px] text-indigo-400 font-medium shrink-0 mr-1.5">
+                          {m.number}
+                        </span>
+                        <span className="truncate flex-1">{m.title}</span>
+                      </Link>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          ) : (
+            <div className="pt-2 border-t border-slate-800/60 flex flex-col items-center">
+              <Link
+                href="/tracks/postgres"
+                className={`w-9 h-6 flex items-center justify-center rounded text-[10px] font-mono font-bold transition-all ${
+                  isSeqRoute ? 'bg-indigo-600 text-white' : 'text-indigo-400 hover:bg-slate-800'
+                }`}
+                title="Database Track (Sequelize & Postgres)"
+              >
+                DB
               </Link>
             </div>
           )}

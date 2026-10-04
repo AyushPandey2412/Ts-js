@@ -440,12 +440,15 @@ export const TECHNOLOGY_TRACKS: TechnologyTrack[] = [
     name: 'PostgreSQL & Database Internals',
     shortName: 'PostgreSQL',
     category: 'databases',
-    status: 'in-progress',
+    status: 'active',
     tagline: 'Storage engines, B-Tree indexes, MVCC, query planners, and ACID transactions.',
     description: 'Master enterprise relational databases: Heap tables, page layout, WAL (Write-Ahead Logging), MVCC isolation levels, EXPLAIN ANALYZE cost estimations, GIN/BRIN indexes, connection pooling, and sharding.',
-    badge: 'Curriculum In Progress',
+    badge: 'Live · Sequelize & Postgres Engine',
     accentColor: 'indigo',
     topics: [
+      'Sequelize ORM & Raw Engine',
+      'Parameterized Replacements',
+      'Bulk Upserts & Multi-Tenancy',
       'Page Layout & Heap Files',
       'B-Tree, GIN & BRIN Indexes',
       'Write-Ahead Logging (WAL)',
@@ -453,11 +456,17 @@ export const TECHNOLOGY_TRACKS: TechnologyTrack[] = [
       'Query Optimizer & Cost Models',
       'Locks, Deadlocks & Advisory Locks',
       'Partitioning & Sharding',
-      'Connection Pooling (PgBouncer)',
-      'VACUUM & Autovacuum Tuning'
+      'Connection Pooling (PgBouncer)'
     ],
     modulesCount: 8,
     syllabus: [
+      {
+        title: '00: Sequelize ORM & Raw Query Engine',
+        description: 'Connection pools, raw parameterized queries, dynamic bulk upserts, schema-per-tenant isolation, transactions, and model associations.',
+        sectionsCount: 18,
+        status: 'available',
+        slug: 'sequelize-complete-orm-and-query-engine'
+      },
       {
         title: '01: Storage Engine & Disk Page Architecture',
         description: '8KB page structure, item pointers, tuple headers, and TOAST storage for oversized attributes.',

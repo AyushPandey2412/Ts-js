@@ -419,12 +419,23 @@ export const MODULES: ModuleMeta[] = [
     fileName: 'REACT-06-COMPILER-OPTIMIZATION-AND-PERFORMANCE.md',
     estimatedSections: 18,
     badge: 'Compiler & Profiling'
+  },
+  {
+    id: 'seq-01',
+    slug: 'sequelize-complete-orm-and-query-engine',
+    number: 'SEQ-01',
+    title: 'Sequelize ORM & Raw Query Engine',
+    subtitle: 'From Connection Pools to Raw Replacements, Dynamic Upserts, Multi-Tenancy & Model Architectures',
+    fileName: 'SEQUELIZE-COMPLETE-ORM-AND-QUERY-ENGINE.md',
+    estimatedSections: 18,
+    badge: 'Enterprise ORM'
   }
 ];
 
-export const JS_MODULES: ModuleMeta[] = MODULES.filter((m) => !m.id.startsWith('ts-') && !m.id.startsWith('react-'));
+export const JS_MODULES: ModuleMeta[] = MODULES.filter((m) => !m.id.startsWith('ts-') && !m.id.startsWith('react-') && !m.id.startsWith('seq-'));
 export const TS_MODULES: ModuleMeta[] = MODULES.filter((m) => m.id.startsWith('ts-'));
 export const REACT_MODULES: ModuleMeta[] = MODULES.filter((m) => m.id.startsWith('react-'));
+export const SEQ_MODULES: ModuleMeta[] = MODULES.filter((m) => m.id.startsWith('seq-'));
 
 export interface ModuleNavigation {
   prev: ModuleMeta | null;

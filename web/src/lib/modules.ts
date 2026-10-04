@@ -2,9 +2,9 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { Marked } from 'marked';
 import hljs from 'highlight.js';
-import { MODULES, JS_MODULES, TS_MODULES, REACT_MODULES, type ModuleMeta, type ModuleNavigation } from './modules-meta';
+import { MODULES, JS_MODULES, TS_MODULES, REACT_MODULES, SEQ_MODULES, type ModuleMeta, type ModuleNavigation } from './modules-meta';
 
-export { MODULES, JS_MODULES, TS_MODULES, REACT_MODULES, type ModuleMeta, type ModuleNavigation } from './modules-meta';
+export { MODULES, JS_MODULES, TS_MODULES, REACT_MODULES, SEQ_MODULES, type ModuleMeta, type ModuleNavigation } from './modules-meta';
 
 // Configure marked with highlight.js and heading ids
 const marked = new Marked({
@@ -73,9 +73,10 @@ export interface TableOfContentsItem {
 export function getModuleNavigation(slug: string): ModuleNavigation {
   const isTs = slug.startsWith('ts-');
   const isReact = slug.startsWith('react-');
-  const trackList = isReact ? REACT_MODULES : isTs ? TS_MODULES : JS_MODULES;
-  const trackTitle = isReact ? 'React Internals Track' : isTs ? 'TypeScript Systems Track' : 'JavaScript Core Track';
-  const trackHref = isReact ? '/tracks/react' : isTs ? '/tracks/typescript' : '/tracks/javascript';
+  const isSeq = slug.startsWith('sequelize-') || slug.startsWith('seq-');
+  const trackList = isSeq ? SEQ_MODULES : isReact ? REACT_MODULES : isTs ? TS_MODULES : JS_MODULES;
+  const trackTitle = isSeq ? 'PostgreSQL & Database Track' : isReact ? 'React Internals Track' : isTs ? 'TypeScript Systems Track' : 'JavaScript Core Track';
+  const trackHref = isSeq ? '/tracks/postgres' : isReact ? '/tracks/react' : isTs ? '/tracks/typescript' : '/tracks/javascript';
   const currentIndex = trackList.findIndex((m) => m.slug === slug);
 
   if (currentIndex === -1) {
